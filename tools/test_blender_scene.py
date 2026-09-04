@@ -296,6 +296,61 @@ def main():
           json.dumps(pivot)[:220])
     B.call("remove_constraint", {"object": "S_Cam", "constraintName": "S_Pivot"})
 
+    # ---------------------------------------------------------------- S107 the render comes back
+    print("")
+    print("=== S107: a render returns an image, so something can LOOK at it ===")
+    # THE POINT OF THE WHOLE FEATURE. Seven render ops and none of them returned a picture, so an
+    # agent could light and frame and render a scene and had never once seen one. The first frame
+    # returned during development showed the default cube occluding the subject - a composition
+    # problem no numeric check in this repo would ever have reported.
+    import base64 as _b64
+
+    _shot = os.path.join(tempfile.gettempdir(), "mif_s106_preview.png")
+    pv = B.call("render_still", {"filePath": _shot, "resolutionX": 320, "resolutionY": 240,
+                                 "samples": 4, "returnImage": True, "previewMaxPx": 128},
+                timeout=600.0)
+    check("S107 the render itself still succeeds with returnImage on",
+          pv.get("wroteFile") is True, json.dumps(pv)[:200])
+
+    _img = pv.get("image")
+    _raw = b""
+    if isinstance(_img, str):
+        try:
+            _raw = _b64.b64decode(_img)
+        except Exception as exc:                                    # noqa: BLE001
+            _raw = b""
+            print("       base64 did not decode: %s" % exc)
+    check("S107 an image comes back and it DECODES - a string that is not valid base64 would pass "
+          "any check that only asked whether the field was present",
+          len(_raw) > 0, "imageError=%r bytes=%d" % (pv.get("imageError"), len(_raw)))
+    check("S107 and the bytes are really a PNG, not an empty file or the wrong format",
+          _raw[:8] == b"\x89PNG\r\n\x1a\n", repr(_raw[:12]))
+
+    # THE DOWNSCALE IS REPORTED, BOTH WAYS. A preview that silently claimed the rendered size would
+    # let a caller measure framing against dimensions the file does not have.
+    check("S107 the returned image is the DOWNSCALED size, not the rendered size",
+          pv.get("imageWidth") == 128 and pv.get("imageHeight") == 96,
+          "returned %sx%s, rendered %sx%s" % (pv.get("imageWidth"), pv.get("imageHeight"),
+                                              pv.get("renderedWidth"), pv.get("renderedHeight")))
+    check("S107 and the RENDERED size is reported too, so the preview cannot be mistaken for the "
+          "artifact on disk",
+          pv.get("renderedWidth") == 320 and pv.get("renderedHeight") == 240
+          and pv.get("downscaledFrom") == [320, 240], json.dumps(pv)[:220])
+
+    # LOADING A PNG TO RESCALE IT CREATES A DATABLOCK. Leaving it behind would be this op quietly
+    # changing the file to answer a question about it.
+    check("S107 and the scratch image datablock was removed rather than left in the file",
+          not pv.get("previewDatablockLeaked"), pv.get("previewDatablockLeaked"))
+
+    # THE NEGATIVE CONTROL. Without this, S107 proves the flag works and says nothing about the
+    # default - and the default is what every existing caller gets.
+    plain = B.call("render_still", {"filePath": _shot, "resolutionX": 320, "resolutionY": 240,
+                                    "samples": 4}, timeout=600.0)
+    check("S107 with returnImage OMITTED no image is returned - the default must not hand every "
+          "caller a megabyte of base64 they never asked for",
+          plain.get("image") is None and "imageBytes" not in plain,
+          json.dumps({k: v for k, v in plain.items() if "image" in k.lower()})[:160])
+
     rm = B.call("remove_constraint", {"object": "S_Cam", "constraintName": "S_Track"})
     check("S105 removing it counts the stack rather than trusting the call",
           rm.get("countsAgree") is True and rm.get("constraintCountAfter") == 0,

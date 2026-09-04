@@ -24,6 +24,8 @@ path, a permissions problem or a disabled file format all still report FINISHED.
 file afterwards and reports its real size, the same way the UE arm's ui_scenario_capture does:
 "wroteFile" is a measurement, not the operator's opinion.
 """
+import base64
+import tempfile
 import os
 import subprocess
 import time
@@ -39,7 +41,75 @@ _SETTINGS_KEYS = {
     "useDenoising", "exposure", "colorDepth",
 }
 _RENDER_KEYS = {"filePath", "output", "frame", "samples", "resolutionX", "resolutionY",
-                "percentage", "writeStill"}
+                "percentage", "writeStill", "returnImage", "previewMaxPx"}
+
+# The longest edge of a returned preview, when the caller does not say. Not a limit on the RENDER -
+# the file on disk is always full size - only on the copy handed back over the socket.
+_PREVIEW_MAX_PX_DEFAULT = 1024
+# A floor, so previewMaxPx:1 cannot ask for something that carries no information at all.
+_PREVIEW_MIN_PX = 32
+
+
+def _encode_preview(path, max_px):
+    """(dict) describing a base64 PNG of `path`, downscaled to max_px on its longest edge.
+
+    NEVER RAISES. A render that reached disk is a success, and failing to hand back a picture of it
+    must not turn that into a failure - the caller still has the file. Anything that goes wrong is
+    reported as imageError beside a null image, which is a different thing from silence.
+
+    THE LOADED IMAGE IS REMOVED. bpy.data.images.load puts a datablock in the file; leaving it there
+    would be this op quietly changing the scene to answer a question about it, which is exactly what
+    the rest of this addon refuses to do.
+    """
+    out = {"image": None, "imageError": None}
+    img = None
+    tmp = None
+    try:
+        img = bpy.data.images.load(path)
+        src_w, src_h = int(img.size[0]), int(img.size[1])
+        out["renderedWidth"], out["renderedHeight"] = src_w, src_h
+        if src_w <= 0 or src_h <= 0:
+            out["imageError"] = "the rendered file loaded with a zero dimension (%dx%d)" % (src_w, src_h)
+            return out
+
+        longest = max(src_w, src_h)
+        if longest > max_px:
+            factor = float(max_px) / float(longest)
+            new_w = max(1, int(round(src_w * factor)))
+            new_h = max(1, int(round(src_h * factor)))
+            img.scale(new_w, new_h)
+            out["downscaledFrom"] = [src_w, src_h]
+        out["imageWidth"], out["imageHeight"] = int(img.size[0]), int(img.size[1])
+
+        # PNG regardless of what the render wrote. The caller asked for something to LOOK at, and a
+        # preview in EXR or a raw format is not that.
+        tmp = os.path.join(tempfile.gettempdir(),
+                           "mif_preview_%d_%d.png" % (os.getpid(), int(time.time() * 1000)))
+        img.filepath_raw = tmp
+        img.file_format = "PNG"
+        img.save()
+
+        with open(tmp, "rb") as fh:
+            raw = fh.read()
+        out["image"] = base64.b64encode(raw).decode("ascii")
+        out["imageBytes"] = len(raw)
+        out["imageFormat"] = "png"
+    except Exception as exc:                                        # noqa: BLE001
+        out["imageError"] = "%s: %s" % (type(exc).__name__, str(exc)[:160])
+    finally:
+        if img is not None:
+            try:
+                bpy.data.images.remove(img)
+            except Exception as exc:                                # noqa: BLE001
+                # SAID, NOT SWALLOWED. A datablock left behind is a change to the file, and the
+                # caller is entitled to know this op left one.
+                out["previewDatablockLeaked"] = str(exc)[:120]
+        if tmp:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+    return out
 
 
 def _engine_ids():
@@ -344,7 +414,30 @@ def op_render_still(params):
         if wrote is None:
             wrote, size, stale = cand, st, True
 
-    return {
+    # THE PICTURE, if it was asked for. Only ever from a file this call is satisfied it WROTE -
+    # `wrote and stale is False` is the same predicate wroteFile reports below, not a looser one.
+    # Encoding a stale file would hand back an image of somebody else's render and call it this one.
+    result_preview = {}
+    if take_bool(params, "returnImage", default=False):
+        if wrote and size > 0 and stale is False:
+            max_px = finite_int(take_float(params, "previewMaxPx",
+                                           default=_PREVIEW_MAX_PX_DEFAULT), "previewMaxPx")
+            if max_px < _PREVIEW_MIN_PX:
+                raise MifOpError(
+                    "previewMaxPx must be at least %d - below that the image carries no "
+                    "information worth returning. The render itself is unaffected by this "
+                    "parameter and was NOT started." % _PREVIEW_MIN_PX)
+            result_preview = _encode_preview(wrote, max_px)
+        else:
+            # ASKED FOR AND NOT DELIVERABLE, said plainly. Silence here would read as "the render
+            # produced no image", when what happened is that nothing fresh reached disk to encode.
+            result_preview = {
+                "image": None,
+                "imageError": ("no freshly written file to encode - see wroteFile and "
+                               "staleFileFound below. The render, not the preview, is what failed."),
+            }
+
+    out = {
         "rendered": True,
         "frame": sc.frame_current,
         "engine": sc.render.engine,
@@ -367,6 +460,17 @@ def op_render_still(params):
         "blockingNote": ("this held Blender's main thread for %.1fs; the bridge answered nothing "
                          "during it." % elapsed),
     }
+    # MERGED LAST so the preview cannot quietly overwrite a field the render measured. The keys are
+    # disjoint by construction; this ordering is what keeps that true if either side gains one.
+    for k, v in result_preview.items():
+        out.setdefault(k, v)
+    if result_preview:
+        out["previewNote"] = (
+            "image is a base64 PNG of the file named in filePath, downscaled to previewMaxPx on its "
+            "longest edge - a picture to LOOK at, not the artifact. The file on disk is full size; "
+            "renderedWidth/renderedHeight are its real dimensions and imageWidth/imageHeight are "
+            "what was returned.")
+    return out
 
 
 def op_render_info(params):

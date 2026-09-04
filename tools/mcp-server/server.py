@@ -5494,11 +5494,13 @@ def bl_set_render_settings(engine: str = None, resolution_x: int = None, resolut
 @mcp.tool()
 def bl_render_still(file_path: str = None, frame: float = None, samples: int = None,
                     resolution_x: int = None, resolution_y: int = None, percentage: int = None,
-                    write_still: bool = None) -> dict:
-    "Render the current frame to a file. BLOCKS Blender's main thread for the whole render, so start small - a heavy frame exceeds the addon's job timeout and reads as a hung bridge. render() returns FINISHED whether or not a file appeared, so the file is stat'd afterwards and wroteFile/fileBytes are measurements rather than the operator's opinion."
+                    write_still: bool = None, return_image: bool = None,
+                    preview_max_px: int = None) -> dict:
+    "Render the current frame to a file. BLOCKS Blender's main thread for the whole render, so start small - a heavy frame exceeds the addon's job timeout and reads as a hung bridge. render() returns FINISHED whether or not a file appeared, so the file is stat'd afterwards and wroteFile/fileBytes are measurements rather than the operator's opinion. PASS return_image=True TO ACTUALLY SEE THE FRAME: it comes back as `image`, a base64 PNG downscaled to preview_max_px on its longest edge (default 1024), with renderedWidth/renderedHeight giving the real size of the file on disk so a preview is never mistaken for the artifact. Without it you are rendering blind - you will know a file appeared and nothing about whether the shot is framed, lit or occluded."
     return _blender("render_still", filePath=file_path, frame=frame, samples=samples,
                     resolutionX=resolution_x, resolutionY=resolution_y, percentage=percentage,
-                    writeStill=write_still, _timeout=600.0)
+                    writeStill=write_still, returnImage=return_image,
+                    previewMaxPx=preview_max_px, _timeout=600.0)
 
 
 @mcp.tool()
