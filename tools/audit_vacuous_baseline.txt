@@ -2,8 +2,22 @@
 # filtered subset that may legitimately be empty. Regenerate with --update-baseline
 # only after reading the new entries; the point of the baseline is that a NEW one is
 # a thing somebody has to look at.
+#
+# The four RULE 5 entries, read on 2026-09-04 when the rule was added:
+#   blender_audit_common:114  the identity banner. It REPORTS what answered, it does
+#                             not assert anything, so there is no check to be vacuous.
+#   test_blender_mesh:228     objectCount is type-checked by a check() three lines
+#                             above; the print is a restatement, not the assertion.
+#   test_metasound:57         guarded on a different expression - `if not assets:
+#                             return 2` sits directly above it.
+#   test_move_actors:64       same shape: the sublevel list is checked, the count is
+#                             narration beside it.
+# The one REAL finding this rule was written from is not here - it was fixed:
+# audit_blender_read_purity now fails when select_edges resolves to nothing.
 
+blender_audit_common.py:114	RULE 5 'objectCount' is printed and never compared - a zero reads the same as a thousand
 test_blender_headless_guard.py:180	NO-COUNTEREXAMPLE over 'fake.seen' - G2 %s sent NOTHING but ping/scene_info
+test_blender_mesh.py:228	RULE 5 'objectCount' is printed and never compared - a zero reads the same as a thousand
 test_cooked_class_trap.py:175	PRESENCE of 'cooked' - T755 every row carries a cooked flag
 test_enums.py:79	T300 and the DIFFERENT authored name the engine assigned
 test_find_tools.py:124	T780 every result's FULL description actually contains the keyword som
@@ -12,6 +26,8 @@ test_list_bones.py:251	T790 every virtual bone has its own generated name
 test_list_bones.py:369	T791 hasDataForLod:false never carries a vertexCount
 test_list_bones.py:92	PRESENCE of 'refPose' - T221 and present when asked for
 test_material_params.py:72	PRESENCE of 'value' - T121 each carries a value
+test_metasound.py:57	RULE 5 'count' is printed and never compared - a zero reads the same as a thousand
+test_move_actors_to_level.py:64	RULE 5 'count' is printed and never compared - a zero reads the same as a thousand
 test_niagara_params.py:131	PRESENCE of 'typeIndex' - T210 typeIndex is reported rather than a type na
 test_niagara_params.py:131	T210 typeIndex is reported rather than a type name
 test_niagara_params.py:196	NO-COUNTEREXAMPLE over 'widths.items()' - T212 one typeIndex always has one width

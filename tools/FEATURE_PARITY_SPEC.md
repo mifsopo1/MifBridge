@@ -15199,12 +15199,72 @@ out-of-process the way ops_gen already does with gen_status.
       Its "exercised: %d/5" denominator was a hardcoded 5 that stayed 5 when the candidate list
       grew - the small version of every stale number this file keeps deleting. Now derived.
 
-- [ ] **the ~12 Blender read ops that need an object are still unprobed for purity**
-      face_info, edge_info, vertex_info, uv_info, modifier_info and the rest take a target, so they
-      cannot go in a list of argument-free candidates. They are the reads most likely to touch
-      something - several evaluate a depsgraph or build a BMesh - so the purity question is sharper
-      for them than for the fifteen just cleared, not softer.
+- [x] **the ~12 Blender read ops that need an object are still unprobed for purity** DONE 2026-09-04
+      Thirteen, not twelve, and closed the same day it was filed. object_info and select_edges were
+      each written out longhand at the bottom of main(), which is exactly why nothing was ever added
+      beside them - there was no list to append to. Folding the pair into OBJECT_CANDIDATES was most
+      of the work. Reach went 17 -> 28 of 29 candidates; the two remaining gaps are printed.
 
-      FILED RATHER THAN COUNTED. 17 of 28 is the honest number and the audit prints its own
-      denominator now, so this gap is visible in its output instead of only here. Needs a fixture
+      TWO DEFECTS FELL OUT, neither visible from the passing side:
+
+        select_edges was VACUOUS. Its selector was boundaryOnly and the audit runs against a cube -
+        a closed mesh has no boundary edges. It had been printing "matched 0 of 12" directly beneath
+        a comment insisting an empty match "would prove nothing about whether a RESOLVED selection
+        mutates". The count was on screen the whole time; what was missing was reading it against
+        the claim next to it. allEdges now, matching 12 of 12.
+
+        list_group_nodes is not an object read at all. It went into the object list on the shape of
+        its name and failed on "unknown param(s) object" - it takes group/tree. Trusting a name over
+        a handler, committed while widening an audit whose entire purpose is not trusting names.
+
+      face_info is probed twice, plain and evaluated=True: the depsgraph-evaluated read is the most
+      plausible mark-leaving read in the addon, so probing only the cheap half would have been
+      decoration. Detector shown firing on a move, a create and a delete, and silent on a restore.
+
+- [~] **build a richer purity fixture for the last two reads**
+      list_bones needs an armature and list_group_nodes needs a node group. Declined: the audit is
+      READ-ONLY and should stay that way - one that creates objects in order to measure whether
+      reads create objects has a far harder story to tell, and the two ops are cheap to eyeball by
+      hand. Both are printed in its output every run, so the reach it reports stays honest at 28 of
+      29 rather than quietly rounded up.
       object built first, which is why it is not folded into the same change.
+
+- [x] **a count that is printed and never compared - generalised into a rule** DONE 2026-09-04
+      select_edges printing "matched 0 of 12" beneath a comment insisting an empty match "would
+      prove nothing" is not a one-off. The mechanical shape is: a field reporting HOW MUCH a call
+      resolved, flowing into a print, with nothing in the function ever comparing it. If nothing
+      compares it, a zero reads exactly like a thousand.
+
+      Added as RULE 5 of audit_vacuous_checks rather than as a new tool - that file already asks
+      exactly this question four other ways and has the baseline machinery for it.
+
+      NOISE MEASURED FIRST, as that file's own docstring demands: 6 candidates across the tools
+      directory, ONE real. Three of the accepted five are informational banners rather than probes,
+      two are guarded on a different expression. One in six against rule 1's one in four - worth it
+      at six lines, and every accepted entry has its reason written into the baseline header.
+
+      THE RULE'S OWN FIRST DRAFT WAS WRONG, and the way it was caught is the point. It counted
+      `r.get("count") or 0` as a guard, which hid one of its own findings. An `or` default supplies
+      a value when the field is missing and says nothing whatever about whether the count is zero.
+      Noticed only because a finding present in the prototype vanished once it was wired in -
+      a detector losing a finding is as informative as one gaining a false positive, and only
+      comparing the two runs shows it.
+
+      Shown firing on a planted vacuous print and going silent when a guard is added. The real
+      finding is fixed, not baselined: audit_blender_read_purity now exits 1 when select_edges
+      resolves to nothing, verified by putting the old selector back.
+
+      And the tool's summary line said "across all four rules" the moment there were five - in the
+      one tool whose job is catching claims that stopped being true. Now derived from the list of
+      rule functions that actually run.
+
+- [ ] **audit_detectors_fire proves ONE rule per multi-rule tool**
+      Its plant table is keyed by filename, so audit_vacuous_checks - which now has five rules - is
+      represented by a single plant exercising rule 4. Rules 1, 2, 3 and 5 have no standing proof
+      that they still fire; each was hand-verified when written and nothing re-checks them.
+
+      This is not specific to that tool: any detector with several independent rules has the same
+      hole, and the harness reports the tool AWAKE on the strength of whichever rule the plant
+      happens to hit. Wants the table keyed by (file, marker) so one tool can carry several plants.
+      Filed rather than fixed because it changes a shared table that every detector entry depends
+      on, and that deserves its own change.

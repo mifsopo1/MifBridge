@@ -183,7 +183,7 @@ def main():
         return 2
     print("baseline: %d mesh object(s): %s" % (len(base), ", ".join(sorted(base))))
 
-    exercised, findings = [], []
+    exercised, findings, vacuous = [], [], []
     for op, params in CANDIDATES:
         before = copy.deepcopy(base)
         r = _call(op, params, timeout=60.0)
@@ -214,8 +214,20 @@ def main():
             continue
         exercised.append(label)
         if op == "select_edges":
-            print("  select_edges matched %s of %s edges on '%s'"
-                  % (r.get("count"), r.get("totalEdges"), first_obj))
+            matched, total = r.get("count"), r.get("totalEdges")
+            print("  select_edges matched %s of %s edges on '%s'" % (matched, total, first_obj))
+            # ASSERTED, not just printed. Changing the selector from boundaryOnly to allEdges made
+            # this resolve today; nothing stopped the NEXT edit making it match zero again, and a
+            # zero here means the op was never exercised while the audit still reports OK. The
+            # count had been on screen reading 0 for this audit's whole life - printing a number is
+            # not checking it.
+            if not matched:
+                # ITS OWN LIST, not findings. A selector that resolved to nothing is not a read
+                # that moved the mesh, and filing it under that heading would have told the next
+                # reader a false story about which defect they were looking at.
+                vacuous.append("select_edges matched 0 of %s edges on '%s' - the op was never "
+                               "exercised, so 'it left the mesh alone' is not a result"
+                               % (total, first_obj))
         d = diff_snapshots(before, after)
         if d:
             findings.append((label, d))
@@ -241,12 +253,19 @@ def main():
     # small version of every stale number this repo keeps deleting.
     print("exercised: %d of %d candidate(s) (%s)"
           % (len(exercised), len(CANDIDATES) + len(OBJECT_CANDIDATES), ", ".join(exercised)))
+    if vacuous:
+        print("")
+        print("PROBED WITH A SELECTOR THAT RESOLVED TO NOTHING:")
+        for line in vacuous:
+            print("  " + line)
     if findings:
         print("")
         print("READ OPS THAT MOVED THE MESH:")
         for op, d in findings:
             for name, field, bv, av in d:
                 print("  %-14s %-20s %-16s %r -> %r" % (op, name, field, bv, av))
+        return 1
+    if vacuous:
         return 1
     print("OK  every exercised op left every mesh object's geometry and transform unchanged")
     return 0

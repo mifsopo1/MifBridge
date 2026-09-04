@@ -40,6 +40,24 @@ the alternative is two hundred lines nobody reads.
 Presence is sometimes genuinely the contract - "the response carries a warning field" is a real thing
 to test. Those live in the baseline.
 
+RULE 5 - A COUNT THAT IS PRINTED AND NEVER COMPARED. On 2026-09-04 audit_blender_read_purity was
+found asking select_edges for a selection, printing "matched 0 of 12", and reporting OK. Its
+selector was boundaryOnly and the mesh it runs against is a cube - a closed mesh has no boundary
+edges - so the op it existed to probe had never once been exercised. The count was on screen the
+entire time, directly beneath a comment insisting that an empty match "would prove nothing". Nobody
+read the number against the claim beside it.
+
+The detectable shape is narrow: a response field that reports HOW MUCH something resolved or
+affected, flowing into a print, with no comparison or truthiness test on that field anywhere in the
+same function. If nothing compares it, a zero reads exactly like a thousand.
+
+NOISE, measured before this was wired in: 6 candidates across 89 files, of which ONE was real - the
+select_edges site above, which stayed real even after its selector was fixed, because a later edit
+could make it vacuous again in silence. Of the five accepted, three are informational banners
+rather than probes and two are guarded on a different expression (`if not assets: return 2` above
+a print of `count`). One in six is worse than rule 1's one in four and still worth it at this
+volume: six lines to read once, and a NEW one is a thing somebody has to look at.
+
 RULE 4 - A CHECKER THAT NEVER RUNS. The three rules above ask whether an assertion proves anything.
 The fourth asks it of the tools in this directory. On 2026-08-31 a check was added to
 mcp_static_check and wired in AFTER main()'s `if not findings: return 0`, so it executed only on runs
@@ -243,7 +261,7 @@ def baseline_key(entry):
 
     AND THE NARROWING IS WIDER THAN "MATCHING TEXT", which is worth being precise about: the label
     stored in an entry is TRUNCATED at the point it is written - 70, 48 or 44 characters depending
-    on which of the four rules produced it - so the collision window is a matching PREFIX, not a
+    on which of the rules produced it - so the collision window is a matching PREFIX, not a
     matching assertion.
 
     MEASURED 2026-09-03 rather than argued about, after a review raised it: across the 22 baseline
@@ -380,14 +398,109 @@ def unreachable_findings():
     return sorted(set(rows))
 
 
+# Fields that say HOW MUCH a call resolved or affected. A zero in one of these means the thing
+# under test did not happen, which is the difference between a passing check and no check at all.
+# Kept to fields whose whole job is reporting an amount - a "name" or "path" being printed
+# unchecked is not this bug.
+_COUNT_FIELDS = frozenset((
+    "count", "matched", "matchedCount", "selectedCount", "totalEdges", "removedCount",
+    "affectedCount", "changedCount", "alsoChangedCount", "updated", "added", "removed",
+    "createdCount", "rowsWritten", "objectCount",
+))
+
+
+def _get_field(node):
+    """'count' for a `<expr>.get("count")` call, else None."""
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get" and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)):
+        return node.args[0].value
+    return None
+
+
+def _fields_tested_in(func):
+    """Every .get("field") that any comparison or truthiness test in this function looks at.
+
+    A truthiness test counts. `if not matched:` and `if matched > 0:` are the same assertion for
+    this purpose, and treating only Compare as a guard would flag the correct fix for the very bug
+    this rule was written from.
+    """
+    out = set()
+
+    def collect(expr):
+        for sub in ast.walk(expr):
+            f = _get_field(sub)
+            if f:
+                out.add(f)
+            if isinstance(sub, ast.Name):
+                out.add(sub.id)
+
+    for n in ast.walk(func):
+        if isinstance(n, ast.Compare):
+            collect(n)
+        elif isinstance(n, (ast.If, ast.Assert, ast.While, ast.IfExp)):
+            collect(n.test)
+        # ast.BoolOp is DELIBERATELY NOT HERE. `r.get("count") or 0` reads like a guard and is a
+        # fallback - it supplies a default when the field is missing and says nothing whatever
+        # about whether the count is zero. Counting it hid the first version of this rule's own
+        # banner finding, which is how the omission was noticed.
+    return out
+
+
+def uncompared_count_findings():
+    """A count read into a print, with nothing in the function ever comparing it."""
+    rows = []
+    for fn in sorted(os.listdir(HERE)):
+        if not fn.endswith(".py"):
+            continue
+        try:
+            src = io.open(os.path.join(HERE, fn), encoding="utf-8", errors="replace").read()
+            tree = ast.parse(src, filename=fn)
+        except (SyntaxError, ValueError):
+            continue
+        for func in ast.walk(tree):
+            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            tested = _fields_tested_in(func)
+            for n in ast.walk(func):
+                if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                        and n.func.id == "print"):
+                    continue
+                for sub in ast.walk(n):
+                    f = _get_field(sub)
+                    if f in _COUNT_FIELDS and f not in tested:
+                        rows.append("%s:%d\tRULE 5 '%s' is printed and never compared - a zero "
+                                    "reads the same as a thousand" % (fn, sub.lineno, f))
+    return sorted(set(rows))
+
+
 def main():
-    found = (findings() + presence_findings() + counterexample_findings()
-             + unreachable_findings())
+    # ONE LIST, so the rule count below is derived from what actually runs. The alternative -
+    # a number typed into a print - is what put "all four rules" in this tool's own output on the
+    # day rule 5 was added.
+    rules = (findings, presence_findings, counterexample_findings,
+             unreachable_findings, uncompared_count_findings)
+    found = []
+    for rule in rules:
+        found += rule()
     if "--update-baseline" in sys.argv:
         body = ["# Accepted vacuous-check candidates. Each was READ and judged acceptable - usually a",
                 "# filtered subset that may legitimately be empty. Regenerate with --update-baseline",
                 "# only after reading the new entries; the point of the baseline is that a NEW one is",
-                "# a thing somebody has to look at.", ""]
+                "# a thing somebody has to look at.",
+                "#",
+                "# The four RULE 5 entries, read on 2026-09-04 when the rule was added:",
+                "#   blender_audit_common:114  the identity banner. It REPORTS what answered, it does",
+                "#                             not assert anything, so there is no check to be vacuous.",
+                "#   test_blender_mesh:228     objectCount is type-checked by a check() three lines",
+                "#                             above; the print is a restatement, not the assertion.",
+                "#   test_metasound:57         guarded on a different expression - `if not assets:",
+                "#                             return 2` sits directly above it.",
+                "#   test_move_actors:64       same shape: the sublevel list is checked, the count is",
+                "#                             narration beside it.",
+                "# The one REAL finding this rule was written from is not here - it was fixed:",
+                "# audit_blender_read_purity now fails when select_edges resolves to nothing.", ""]
         io.open(BASELINE, "wb").write(("\r\n".join(body + sorted(found)) + "\r\n").encode("utf-8"))
         print("baseline updated: %d entry(ies)" % len(found))
         return 0
@@ -426,8 +539,10 @@ def main():
     base = set() if show_all else load_baseline()
     new = [f for f in found if baseline_key(f) not in base]
     if not new:
-        print("checks OK - %d candidate(s) across all four rules, none new against the baseline"
-              % len(found))
+        # DERIVED, not typed. This said "all four rules" the moment rule 5 existed - in the one
+        # tool in the repo whose job is catching claims that stopped being true.
+        print("checks OK - %d candidate(s) across all %d rules, none new against the baseline"
+              % (len(found), len(rules)))
         return 0
     print("%d assertion(s) not in the baseline that may prove nothing:" % len(new))
     for f in sorted(new):
@@ -440,6 +555,8 @@ def main():
     print("rows passed a green check. Assert the VALUE, or add a companion check that does.")
     print("RULE 3 - NO-COUNTEREXAMPLE asserts an empty list of offenders. `not []` is also True")
     print("when the source held nothing to examine, which is the case it exists to rule out.")
+    print("RULE 5 - a COUNT that is printed and never compared. A selector matching 0 reads")
+    print("         exactly like one matching everything, and the op is never exercised.")
     print("RULE 4 - a CHECKER placed after main()'s `return 0` runs only when something else")
     print("already failed. The finder can be perfect and never execute; mutation-test the entry")
     print("point, not the function.")
