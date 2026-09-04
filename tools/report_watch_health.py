@@ -188,6 +188,35 @@ def check_capability():
     if not shutil.which("claude"):
         problem("`claude` is not on PATH - reports would be NOTICED and no agent could be spawned",
                 "fix PATH, or the watcher is only a logger")
+    else:
+        # BEING ON PATH IS NOT BEING ABLE TO RUN. Found by the #4 self-test on 2026-09-04: the
+        # watcher spawned an agent perfectly, and the agent could not reach the API at all because
+        # the CLI has no credentials of its own - the interactive sessions on this machine are
+        # authenticated by the Claude desktop app, which a scheduled task cannot borrow from. It
+        # burned an hour looking busy and did nothing.
+        #
+        # `claude auth status` answers this in JSON, costs no tokens and needs no terminal, which is
+        # what makes it checkable at all. Before this, the only way to discover it was to file a
+        # report and wait.
+        # PARSED REGARDLESS OF EXIT CODE, and the first draft got this wrong in the funniest
+        # possible way: `claude auth status` exits NON-ZERO when it is not logged in, so gating the
+        # parse on success skipped the one case this check exists to find. It reported OK while the
+        # JSON sitting in its own hand said loggedIn: false. The exit code is a second opinion here,
+        # not the answer - the answer is in the payload.
+        _ok_auth, out_auth = sh(["claude", "auth", "status"], timeout=60)
+        logged_in = None
+        try:
+            logged_in = json.loads(out_auth).get("loggedIn")
+        except ValueError:
+            NOTES.append("could not parse `claude auth status` (%s) - login state unknown"
+                         % out_auth[:60])
+        if logged_in is False:
+            problem("the `claude` CLI is NOT LOGGED IN, so a spawned agent cannot reach the API. "
+                    "Reports would be noticed, queued, reproduced - and then nothing. This is not "
+                    "visible from an interactive session, which is authenticated by the desktop app "
+                    "rather than by the CLI.",
+                    "run `claude /login` (or `claude setup-token`) once in a terminal - it is an "
+                    "interactive login and has to be done by a person")
 
 
 # --------------------------------------------------------------------------- 5. is it behind?
