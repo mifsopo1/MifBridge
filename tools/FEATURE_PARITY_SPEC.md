@@ -14621,3 +14621,25 @@ out-of-process the way ops_gen already does with gen_status.
       Found by sweeping all 26 ops that take a path-shaped parameter. Most of the apparent gaps were
       `dataPath` - a property path, not a file - which is what matching on the word "path" gets you,
       and why the sweep was read rather than acted on directly.
+
+- [x] **every op that writes a file did the work before discovering it could not save** DONE 2026-09-04
+      The .exr was not one op's problem. Probing all five ops that write a file with a path
+      containing a NUL, on 5.0.1:
+
+        bake_texture   ran the whole bake, then RuntimeError out of image.save_render
+        export_mesh    ran the FBX export, then RuntimeError with a Python traceback
+        export_scene   caught it and pasted the traceback into its own message
+        render_still   fixed earlier the same day
+        save_file      already refused with a sentence
+
+      Each does the expensive part first and then fails inside Blender, so the caller gets a bare
+      exception where every other refusal here is a sentence - and where the format can be written
+      to a relative path, no failure at all, just a file named after the extension in the working
+      directory.
+
+      check_output_path moved to ops_common and is called by all five BEFORE the work. Shared rather
+      than copied because the failure is not local to any one of them: set_render_settings STORES a
+      path that render_still USES.
+
+      Verified both ways - every op refuses with a sentence and writes nothing, and the matrix still
+      reaches 143/144/144/144, so the good paths still export, bake and render.
