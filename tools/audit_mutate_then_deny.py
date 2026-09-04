@@ -27,10 +27,15 @@ finding while the defect sits three lines away. Measured, not assumed - the chec
 set_light defect was restored underneath it, and it reported zero. It was removed rather than kept as
 decoration. Reading the source has no such blind spot: the write is above the raise or it is not.
 
-WHAT COUNTS AS A MUTATION. An attribute assignment (`obj.location = ...`, `data.type = ...`), a
-`.new()` on a bpy.data collection, or a `.link()`. Deliberately NOT every call named new/remove/clear:
-`bmesh.new()` builds a scratch mesh that touches nothing until `to_mesh`, and counting it would bury
-the real findings in noise. Subscript targets (`out["x"] = ...`) are locals by construction.
+WHAT COUNTS AS A MUTATION. An attribute assignment (`obj.location = ...`), a setattr() (the only way
+an availability table can write one), a `.new()` or `.link()` on a bpy.data collection, a `.remove()`
+of something this op did NOT create, and a call to a helper that does any of those.
+
+AND WHAT DOES NOT, each for a reason that cost a false finding. `bmesh.new()` builds a scratch mesh
+that touches nothing until `to_mesh`. `os.remove()` on the op's own probe file is housekeeping, not
+scene state. A `.remove()` of something created a few lines up is an UNDO, which is the opposite of
+a mutation. Subscript targets (`out["x"] = ...`) are locals by construction - which is also why
+set_custom_property, whose product is `obj[key] = value`, is one of the 16 this cannot judge.
 
 MUTUALLY EXCLUSIVE BRANCHES ARE NOT FINDINGS. This is the check's main precision feature and the
 reason it is an AST walk rather than a grep:
@@ -44,18 +49,22 @@ the raise is lexically after the write and can never follow it. Every node is ta
 branch path it sits under, and a mutation/raise pair that diverges at any `if`, `try` or `for` is
 skipped. Without this the audit reported dozens of pairs that cannot co-occur.
 
-WHAT IT CANNOT SEE, and the number is printed on every run rather than buried here. 103 ops promise
-something about state and a write is visible in 74 of them. The other 29 are UNJUDGED, which is not
-the same as clean, and a gate at zero over an unmeasured surface is the exact failure this project
-keeps naming - the matrix prints REACH beside its findings for the same reason.
+WHAT IT CANNOT SEE, printed on every run rather than buried here, because a gate at zero over an
+unmeasured surface is the exact failure this project keeps naming. 103 ops promise something about
+state and a write is visible in 87. The other 16 are UNJUDGED, which is not the same as clean, and
+--reach names them.
 
-Most of the 29 are ops whose PRODUCT is a removal: delete_keyframe, remove_driver,
-remove_constraint, unlink_objects. `.remove()` is deliberately read as the UNDO signal by
-_undone_before, so an op that removes for a living has no write this design can see. That is a real
-limit rather than an oversight, and --reach lists every one of them.
+THREE HOLES HAVE BEEN CLOSED AND THE REMAINDER IS A DIFFERENT SHAPE. A write inside a callee
+(`_place(obj, params)` hid the original defect); a REMOVAL that is the op's product rather than an
+undo, which had left every delete_/remove_/unlink_ op unjudged while .remove() was read only as the
+undo signal; and setattr(), which is how an availability table writes - set_light_shadow and
+set_material_settings never name their attributes in source, so ops whose whole job is writing
+properties were invisible.
 
-A write inside a callee used to be the other hole - `_place(obj, params)` hid exactly this defect
-until the parse was split out - and is now covered: a call to a helper that writes counts as a write.
+What is left mutates through bpy.ops (apply_transform, clean_mesh, bisect_plane), through a
+subscript on a datablock (set_custom_property's `obj[key] = value`), or in a subprocess
+(render_animation). Each would need a different rule, and a rule per op is how an audit becomes a
+list of special cases.
 """
 import argparse
 import ast
@@ -139,8 +148,53 @@ def _is_restore(node):
     return False
 
 
-def _is_mutation(node):
+_CREATE_HINTS = ("new", "create", "add", "append", "load", "copy", "duplicate")
+
+
+def _locally_created(fn):
+    """Names bound from something that CREATES, so a later .remove() of one is an undo.
+
+    `node = tree.nodes.new(...)` binds `node`; removing it before a refusal is putting things back.
+    Removing a name that came from a lookup is not - it is the op doing its job, and 29 ops that
+    remove for a living had no visible write at all while .remove() was read only as an undo.
+    """
+    made = set()
+    for stmt in ast.walk(fn):
+        if not isinstance(stmt, ast.Assign):
+            continue
+        for sub in ast.walk(stmt.value):
+            if isinstance(sub, ast.Call):
+                attr = getattr(sub.func, "attr", None) or getattr(sub.func, "id", "") or ""
+                if any(h in attr.lower() for h in _CREATE_HINTS):
+                    for tgt in stmt.targets:
+                        if isinstance(tgt, ast.Name):
+                            made.add(tgt.id)
+    return made
+
+
+def _is_mutation(node, made=()):
     """Does this statement write state a caller could observe? Returns a label or None."""
+    if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+        call = node.value
+        # setattr() IS an attribute assignment, written the only way an availability table can write
+        # one. set_light_shadow, set_material_settings and set_render_settings drive their writes
+        # from a {param: (attr, types, builds)} map and never name the attribute in source, so a
+        # rule that only saw `x.y = z` was blind to every op built that way - and those are exactly
+        # the ops whose whole job is writing lots of properties.
+        if isinstance(call.func, ast.Name) and call.func.id == "setattr" and len(call.args) >= 2:
+            return "setattr(%s, ...)" % (_dotted(call.args[0])
+                                         or getattr(call.args[0], "id", "<expr>"))
+        if isinstance(call.func, ast.Attribute) and call.func.attr in CLEANUP and call.args:
+            # os.remove() is housekeeping on a temp file, not a change to the scene.
+            # render_animation writes a probe, deletes it, and was credited with a mutation for it.
+            if (_dotted(call.func) or "").startswith(("os.", "shutil.", "pathlib.")):
+                return None
+            arg = call.args[0]
+            # Removing something this op MADE is an undo, and _undone_before already reads it that
+            # way. Removing anything else is the write the caller asked for.
+            if not (isinstance(arg, ast.Name) and arg.id in made):
+                return "%s() removes" % (_dotted(call.func) or call.func.attr)
+            return None
     if isinstance(node, (ast.Assign, ast.AugAssign)):
         if isinstance(node, ast.Assign) and _is_restore(node):
             return None
@@ -378,9 +432,6 @@ def _removed_names(fn):
     return names
 
 
-_CREATE_HINTS = ("new", "create", "add", "append", "load", "copy", "duplicate")
-
-
 def _looks_like_creation(stmt):
     """Any sign at all that this statement built something. Deliberately generous - see the module
     comment on _positive_claim: this test only suppresses mirror findings, so erring wide costs a
@@ -415,12 +466,42 @@ def _positive_claim(node):
     return " ".join(joined.split()) if hit else None
 
 
+def _progress_names(fn):
+    """Counters and flags the op updates as it works: `removed += 1`, `did = True`.
+
+    A refusal guarded by one of these cannot follow the write that moves it. delete_keyframe removes
+    in a loop and refuses `if removed == 0`; the UE audit met the same shape as `if (!bDidMutate)`
+    and this is the Python spelling, with an integer instead of a bool.
+    """
+    names = set()
+    for node in ast.walk(fn):
+        if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+        elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) \
+                and isinstance(node.value.value, bool):
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name):
+                    names.add(tgt.id)
+    return names
+
+
+def _guarded_by_progress(rstmt, blocks_by_stmt, progress):
+    """Is this refusal behind a test of a counter or flag the op advances as it writes?"""
+    guard = blocks_by_stmt.get(id(rstmt))
+    if guard is None:
+        return False
+    for sub in ast.walk(guard):
+        if isinstance(sub, ast.Name) and sub.id in progress:
+            return True
+    return False
+
+
 def _ends_terminal(body):
     """Does this branch always leave the function - so nothing after it can run?"""
     return bool(body) and isinstance(body[-1], (ast.Return, ast.Raise, ast.Continue, ast.Break))
 
 
-def _walk_body(body, path, out, terminal, owner, finals, rollbacks):
+def _walk_body(body, path, out, terminal, owner, finals, rollbacks, guards=None, guard=None):
     """Tag every statement with the branch path it sits under, so exclusivity is decidable.
 
     `path` is a list of (node id, which-branch) pairs. Two statements can both run only if neither
@@ -432,15 +513,20 @@ def _walk_body(body, path, out, terminal, owner, finals, rollbacks):
     paths alone call that a finding, because the raise is at the function's top level and never
     diverges from the write - it is the RETURN that separates them, not the branch.
     """
+    if guards is None:
+        guards = {}
     for stmt in body:
         out.append((stmt, tuple(path)))
         owner[id(stmt)] = body
+        if guard is not None:
+            guards[id(stmt)] = guard
         if isinstance(stmt, ast.FunctionDef):
             continue  # a nested def is a separate scope, judged on its own
         if isinstance(stmt, ast.If):
             for key, sub in (("then", stmt.body), ("else", stmt.orelse)):
                 terminal[(id(stmt), key)] = _ends_terminal(sub)
-                _walk_body(sub, path + [(id(stmt), key)], out, terminal, owner, finals, rollbacks)
+                _walk_body(sub, path + [(id(stmt), key)], out, terminal, owner, finals, rollbacks,
+                           guards, stmt.test if key == "then" else guard)
         elif isinstance(stmt, ast.Try):
             finals[(id(stmt), "try")] = _finally_restores(stmt)
             rollbacks[(id(stmt), "try")] = _except_rolls_back(stmt)
@@ -448,14 +534,14 @@ def _walk_body(body, path, out, terminal, owner, finals, rollbacks):
                              + [("except%d" % i, h.body) for i, h in enumerate(stmt.handlers)]
                              + [("orelse", stmt.orelse), ("finally", stmt.finalbody)]):
                 terminal[(id(stmt), key)] = _ends_terminal(sub)
-                _walk_body(sub, path + [(id(stmt), key)], out, terminal, owner, finals, rollbacks)
+                _walk_body(sub, path + [(id(stmt), key)], out, terminal, owner, finals, rollbacks, guards, guard)
         elif isinstance(stmt, (ast.For, ast.While)):
             # A loop body can run then fall through to a later raise, so it is NOT exclusive with
             # code after the loop - but two different iterations are not a divergence either.
-            _walk_body(stmt.body, path, out, terminal, owner, finals, rollbacks)
-            _walk_body(stmt.orelse, path, out, terminal, owner, finals, rollbacks)
+            _walk_body(stmt.body, path, out, terminal, owner, finals, rollbacks, guards, guard)
+            _walk_body(stmt.orelse, path, out, terminal, owner, finals, rollbacks, guards, guard)
         elif isinstance(stmt, ast.With):
-            _walk_body(stmt.body, path, out, terminal, owner, finals, rollbacks)
+            _walk_body(stmt.body, path, out, terminal, owner, finals, rollbacks, guards, guard)
 
 
 def _exclusive(a, b, terminal):
@@ -635,15 +721,17 @@ def scan_source(name, src):
         removed = _removed_names(fn)
         scratch_until = _bmesh_scratch_before(fn)
         put_back = _restored_in_handlers(fn)
-        stmts, terminal, owner, finals, rollbacks = [], {}, {}, {}, {}
-        _walk_body(fn.body, [], stmts, terminal, owner, finals, rollbacks)
+        stmts, terminal, owner, finals, rollbacks, guards = [], {}, {}, {}, {}, {}
+        _walk_body(fn.body, [], stmts, terminal, owner, finals, rollbacks, guards)
 
         # A CALL TO A HELPER THAT WRITES IS A WRITE. The UE twin went blind to a whole file this
         # way - eleven IKRig endpoints wrapping every write in one helper - and here it hid three:
         # op_set_keyframe delegating to _apply_interpolation, and both particle ops to
         # _apply_particle_settings. The helper is judged on its own too; this is about where the
         # CALLER puts the call relative to its own refusal.
-        mutations = [(s, p, _is_mutation(s) or _mutating_call(s, writers)) for s, p in stmts]
+        made = _locally_created(fn)
+        progress = _progress_names(fn)
+        mutations = [(s, p, _is_mutation(s, made) or _mutating_call(s, writers)) for s, p in stmts]
         mutations = [(s, p, m) for s, p, m in mutations if m
                      and m.split(".")[0] not in removed
                      and not (scratch_until is not None and s.lineno < scratch_until)
@@ -703,7 +791,10 @@ def scan_source(name, src):
                     continue
                 if rstmt.lineno <= mstmt.lineno or _exclusive(mpath, rpath, terminal):
                     continue
-                if _restored_by_finally(mpath, rpath, finals)                         or _rolled_back_by_except(mpath, rpath, rollbacks):
+                if (_restored_by_finally(mpath, rpath, finals)
+                        or _rolled_back_by_except(mpath, rpath, rollbacks)):
+                    continue
+                if _guarded_by_progress(rstmt, guards, progress):
                     continue
                 (findings if _is_state_claim(claim) else scoped).append({
                     "file": name, "func": fn.name, "wrote": label, "via": helper,
@@ -786,6 +877,40 @@ def op_probe(params):
     scene.frame_start = 5
     if bad:
         raise MifOpError("bad. NOTHING was changed to the preview range.")
+"""),
+    ("removal that is the op's product", True, """
+def op_probe(params):
+    fc.keyframe_points.remove(kp)
+    if bad:
+        raise MifOpError("bad. NOTHING was changed.")
+"""),
+    ("removal of something this op made", False, """
+def op_probe(params):
+    node = tree.nodes.new("ShaderNodeMath")
+    if bad:
+        tree.nodes.remove(node)
+        raise MifOpError("bad. NOTHING was changed.")
+"""),
+    ("guarded by a progress counter", False, """
+def op_probe(params):
+    removed = 0
+    for kp in points:
+        fc.keyframe_points.remove(kp)
+        removed += 1
+    if removed == 0:
+        raise MifOpError("none matched. NOTHING was deleted.")
+"""),
+    ("setattr counts as a write", True, """
+def op_probe(params):
+    setattr(data, attr, value)
+    if bad:
+        raise MifOpError("bad. NOTHING was changed.")
+"""),
+    ("os.remove is not a scene write", False, """
+def op_probe(params):
+    os.remove(probe)
+    if bad:
+        raise MifOpError("bad. NOTHING was changed.")
 """),
     ("scratch bmesh", False, """
 def op_probe(params):
@@ -885,7 +1010,8 @@ def reach():
             if not any(_claim_text(s) or _refusing_calls(s, helpers, set()) for s, _p in stmts):
                 continue
             promising += 1
-            if any(_is_mutation(s) or _mutating_call(s, writers) for s, _p in stmts):
+            if any(_is_mutation(s, _locally_created(fn)) or _mutating_call(s, writers)
+                   for s, _p in stmts):
                 judged += 1
             else:
                 blind.append((fname, fn.name))
@@ -929,9 +1055,9 @@ def main():
     promising, judged, blind = reach()
     print("REACH - %d op(s) promise something about state; a write is visible in %d."
           % (promising, judged))
-    print("        %d are UNJUDGED, not clean - mostly ops whose PRODUCT is a removal, because"
+    print("        %d are UNJUDGED, not clean - they write through bpy.ops, a subscript on a"
           % len(blind))
-    print("        .remove() is read as the undo signal. A gate at zero needs this line beside it.")
+    print("        datablock, or a subprocess. A gate at zero needs this line beside it.")
     if args.reach:
         print("")
         print("UNJUDGED OPS (%d):" % len(blind))
