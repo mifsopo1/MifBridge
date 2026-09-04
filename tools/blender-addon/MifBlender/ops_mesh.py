@@ -84,8 +84,8 @@ import bmesh
 import bpy
 from mathutils import Vector
 
-from .ops_common import (MifOpError, UU_PER_BU, axis_index, check_output_path, get_object,
-                         mesh_counts, object_info, reject_unknown, rnd, select_only,
+from .ops_common import (MifOpError, UU_PER_BU, axis_index, check_output_path, finite_floats,
+                         get_object, mesh_counts, object_info, reject_unknown, rnd, select_only,
                          selection_restore, selection_snapshot, take, take_bool, take_float,
                          take_int)
 
@@ -1947,12 +1947,15 @@ def op_uv_unwrap(params):
 
         def _pair(key, default):
             v = transform.get(key, default)
+            # THE isinstance CHECK DOES NOT EXCLUDE NaN, because a NaN IS a float. A NaN scale or
+            # offset lands on the UV layer and every coordinate it touches becomes nan - and the
+            # unwrap that follows reports success over a layer that is now unusable.
             if isinstance(v, (int, float)) and not isinstance(v, bool):
-                return (float(v), float(v))
+                return tuple(finite_floats([v, v], "uvTransform.%s" % key))
             if not isinstance(v, (list, tuple)) or len(v) != 2 \
                     or any(not isinstance(x, (int, float)) or isinstance(x, bool) for x in v):
                 raise MifOpError("uvTransform.%s must be a number or [u,v]; got %r" % (key, v))
-            return (float(v[0]), float(v[1]))
+            return tuple(finite_floats(v, "uvTransform.%s" % key))
 
         sx, sy = _pair("scale", 1.0)
         ox, oy = _pair("offset", 0.0)

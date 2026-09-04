@@ -35,9 +35,9 @@ import hashlib
 
 import bpy
 
-from .ops_common import (MifOpError, check_axis_dict, get_object, mesh_counts, reject_unknown,
-                         rnd, select_only, selection_restore, selection_snapshot, take, take_bool,
-                         take_float, take_int)
+from .ops_common import (MifOpError, check_axis_dict, finite_floats, get_object, mesh_counts,
+                         reject_unknown, rnd, select_only, selection_restore, selection_snapshot,
+                         take, take_bool, take_float, take_int)
 
 
 def _bone_dict(bone):
@@ -1289,9 +1289,11 @@ def op_set_bone_pose(params):
             # with .get(axis, 0.0) turns {"mif":"typo"} into a zero vector - or a zero QUATERNION,
             # which is not even a rotation - and reports success.
             check_axis_dict(v, key, order)
-            return [float(v.get(k, 0.0)) for k in order]
+            # FINITE TOO. A NaN quaternion is not a rotation any more than a zero one is, and it
+            # reads back as nan while every field in the response agrees the pose was set.
+            return finite_floats([v.get(k, 0.0) for k in order], key)
         if isinstance(v, (list, tuple)) and len(v) == n:
-            return [float(x) for x in v]
+            return finite_floats(v, key)
         raise MifOpError("'%s' must be a %d-list%s, got %r. NOTHING was changed."
                          % (key, n, " or {x,y,z}" if n == 3 else " or {w,x,y,z}", v))
 
