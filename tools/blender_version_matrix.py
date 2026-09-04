@@ -199,7 +199,13 @@ PAYLOADS = {
     "bake_to_keyframes": {"object": "MifBake", "frameStart": 1, "frameEnd": 5},
     "add_driver": {"object": "Cube", "path": "scale", "index": 0, "expression": "1.0"},
     "remove_driver": {"object": "Cube", "path": "scale", "index": 0},
-    "add_nla_strip": {"object": "MifAnim", "action": "MifMatrixAction"},
+    # THE TRACK IS NAMED so set_nla_track below can address it - and naming it exercises
+    # add_nla_strip's own create-if-absent path, which the unnamed payload never did.
+    "add_nla_strip": {"object": "MifAnim", "action": "MifMatrixAction",
+                      "track": "MifTrack"},
+    # add_nla_strip runs at 'a' and creates the track this addresses. mute rather than solo,
+    # because solo is exclusive and would silence tracks other fixtures may rely on.
+    "set_nla_track": {"object": "MifAnim", "track": "MifTrack", "mute": True},
     # ITS OWN OBJECT. Pointed at Cube this REPLACED the action holding the f-curve fixture, so
     # delete_keyframe, edit_fcurve and move_keyframes - all later alphabetically - then refused
     # with "no fcurve". The same shape as join_objects eating MifSpare, one family over.

@@ -5162,6 +5162,14 @@ def bl_set_camera_panorama(object: str, panorama_type: str = None, fisheye_fov: 
 
 
 @mcp.tool()
+def bl_set_nla_track(object: str, track: str, mute: bool = None, solo: bool = None,
+                     lock: bool = None, rename: str = None) -> dict:
+    "Mute, SOLO, lock or rename an NLA track. bl_list_animation_data reported a track's mute and nothing could write it, so a track could be built and never silenced - that is the small half. THE LARGE HALF IS SOLO, AND THE READ SIDE WAS MISLEADING ABOUT IT: setting solo on one track silences every OTHER track's contribution while each of them still reports mute:false. Measured on 3.6.23, 4.2.17, 4.4.0 and 5.0.1 - two tracks moving a cube to z=-5 and z=+5, evaluated at frame 10, give -5 with both live and +5 with the first soloed, and nothing on the second track says why it stopped contributing. So a caller reading every track, seeing every one unmuted, and asking why only one plays had no field that could answer. isSolo is now reported per track, and this op names the soloed track and lists silencedBySolo. Solo is EXCLUSIVE and Blender clears it on the others itself, so the response reports which track ended up soloed rather than assuming it is this one."
+    return _blender("set_nla_track", object=object, track=track, mute=mute, solo=solo,
+                    lock=lock, rename=rename)
+
+
+@mcp.tool()
 def bl_add_nla_strip(object: str, action: str, track: str = None, start: int = None,
                      strip_name: str = None, blend_type: str = None, influence: float = None,
                      push_down_active: bool = None) -> dict:

@@ -13774,7 +13774,7 @@ out-of-process the way ops_gen already does with gen_status.
       protecting it moves survivesSave False to True with useFakeUser and users both in
       changedFields (Blender counts the fake user as a user); rename works; and two refusals fire.
 
-- [ ] **an NLA track's mute is reported and not writable**
+- [x] **an NLA track's mute is reported and not writable** DONE 2026-09-04
       Found in the same pass and left rather than bundled. list_keyframes reports mute per NLA
       track; nothing writes it, and a muted track keeps its strips and does nothing - the same
       reads-back-perfectly-does-nothing shape as an unprotected action. It needs track addressing
@@ -13808,3 +13808,33 @@ out-of-process the way ops_gen already does with gen_status.
       had moved when only its label had. Tracked as an event now, set where the assignment happens.
 
       Verified on 3.6.23 and 5.0.1 across seven cases, four of them refusals.
+
+      MY OWN DEFERRAL REASON WAS WRONG. I filed this as needing "track addressing that no op
+      currently has", saying add_nla_strip creates tracks without naming them for later. It takes a
+      `track` name and creates it if absent - it always did. Reading the op instead of remembering
+      it would have taken thirty seconds, and the item would not have been deferred at all.
+
+      MUTE WAS THE SMALL HALF. The large half is SOLO, and the read side was actively misleading
+      about it. Setting is_solo on one track silences every OTHER track's contribution while each of
+      them still reports mute:false and is_solo:false. Measured on 3.6.23, 4.2.17, 4.4.0 and 5.0.1:
+      two tracks moving a cube to z=-5 and z=+5, evaluated at frame 10, give -5 with both live and
+      +5 with the first soloed - the second track's contribution is gone and nothing about it says
+      so. A caller reading every track, seeing every one unmuted, and asking why only one plays had
+      no field that could answer.
+
+      Both sides fixed together: _anim_summary reports isSolo and lock per track, and set_nla_track
+      writes mute, solo, lock and rename. Solo is EXCLUSIVE and Blender clears it on the others
+      itself, so the response reads back across the whole stack and reports which track ended up
+      soloed rather than assuming it is the one that was written, plus silencedBySolo listing the
+      tracks that now contribute nothing while reporting mute:false.
+
+      The 5.0 leg of that measurement failed first, and it was MY probe: Action.fcurves is gone in
+      Blender 5.0 (slotted actions) and I had built the test animation with it. The addon already
+      handles that - _action_curves walks layers/strips/channelbags and its comment says why - so
+      the probe was rewritten to build its actions through the addon's own ops, and 5.0 then agreed
+      with the other three.
+
+      Verified on 3.6.23 and 5.0.1: mute, solo with silencedBySolo naming both other tracks, lock
+      and rename together, and three refusals. In the matrix on every build, with add_nla_strip's
+      payload now naming its track - which also exercises that op's create-if-absent path for the
+      first time.

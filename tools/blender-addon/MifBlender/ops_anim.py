@@ -443,6 +443,13 @@ def _anim_summary(label, holder):
         tracks.append({
             "name": tr.name,
             "mute": bool(tr.mute),
+            # SOLO SILENCES EVERY OTHER TRACK while each of them still reports mute:false.
+            # Measured on all four builds: two tracks moving a cube to -5 and +5 evaluate to
+            # -5 with both live and +5 with the first soloed, and the second track says
+            # nothing about it. Reporting mute alone made this op actively misleading -
+            # every track unmuted, one playing, no field that could explain it.
+            "isSolo": bool(tr.is_solo),
+            "lock": bool(tr.lock),
             "strips": [{"name": s.name,
                         "action": s.action.name if s.action else None,
                         "frameStart": round(float(s.frame_start), 4),
@@ -1852,9 +1859,106 @@ def op_set_action(params):
                   "keeps it." if not before["survivesSave"] else None)),
     }
 
+
+_NLATRACK_KEYS = {"object", "name", "track", "mute", "solo", "lock", "rename"}
+
+
+def op_set_nla_track(params):
+    """Mute, solo, lock or rename an NLA track - none of which was possible.
+
+    list_keyframes has always reported a track's mute and nothing could write it, so a track could
+    be built and never silenced. That is the small half.
+
+    THE LARGE HALF IS SOLO, AND THE READ SIDE WAS MISLEADING ABOUT IT. Setting is_solo on one track
+    silences every OTHER track's contribution while each of them still reports mute:False and
+    is_solo:False. Measured on 3.6.23, 4.2.17, 4.4.0 and 5.0.1: two tracks moving a cube to z=-5 and
+    z=+5, evaluated at frame 10, give -5 with both live and +5 with the first soloed - the second
+    track's contribution is gone and nothing about the second track says so.
+
+    So a caller reading every track, seeing every one unmuted, and asking why only one plays had no
+    field that could answer. list_keyframes now reports isSolo per track and names the soloing track
+    when one exists.
+
+    SOLO IS EXCLUSIVE, and Blender enforces that itself: setting is_solo on a second track clears it
+    on the first. The response reports which track ended up soloed rather than assuming it is this
+    one.
+
+    params:
+      object / name (str)   required
+      track (str)           which NLA track. Required.
+      mute (bool)           silence this track
+      solo (bool)           silence every OTHER track
+      lock (bool)           protect it from editing
+      rename (str)          a new name
+    """
+    reject_unknown(params, _NLATRACK_KEYS, "set_nla_track")
+    obj = get_object(take(params, "object", "name", required=True, kind=str))
+    ad = getattr(obj, "animation_data", None)
+    tracks = list(getattr(ad, "nla_tracks", None) or []) if ad is not None else []
+    if not tracks:
+        raise MifOpError("'%s' has no NLA tracks. add_nla_strip makes one - it takes a `track` name "
+                         "and creates it if absent. NOTHING was changed." % obj.name)
+
+    want = take(params, "track", required=True, kind=str)
+    track = None
+    for tr in tracks:
+        if tr.name == str(want):
+            track = tr
+            break
+    if track is None:
+        raise MifOpError("'%s' has no NLA track named '%s'. It has: %s. NOTHING was changed."
+                         % (obj.name, want, ", ".join(tr.name for tr in tracks)))
+
+    asked = [k for k in ("mute", "solo", "lock", "rename") if params.get(k) is not None]
+    if not asked:
+        raise MifOpError("nothing to do - pass mute, solo, lock or rename. NOTHING was changed.")
+
+    before = {"mute": bool(track.mute), "isSolo": bool(track.is_solo), "lock": bool(track.lock),
+              "name": track.name}
+    if params.get("mute") is not None:
+        track.mute = take_bool(params, "mute", default=True)
+    if params.get("lock") is not None:
+        track.lock = take_bool(params, "lock", default=True)
+    if params.get("solo") is not None:
+        track.is_solo = take_bool(params, "solo", default=True)
+    renamed_to = None
+    new_name = take(params, "rename", default=None, kind=str)
+    if new_name is not None:
+        track.name = str(new_name)
+        renamed_to = track.name
+
+    # READ BACK ACROSS EVERY TRACK, not just this one. Solo is exclusive and Blender clears it on
+    # the others itself, so "which track is soloed" is a property of the stack rather than of the
+    # track that was written.
+    soloed = [tr.name for tr in tracks if tr.is_solo]
+    after = {"mute": bool(track.mute), "isSolo": bool(track.is_solo), "lock": bool(track.lock),
+             "name": track.name}
+    silenced = [tr.name for tr in tracks
+                if not tr.is_solo and not tr.mute and soloed and tr.name not in soloed]
+    return {
+        "ok": True,
+        "object": obj.name,
+        "track": track.name,
+        "before": before,
+        "after": after,
+        "renamedTo": renamed_to,
+        "changedFields": sorted(k for k in before if before[k] != after[k]),
+        "soloedTrack": soloed[0] if soloed else None,
+        # THE FIELD THE READ SIDE COULD NOT ANSWER. These tracks are NOT muted and contribute
+        # NOTHING, because another track is soloed - and every one of them reports mute:False.
+        "silencedBySolo": silenced or None,
+        "trackCount": len(tracks),
+        "note": ("'%s' is soloed, so %s contribute NOTHING while still reporting mute:false. That "
+                 "is what solo does and it is invisible on the tracks it silences."
+                 % (soloed[0], ", ".join(silenced))) if silenced else
+                ("this track is muted - its strips still exist and do nothing."
+                 if after["mute"] else None),
+    }
+
 OPS = {
     "move_keyframes": op_move_keyframes,
     "add_nla_strip": op_add_nla_strip,
+    "set_nla_track": op_set_nla_track,
     "add_driver": op_add_driver,
     "remove_driver": op_remove_driver,
     "list_markers": op_list_markers,
