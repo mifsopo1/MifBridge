@@ -14712,3 +14712,41 @@ out-of-process the way ops_gen already does with gen_status.
       Nothing found. That is worth recording precisely because it is a negative result: the gap the
       REACH line reports is 7 ops wide and has been READ, so "unjudged" here now means "no rule
       covers it", not "nobody has looked".
+
+- [x] **seven create ops answered a retry with a name nobody asked for** DONE 2026-09-04
+      A bridge call can time out with the work already done - that is why render_animation runs out
+      of process - and the caller's only option is to retry. Blender renames on collision rather
+      than failing, so the second call makes "Foo.001".
+
+      Measured rather than reasoned about: every create op called twice with the same name on 5.0.1.
+      Seven returned the adjusted name with nothing to say it was not the one requested -
+      create_empty, create_text, create_curve, create_lattice, create_armature, create_light,
+      create_camera, create_node_group.
+
+      THE ADDON ALREADY KNEW, four times over. create_collection REFUSES a clash; create_primitive,
+      create_texture, create_material and create_action report requestedName; and create_light
+      carried a PROSE note saying the name "may differ from what was asked for", which a program
+      cannot act on. A note is not a field. The fix is the one already chosen elsewhere.
+
+      Five of the seven share _created(), so the reporting went there - which also fixed something
+      smaller: all five built the name inline inside bpy.data.*.new(...), so the requested string
+      was not available to the response at all.
+
+      Where it bites is the call after: assign_node_group by the name it asked for finds the WRONG
+      group, or none.
+
+- [ ] **one boolean, three spellings, and one op that reports only half of it**
+      The field that says "Blender changed your name" is called nameWasSuffixed in 10 places,
+      nameWasAdjusted in 1 (create_collection) and nameWasTaken in 1 (create_action). A caller
+      testing the common spelling silently misses the other two, which is the same parallel-systems
+      shape this project keeps collapsing - six vector parsers, 22 scratch filters.
+
+      create_material reports requestedName and NO flag at all, so a caller there has to compare the
+      strings itself.
+
+      NOT DONE WITH THE FIX ABOVE, deliberately: renaming a response field is visible to every
+      caller and to tool_help, so it is a compatibility decision rather than a tidy-up. The cheap
+      version is to emit the canonical spelling ALONGSIDE the existing one and retire the old names
+      on a release boundary; the honest version needs Andre to say whether anything reads them yet.
+
+      Worth doing soon rather than later - there are 12 sites now and the number only grows.
