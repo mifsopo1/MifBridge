@@ -13184,3 +13184,27 @@ out-of-process the way ops_gen already does with gen_status.
       reports 120 vertices moved by up to 0.510932 where it used to say no-op; a zero-angle TWIST
       still correctly reports that nothing changed; a SUBSURF reports changedTopology with
       movedVertices None.
+
+- [x] **a group interface could only hold a FLOAT default, and two types crashed** DONE 2026-09-04
+      add_group_interface ran default, min and max through take_float and then setattr the result
+      unprotected. Measured on 3.6.23, 4.2.17, 4.4.0 and 5.0.1:
+
+        default:true on NodeSocketBool   float(True) is 1.0 -> bare TypeError out of the op
+        default:5    on NodeSocketInt    float(5) is 5.0    -> bare TypeError out of the op
+        Vector / String / Object         refused with "'default' must be a number"
+
+      The two TypeErrors ESCAPED the op's own MifOpError contract - a raw exception where every
+      other refusal in this file is a sentence naming the fix. And the sweep could not have caught
+      it, because the matrix payload used NodeSocketFloat, the one type that worked. It uses
+      NodeSocketBool with a default now.
+
+      Fixed by reusing _socket_value, which the node-socket work built earlier the same day, so a
+      group input gets the same resolution a node socket does - including an Object default
+      resolved from its name. A socket with no min_value/max_value is now REFUSED rather than
+      silently skipped: accepting a range on a boolean and writing nothing is how a caller believes
+      they set something they did not. All six types verified on all four builds, holding the right
+      values - Bool holds True, Int holds 5, Object holds the object.
+
+      MY FIRST 3.6 RESULT WAS WRONG AND WAS NOT REPORTED. The probe read back through
+      tree.interface, which does not exist on 3.6, so all six cases showed a raw AttributeError and
+      looked like a version break in the op. It was the readback. Checked before writing it down.

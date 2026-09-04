@@ -168,6 +168,10 @@ def _socket_value(kind, sock_name, val, where):
             raise MifOpError("no %s named '%s'. This file has: %s. NOTHING was changed."
                              % (noun, val, ", ".join(have) if have else "(none)"))
         return found
+    # A VECTOR, COLOUR OR ROTATION DEFAULT IS A SEQUENCE. add_group_node writes those element by
+    # element into a live socket; the group INTERFACE takes the whole thing at once.
+    if isinstance(val, (list, tuple)):
+        return [float(v) for v in val]
     # A MENU SOCKET IS AN ENUM and a String socket is text; float() destroyed both.
     if kind in ("NodeSocketString", "NodeSocketMenu"):
         return str(val)
@@ -327,10 +331,33 @@ def op_add_group_interface(params):
     except (RuntimeError, TypeError) as exc:
         raise MifOpError("could not create a '%s' socket named '%s': %s. NOTHING was added."
                          % (stype, name, exc))
+    # TYPE-AWARE, AND GUARDED. This used to run every one of these through take_float and then
+    # setattr the result unprotected, which had two consequences measured on 4.4.0 and 5.0.1:
+    #
+    #   default:true  on a NodeSocketBool -> float(True) is 1.0, and writing 1.0 to a boolean RNA
+    #   default:5     on a NodeSocketInt  -> float(5) is 5.0, likewise
+    #
+    # both raised a bare TypeError straight out of the op, ESCAPING its own MifOpError contract -
+    # a raw exception where every other refusal here is a sentence. And a Vector, String or Object
+    # default was refused with "must be a number", so a group interface could only ever hold a
+    # FLOAT default. Reusing _socket_value gives all of them the same resolution the node sockets
+    # got, including a datablock default resolved from its name.
     for key, attr in (("default", "default_value"), ("min", "min_value"), ("max", "max_value")):
-        v = take_float(params, key, default=None)
-        if v is not None and hasattr(sock, attr):
-            setattr(sock, attr, v)
+        if params.get(key) is None:
+            continue
+        if not hasattr(sock, attr):
+            raise MifOpError(
+                "a '%s' socket has no %s on Blender %s, so '%s' cannot be applied - only numeric "
+                "sockets carry a range. Accepting it and writing nothing is how a caller believes "
+                "they set something they did not. The socket WAS created."
+                % (stype, attr, bpy.app.version_string, key))
+        value = (_socket_value(stype, name, params[key], "group '%s'" % tree.name)
+                 if key == "default" else take_float(params, key))
+        try:
+            setattr(sock, attr, value)
+        except (TypeError, ValueError) as exc:
+            raise MifOpError("could not set %s on a '%s' socket to %r: %s. The socket WAS created."
+                             % (key, stype, params[key], exc))
     return {"group": tree.name, "socket": name, "socketType": stype, "inOut": in_out,
             "interface": _iface_items(tree)}
 

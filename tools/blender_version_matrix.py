@@ -212,8 +212,12 @@ PAYLOADS = {
     # object is checked on every build every run.
     "add_group_node": {"group": "MifMatrixGroup", "type": "GeometryNodeObjectInfo",
                        "inputs": {"Object": "MifProbe"}},
+    # A BOOL WITH A DEFAULT, which raised a bare TypeError out of the op on every build until
+    # 2026-09-04 - float(True) is 1.0 and RNA will not take a float for a boolean. NodeSocketInt
+    # did the same. Float was the only type that worked, and it is the one the payload used,
+    # which is why the sweep never saw it.
     "add_group_interface": {"group": "MifMatrixGroup", "name": "Amount",
-                            "socketType": "NodeSocketFloat"},
+                            "socketType": "NodeSocketBool", "default": True},
     "link_group_nodes": {"group": "MifMatrixGroup", "fromNode": "MifNodeA",
                          "fromSocket": "Geometry", "toNode": "MifNodeB",
                          "toSocket": "Geometry"},
