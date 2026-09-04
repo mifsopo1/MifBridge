@@ -1851,6 +1851,27 @@ namespace MifBridge
 		if (Value->Type == EJson::Number)
 		{
 			OutValue = Value->AsNumber();
+			// FINITE, THE SAME WAY THE STRING BRANCH BELOW ALREADY IS. ParseWholeNumber ends with
+			// this exact check, so "1e999" was refused while 1e999 was accepted - the same value,
+			// opposite outcomes, decided by quoting. 1e999 is a valid JSON number literal that
+			// overflows to +Infinity as a double, and NaN arrives the same way through a JSON
+			// parser that accepts it.
+			//
+			// All 233 JNum call sites pass through here, which is why a two-line omission was worth
+			// a rebuild: every numeric parameter in the plugin inherited it.
+			if (!FMath::IsFinite(OutValue))
+			{
+				// NOT "is not a number" - Infinity IS a number, and a caller who sent 1e999 on
+				// purpose deserves to know it overflowed rather than being told their arithmetic
+				// is not arithmetic.
+				OutError = FString::Printf(
+					TEXT("'%s' was given a number that is not FINITE (%s). 1e999 and similar are ")
+					TEXT("valid JSON literals that overflow to infinity as a double, and NaN arrives ")
+					TEXT("the same way - both would be used as a real value by everything downstream. ")
+					TEXT("Send a finite number."),
+					*Where, *DescribeJsonValue(Value));
+				return false;
+			}
 			return true;
 		}
 		// A JSON string that is ENTIRELY a number is accepted (callers legitimately send "1.5" from
