@@ -14692,3 +14692,23 @@ out-of-process the way ops_gen already does with gen_status.
 
       The docstring no longer quotes the reach numbers. It carried a hard figure three times in one
       day and was wrong within the hour each time; the REACH line prints on every run.
+
+- [x] **the 7 ops the gated audit cannot judge, read by hand** DONE 2026-09-04
+      An audit that prints its own blind spot invites the obvious next question, and 7 is small
+      enough to answer by reading rather than by building an eighth rule.
+
+        set_custom_property   writes `holder[key] = value` and THEN refuses a bad min/max - and says
+                              so: "The value WAS written; the range was not." Honest, and the same
+                              deliberate pattern as add_group_node's "The node WAS added".
+        link_group_nodes      every "NOTHING was linked" is above tree.links.new; the one below it
+                              reports that Blender rejected the link it attempted.
+        remove_driver         both refusals precede driver_remove; the two below it are an exception
+                              path and a failed read-back, both worded as such.
+        move_keyframes        every refusal is parameter validation, above any write.
+        clean_mesh            works through bmesh, which touches nothing until to_mesh.
+        bisect_plane          same - the docstring says why it avoids bpy.ops.mesh.bisect.
+        render_animation      refuses on the output directory before it spawns anything.
+
+      Nothing found. That is worth recording precisely because it is a negative result: the gap the
+      REACH line reports is 7 ops wide and has been READ, so "unjudged" here now means "no rule
+      covers it", not "nobody has looked".
