@@ -14985,3 +14985,32 @@ out-of-process the way ops_gen already does with gen_status.
       Reverting ray_cast's guard exits 1 and restoring it exits 0. Without that test the audit would
       have read "0 findings" and meant nothing - which is the whole reason a check has to be shown
       failing before it is believed.
+
+- [x] **the corrupted-payload pass covers 95% of ops and 24% of parameters** DONE 2026-09-04
+      The matrix already refuses to print findings without op reach. That number is 144 of 151 and
+      it flatters what the pass does: it can only corrupt keys a payload SENDS, and a payload sends
+      whatever was needed to get the op past its own guards. 236 of 996 accepted parameters are ever
+      sent; 760 have never had a sentinel through them.
+
+      The ops that look best covered are the worst - create_camera sends 0 of its 18, create_light 1
+      of 19, bevel_edges 4 of 28 - because a payload only needs the required keys, and every
+      optional one after that is free to be wrong forever. Now printed on every run.
+
+      THEN SAMPLED, rather than assumed to be full of defects. 111 cases across those two worst ops,
+      three sentinels each: ZERO raw exceptions and one acceptance. That is the useful result. The
+      24% is real and the risk behind it is much smaller than the number suggests, because the
+      guards live in shared helpers - take, take_float, take_int, reject_unknown - which hold on
+      parameters nothing has ever tested. Centralising the rules is what makes an untested surface
+      safe rather than merely unmeasured.
+
+      So sending every accepted key stays UNBUILT: a twenty-fold increase in cases for a measured
+      yield of one finding on the worst-covered ops in the addon.
+
+- [x] **take_bool turned every typo into a silent "no"** DONE 2026-09-04
+      The one acceptance the sample found. The string test was `word in ("1","true","yes","on")`, so
+      "ture", "flase", an empty string and a NUL all came back False and the op carried on as though
+      the caller had asked for it. A false is a decision; a typo is not, and the two were
+      indistinguishable at every call site.
+
+      Both word sets are known now and anything in neither is refused, naming both. Numbers and real
+      booleans unchanged; 0/false/no/off still mean false.
