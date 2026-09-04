@@ -28,7 +28,12 @@ _RB_KEYS = {"object", "name", "type", "mass", "friction", "bounciness", "restitu
 _CLOTH_KEYS = {"object", "name", "quality", "mass", "stiffness", "damping", "gravity",
                "usePressure", "pressure", "collisionQuality", "selfCollision"}
 _COLL_KEYS = {"object", "name", "damping", "friction", "thickness", "remove"}
-_BAKE_KEYS = {"start", "end", "type", "clear"}
+# NO "type". It sat on this list and was read nowhere: bake_physics goes through
+# bpy.ops.ptcache.bake_all, which bakes EVERY cache in the scene and takes no filter, so
+# there was nothing for a type to select. A caller could send type:"CLOTH", pass the guard,
+# and have every cache baked anyway - a parameter that appears to narrow the work and does
+# not. Per-type baking is a different implementation and is filed in the spec.
+_BAKE_KEYS = {"start", "end", "clear"}
 
 
 def _ctx_override(obj):

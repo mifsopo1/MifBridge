@@ -20,7 +20,12 @@ from .ops_common import MifOpError, get_object, reject_unknown, take, take_bool,
 
 _SHADE_KEYS = {"shading", "mode", "studioLight", "useSceneLights", "useSceneWorld",
                "showOverlays", "showGizmos", "colorType"}
-_FRAME_KEYS = {"object", "name", "all", "camera"}
+# NO "all". Framing everything is what this op does when no object is named - view3d.view_all
+# is the else branch - so "all" named the DEFAULT and was read nowhere. Worse in combination:
+# object plus all:true is a contradiction the caller can express, and the object silently
+# won. Omitting object is the way to say it, and a caller who sends all now gets a refusal
+# instead of agreement.
+_FRAME_KEYS = {"object", "name", "camera"}
 # No "target" alias for focus. It was accepted and no tool sent it, which param_reach
 # correctly called unreachable - and a second name for the same thing is not worth a
 # baseline entry. One name, one meaning.

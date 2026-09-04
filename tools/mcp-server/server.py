@@ -5550,9 +5550,9 @@ def bl_physics_info(object: str = None) -> dict:
 
 @mcp.tool()
 def bl_bake_physics(start: float = None, end: float = None, clear: bool = None,
-                    type: str = None) -> dict:
+                    ) -> dict:
     "Bake Blender's physics point caches so a given frame shows the simulated state rather than the rest state. BLOCKS for the length of the bake. Reports which caches actually hold frames, because bake_all returns success even when nothing in the scene has a cache to bake."
-    return _blender("bake_physics", start=start, end=end, clear=clear, type=type,
+    return _blender("bake_physics", start=start, end=end, clear=clear,
                     _timeout=600.0)
 
 
@@ -5688,9 +5688,9 @@ def bl_set_viewport_shading(shading: str = None, use_scene_lights: bool = None,
 
 
 @mcp.tool()
-def bl_frame_viewport(object: str = None, all: bool = None, camera: bool = None) -> dict:
+def bl_frame_viewport(object: str = None, camera: bool = None) -> dict:
     "Point the Blender viewport at one object, at everything, or through the scene camera. Framing matters when a person is watching a build happen - work that happens off-screen is work nobody can see."
-    return _blender("frame_viewport", object=object, all=all, camera=camera)
+    return _blender("frame_viewport", object=object, camera=camera)
 
 
 @mcp.tool()
@@ -5831,6 +5831,12 @@ def bl_assign_material_to_faces(object: str, slot: int, faces: list = None,
     "Point a range of polygons at one of a Blender object's material SLOTS. bl_set_material_slots decides which materials a mesh has and in what order; this decides which faces use which. Omit faces to assign every polygon, or pass from_slot to move every face CURRENTLY on that slot - the operation you want after the slot list is reordered or resized. A from_slot no polygon uses is REFUSED rather than reported as changed:0, unlike an empty faces list: asking for nothing is a request, but believing faces live on an empty slot is a wrong assumption about the mesh."
     return _blender("assign_material_to_faces", object=object, slot=slot, faces=faces,
                     fromSlot=from_slot)
+
+
+@mcp.tool()
+def bl_import_scene(file: str, collection: str = None) -> dict:
+    "Read OBJ, USD/USDA/USDC/USDZ, Alembic, STL or PLY - the other half of bl_export_scene, which on its own left the addon able to WRITE six formats and read three. FBX and glTF are read by bl_import_mesh and are refused here by name: two ops reading one format is how they drift apart, and that one knows things this does not - that useCustomNormals is an FBX option with no glTF equivalent, and that an axis conversion applied to glTF is applied twice because the spec already fixes +Y up. THE POSTCONDITION IS WHAT ARRIVED, by set difference, because every import operator returns FINISHED and none returns the objects it made: a file that parses and holds nothing importable - an animation-only USD, a camera-only export - reports success and adds nothing, and that is refused rather than returned as ok:true. A named collection is resolved BEFORE the import, so a bad name cannot leave objects already in the scene."
+    return _blender("import_scene", file=file, collection=collection)
 
 
 @mcp.tool()

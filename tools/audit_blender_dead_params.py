@@ -184,6 +184,64 @@ def other_op_bodies(text, keep_op):
     return spans
 
 
+def accept_list_constants(text, path):
+    """Line spans of the module-level constants that ARE accept lists, so they can be blanked too.
+
+    THE HOLE THIS CLOSES, found 2026-09-03 by sweeping the addon by hand and getting four hits this
+    audit reported as zero. It blanked every reject_unknown(...) CALL so the accept list's own
+    literals would not count as a read - correct when the list is written inline. But most ops pass
+    a module-level constant by NAME, and then the literals live in the constant's definition, which
+    was never blanked. So every key in every named key set looked "read", and the audit was
+    structurally incapable of failing for the majority of the addon while printing OK.
+
+    ops_particles accepted useModifierStack, rotationMode and useRotations, and ops_viewport
+    accepted "all", none of them read anywhere - accepted, forwarded and silently ignored, which is
+    the exact class this file exists to catch.
+
+    Resolved EXACTLY rather than by naming convention: a constant counts only if its name is passed
+    as an argument to a reject_unknown call in this same module. A *_KEYS heuristic would blank
+    tables that merely look like accept lists and hide real reads.
+    """
+    try:
+        tree = ast.parse(text, path)
+    except SyntaxError:
+        return []
+    wanted = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        name = getattr(fn, "id", None) or getattr(fn, "attr", None)
+        if name != "reject_unknown":
+            continue
+        for arg in node.args:
+            if isinstance(arg, ast.Name):
+                wanted.add(arg.id)
+    spans = []
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Name) or target.id not in wanted:
+            continue
+        spans.append((node.lineno, getattr(node, "end_lineno", node.lineno)))
+    return spans
+
+
+def blank_lines(text, spans):
+    """Replace whole lines with spaces, preserving line count so offsets stay meaningful."""
+    lines = text.splitlines(True)
+    for lo, hi in spans:
+        for i in range(lo - 1, min(hi, len(lines))):
+            # rstrip() with no argument, deliberately: it takes the line ending
+            # whatever it is, and the suffix is then put back VERBATIM. Naming the
+            # escape here would be one more place to get this file CRLF convention wrong.
+            body = lines[i]
+            keep = len(body) - len(body.rstrip())
+            lines[i] = " " * (len(body) - keep) + body[len(body) - keep:]
+    return "".join(lines)
+
+
 def scan():
     """[(op, key, module)] for every accepted key whose literal appears only in the accept list."""
     try:
@@ -209,8 +267,11 @@ def scan():
             continue
         text = io.open(path, encoding="utf-8", errors="replace").read()
 
-        # Blank every reject_unknown call so its own literals do not count as a read.
-        blanked = text
+        # Blank every reject_unknown call so its own literals do not count as a read - AND every
+        # module-level constant those calls pass by name, which is where the literals actually live
+        # for most ops. See accept_list_constants: without the second half this audit could not
+        # fail for any op with a named key set, which is most of them.
+        blanked = blank_lines(text, accept_list_constants(text, path))
         for m in REJECT.finditer(text):
             close = match_paren(text, text.index("(", m.start()))
             if close > 0:

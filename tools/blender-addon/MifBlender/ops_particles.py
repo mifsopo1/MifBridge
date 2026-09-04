@@ -124,6 +124,31 @@ def op_add_particles(params):
             raise MifOpError("unknown physicsType '%s'. Valid: %s. The system WAS created."
                              % (pt, ", ".join(sorted(valid))))
         st.physics_type = str(pt).upper()
+    # WIRED 2026-09-03. These three were on the accept list and read NOWHERE: a caller could send
+    # useModifierStack, useRotations or rotationMode, pass the guard, and have nothing happen. They
+    # were invisible to audit_blender_dead_params because it blanked the reject_unknown CALL and not
+    # the module-level constant the call names, which is where the literals live - so the audit
+    # could not fail for any op with a named key set. Both are fixed together.
+    if "useModifierStack" in params:
+        # Emit from the EVALUATED mesh rather than the base one. With it off, a system on a
+        # subdivided or displaced mesh emits from the undisplaced cage - particles that float above
+        # or sink into the surface they were supposed to sit on, with every field reading correctly.
+        st.use_modifier_stack = take_bool(params, "useModifierStack", default=True)
+    if "useRotations" in params:
+        st.use_rotations = take_bool(params, "useRotations", default=True)
+    rot = take(params, "rotationMode", default=None, kind=str)
+    if rot:
+        valid = _enum(bpy.types.ParticleSettings, "rotation_mode")
+        if str(rot).upper() not in valid:
+            raise MifOpError("unknown rotationMode '%s'. Valid: %s. The system WAS created."
+                             % (rot, ", ".join(sorted(valid))))
+        st.rotation_mode = str(rot).upper()
+        # ROTATION MODE DOES NOTHING WHILE use_rotations IS OFF, and it reads back perfectly either
+        # way - so setting one without the other is a silent no-op. Turned on rather than refused,
+        # because a caller naming a rotation mode has said what they want unambiguously.
+        if not st.use_rotations:
+            st.use_rotations = True
+
     for key, attr in (("normalFactor", "normal_factor"), ("randomFactor", "factor_random"),
                       ("gravityFactor", "effector_weights.gravity"), ("dampingFactor", "damping")):
         v = take_float(params, key, default=None)

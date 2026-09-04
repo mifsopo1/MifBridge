@@ -1,4 +1,4 @@
-"""Scene interchange - glTF, OBJ, USD, Alembic, STL, PLY. The formats a Blender user actually ships.
+"""Scene interchange both ways - glTF, OBJ, USD, Alembic, STL, PLY. What a Blender user ships.
 
 WHY THIS IS NOT AN EXTENSION OF export_mesh. Measured 2026-09-03: import_mesh accepts .fbx, .gltf
 and .glb, and export_mesh writes .fbx AND NOTHING ELSE. So glTF could come IN and not go OUT, and
@@ -263,4 +263,165 @@ def op_export_scene(params):
     }
 
 
-OPS = {"export_scene": op_export_scene}
+# NO "asBackground". It was declared and never read - THIRD dead key this session, after
+# render_animation.scene and list_view_layers.scene, all three caught by param_reach rather
+# than by reading. The reflex is to add a key that sounds plausible for the operator; an
+# accepted parameter that is silently ignored is worse than an absent one.
+_IMPORT_KEYS = {"file", "filepath", "path", "collection"}
+
+# extension -> (candidate operators in order, human label)
+#
+# glTF AND FBX ARE DELIBERATELY ABSENT: import_mesh already reads both, and it knows things this
+# would not - that useCustomNormals is an FBX-importer option with no glTF equivalent, and that
+# passing an axis conversion to glTF applies it twice because the spec already fixes +Y up. Two ops
+# reading the same format is how they drift apart. Every format has exactly one home here, and the
+# refusal names it.
+_IMPORTERS = {
+    ".obj":  (("wm.obj_import", "import_scene.obj"), "Wavefront OBJ"),
+    ".usd":  (("wm.usd_import",), "USD"),
+    ".usda": (("wm.usd_import",), "USD ASCII"),
+    ".usdc": (("wm.usd_import",), "USD binary"),
+    ".usdz": (("wm.usd_import",), "USDZ"),
+    ".abc":  (("wm.alembic_import",), "Alembic"),
+    ".stl":  (("wm.stl_import", "import_mesh.stl"), "STL"),
+    ".ply":  (("wm.ply_import", "import_mesh.ply"), "PLY"),
+}
+
+_ELSEWHERE = {".fbx": "import_mesh", ".gltf": "import_mesh", ".glb": "import_mesh"}
+
+
+def resolve_importer(ext):
+    """(dotted operator, label) for a file extension. Pure, and separated for the same reason.
+
+    The importers moved with the exporters and at the same versions - OBJ and PLY to wm.*_import at
+    4.0, STL at 4.2 - so this carries the same candidate lists. Getting it wrong on the IMPORT side
+    is quieter, because a missing importer looks like an unsupported file rather than a missing
+    add-on.
+    """
+    home = _ELSEWHERE.get(ext)
+    if home:
+        raise MifOpError("%s is read by %s, not here - it knows things this op does not, such as "
+                         "useCustomNormals being an FBX option with no glTF equivalent, and that "
+                         "an axis conversion applied to glTF is applied twice. NOTHING was "
+                         "imported." % (ext, home))
+    entry = _IMPORTERS.get(ext)
+    if entry is None:
+        raise MifOpError("no importer for '%s'. This op reads: %s. FBX and glTF are read by "
+                         "import_mesh. NOTHING was imported."
+                         % (ext, ", ".join(sorted(_IMPORTERS))))
+    candidates, label = entry
+    for dotted in candidates:
+        if _op_exists(dotted):
+            return dotted, label
+    raise MifOpError("this Blender (%s) has no %s importer - tried %s. It is usually an add-on and "
+                     "may be disabled in Preferences > Add-ons. A missing importer looks like an "
+                     "unsupported file, which is why it is named here. NOTHING was imported."
+                     % (bpy.app.version_string, label, " and ".join(candidates)))
+
+
+def op_import_scene(params):
+    """Read OBJ, USD, Alembic, STL or PLY - the other half of export_scene.
+
+    WHY IT EXISTS AND WHY NOW. export_scene landed first and immediately created the asymmetry it
+    was written to remove, one direction over: the addon could WRITE six formats and read three.
+    Leaving that is the same shape this session kept finding elsewhere - a family that can only go
+    one way - so it is closed rather than filed.
+
+    THE POSTCONDITION IS WHAT ARRIVED, taken by set difference, because every import operator
+    returns {'FINISHED'} and none of them returns the objects it made. A file that parses and holds
+    nothing importable - an animation-only USD, a camera-only export, an Alembic with no geometry -
+    reports success and adds nothing, and that is refused rather than returned as ok:true. Copied
+    from import_mesh, which learned it first.
+
+    params:
+      file / filepath / path (str)   required. The FORMAT COMES FROM THE EXTENSION.
+      collection (str)               link what arrives into this collection instead of the scene
+                                     root. Resolved BEFORE the import, so a bad name cannot leave
+                                     objects already in the scene.
+    """
+    reject_unknown(params, _IMPORT_KEYS, "import_scene")
+    raw = take(params, "file", "filepath", "path", required=True, kind=str)
+    path = os.path.abspath(bpy.path.abspath(str(raw)))
+    ext = os.path.splitext(path)[1].lower()
+    if not ext:
+        raise MifOpError("'%s' has no file extension, and the format is taken from it. Give one "
+                         "of: %s. NOTHING was imported." % (raw, ", ".join(sorted(_IMPORTERS))))
+    dotted, label = resolve_importer(ext)
+
+    if not os.path.isfile(path):
+        raise MifOpError("no such file: %s. NOTHING was imported." % path)
+    size = os.path.getsize(path)
+    if size <= 0:
+        raise MifOpError("%s is empty (0 bytes) - there is nothing to import. NOTHING was "
+                         "imported." % path)
+
+    # RESOLVED FIRST, for the reason ops_create learned the hard way the same day: a collection
+    # looked up after the work is done leaves the work behind when the lookup fails.
+    coll_name = take(params, "collection", kind=str)
+    coll = None
+    if coll_name:
+        coll = bpy.data.collections.get(coll_name)
+        if coll is None:
+            known = sorted(c.name for c in bpy.data.collections)[:25]
+            raise MifOpError("no collection named '%s'. Present: %s. Make one with "
+                             "create_collection. NOTHING was imported."
+                             % (coll_name, ", ".join(known) if known else "<none>"))
+
+    before = set(bpy.data.objects)
+    mod, _, opname = dotted.partition(".")
+    try:
+        getattr(getattr(bpy.ops, mod), opname)(filepath=path)
+    except RuntimeError as exc:
+        raise MifOpError("%s import failed: %s" % (label, exc))
+    except TypeError as exc:
+        raise MifOpError("the %s importer on this build does not take a plain filepath (%s). This "
+                         "is version drift in the operator's own signature." % (label, exc))
+    bpy.context.view_layer.update()
+    created = [o for o in bpy.data.objects if o not in before]
+
+    if not created:
+        raise MifOpError("the %s importer reported success and produced NO objects from %s (%d "
+                         "bytes). The file parsed and held nothing importable - an animation-only "
+                         "or camera-only export will do exactly this. NOTHING is in the scene from "
+                         "it." % (label, path, size))
+
+    moved = []
+    if coll is not None:
+        # The importer links into the scene's active collection; move rather than add, or the
+        # objects end up in two places and a later unlink from one looks like it did nothing.
+        for obj in created:
+            for c in list(bpy.data.collections) + [bpy.context.scene.collection]:
+                if obj.name in c.objects and c is not coll:
+                    c.objects.unlink(obj)
+            if obj.name not in coll.objects:
+                coll.objects.link(obj)
+            moved.append(obj.name)
+        missing = [o.name for o in created if o.name not in coll.objects]
+        if missing:
+            raise MifOpError("imported %d object(s) and %d are not in '%s' afterwards: %s"
+                             % (len(created), len(missing), coll.name, ", ".join(missing[:8])))
+
+    by_type = {}
+    for obj in created:
+        by_type[obj.type] = by_type.get(obj.type, 0) + 1
+    return {
+        "ok": True,
+        "file": path,
+        "format": label,
+        "operator": dotted,
+        "bytes": size,
+        "created": sorted(o.name for o in created),
+        "createdCount": len(created),
+        "createdByType": by_type,
+        "collection": coll.name if coll is not None else None,
+        "movedIntoCollection": sorted(moved) if moved else None,
+        "note": ("no MESH arrived - %s. That is a legitimate import and rarely what somebody "
+                 "expects from one." % ", ".join("%d %s" % (v, k) for k, v in sorted(by_type.items())))
+        if "MESH" not in by_type else None,
+    }
+
+
+OPS = {
+    "export_scene": op_export_scene,
+    "import_scene": op_import_scene,
+}
