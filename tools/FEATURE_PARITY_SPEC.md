@@ -14823,3 +14823,19 @@ out-of-process the way ops_gen already does with gen_status.
       NOT DONE HERE because it cannot be compiled or tested while the editor holds the DLL, and an
       untested edit to the shared number parser every numeric parameter passes through is worth less
       than a filed one.
+
+- [x] **NaN reached Blender through the conversion sites too** DONE 2026-09-04
+      take_float and finite_floats cover values read through the parameter plumbing. They do not
+      cover the places that pull a number straight out of the caller's dict and call float() on it -
+      a node socket default, a group interface default, a material input, a keyframe value, a UV
+      coordinate. A NaN socket default is exactly as poisonous as a NaN location and arrives by a
+      different door. finite_float is the scalar twin, and all four refuse with a sentence now.
+
+      AND THE AUDIT CAUGHT MY OWN BUG MID-FIX, which is the part worth keeping. The import wiring
+      tested `"finite_float" not in ...` and ops_anim already imported finite_floatS - the substring
+      matched, the import was skipped, and three call sites would have raised NameError at runtime,
+      on a path no green test run reaches. audit_undefined_names exists for exactly that and found
+      it in the same minute.
+
+      The ops_common import lists were also put back in alphabetical order across 14 files after a
+      day of prepending to them.
