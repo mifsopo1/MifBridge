@@ -41,6 +41,7 @@ Usage:
 """
 import argparse
 import glob
+import ast
 import io
 import json
 import os
@@ -912,6 +913,51 @@ def _cwd_snapshot():
         return set()
 
 
+def _accepted_params():
+    """{endpoint: {accepted keys}} read off each op's own reject_unknown call.
+
+    STATIC, and fail-quiet by design: an accept-list this cannot resolve (a set built by a call, a
+    union computed at runtime) is skipped rather than guessed at, exactly as parity_check does. The
+    number it prints is therefore a floor on the parameter surface, not a ceiling.
+    """
+    addon = os.path.join(os.path.dirname(os.path.abspath(__file__)), "blender-addon", "MifBlender")
+    out = {}
+    if not os.path.isdir(addon):
+        return out
+    for fname in sorted(f for f in os.listdir(addon) if f.endswith(".py")):
+        try:
+            tree = ast.parse(io.open(os.path.join(addon, fname), "rb").read().decode("utf-8"))
+        except (OSError, SyntaxError):
+            continue
+        consts = {}
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and isinstance(node.value, (ast.Set, ast.Tuple, ast.List)):
+                for tgt in node.targets:
+                    if isinstance(tgt, ast.Name):
+                        consts[tgt.id] = {e.value for e in node.value.elts
+                                          if isinstance(e, ast.Constant)
+                                          and isinstance(e.value, str)}
+        for call in ast.walk(tree):
+            if not (isinstance(call, ast.Call)
+                    and getattr(call.func, "id", "") == "reject_unknown"
+                    and len(call.args) >= 3):
+                continue
+            endpoint = call.args[2]
+            if not (isinstance(endpoint, ast.Constant) and isinstance(endpoint.value, str)):
+                continue
+            keyset = call.args[1]
+            if isinstance(keyset, (ast.Set, ast.Tuple, ast.List)):
+                keys = {e.value for e in keyset.elts
+                        if isinstance(e, ast.Constant) and isinstance(e.value, str)}
+            elif isinstance(keyset, ast.Name):
+                keys = consts.get(keyset.id, set())
+            else:
+                keys = set()
+            if keys:
+                out[endpoint.value] = keys
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     cwd_before = _cwd_snapshot()
@@ -1192,6 +1238,25 @@ def main():
     # "5.0    0 op(s) reached" and "0 known difference(s) accepted" - then exited 0. Every finding
     # in this file is a COMPARISON between builds, so a build contributing nothing does not make the
     # comparison pass, it removes it. Silence from a whole version has to be louder than agreement.
+    # PARAMETER REACH, which is a different and much smaller number than op reach. The corrupted
+    # payload pass can only corrupt keys a payload SENDS, and a payload sends what was needed to get
+    # the op past its own guards - so "no raw exceptions" is a statement about the keys that were
+    # tried, not about the parameter surface.
+    accepted = _accepted_params()
+    if accepted:
+        total = sum(len(v) for v in accepted.values())
+        sent = sum(len(v & set(PAYLOADS.get(ep, {}) or {})) for ep, v in accepted.items())
+        worst = sorted(((len(v - set(PAYLOADS.get(ep, {}) or {})), ep, len(v))
+                        for ep, v in accepted.items()), reverse=True)[:5]
+        print("")
+        print("PARAMETER REACH - %d of %d accepted parameters are ever SENT by a payload (%d%%),"
+              % (sent, total, round(100.0 * sent / max(total, 1))))
+        print("so %d have never had a sentinel put through them. Op reach above is 95%%; this is"
+              % (total - sent))
+        print("the number that says how much of the surface a clean run actually covers.")
+        print("  least covered: %s"
+              % ", ".join("%s %d/%d" % (ep, tot - miss, tot) for miss, ep, tot in worst))
+
     if silent_builds:
         print("")
         print("A BUILD RAN NOTHING: %s" % ", ".join(silent_builds))
