@@ -32,8 +32,10 @@ Usage:
 """
 import argparse
 import io
+import datetime
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -95,6 +97,72 @@ def compose(issue, author, mention, outcome, summary, commit):
     return "\n".join(lines)
 
 
+# One colour per outcome, so the card reads before the text does. GitHub's own palette, because the
+# card sits next to a GitHub link and matching it is less jarring than inventing a scheme.
+_COLOURS = {
+    "fixed": 0x2EA043,        # green
+    "explained": 0x8957E5,    # purple
+    "needs-you": 0xD29922,    # amber
+    "update": 0x1F6FEB,       # blue
+}
+
+_TITLES = {
+    "fixed": "Fixed",
+    "explained": "Not a defect",
+    "needs-you": "Needs a human",
+    "update": "Update",
+}
+
+
+def issue_title(number):
+    """The issue's real title, or None. Best effort and never fatal - it is decoration."""
+    try:
+        out = subprocess.run(
+            ["gh", "issue", "view", str(number), "--json", "title", "--jq", ".title"],
+            capture_output=True, text=True, timeout=15)
+        title = (out.stdout or "").strip()
+        return title or None
+    except Exception:                                               # noqa: BLE001
+        return None
+
+
+def build_embed(issue, author, outcome, summary, commit=None, title=None):
+    """The styled card. Everything except the @-mention, which cannot live here and still ping."""
+    url = "https://github.com/%s/issues/%s" % (REPO, issue)
+    heading = "#%s - %s" % (issue, _TITLES.get(outcome, "Update"))
+    if title:
+        heading = "#%s %s" % (issue, title)
+    embed = {
+        "title": heading[:250],
+        "url": url,
+        "color": _COLOURS.get(outcome, 0x1F6FEB),
+        # Discord caps a description at 4096; reports run long, so this is trimmed rather than
+        # rejected as a 400 with nothing delivered.
+        "description": (summary or "").strip()[:4000] or "_no summary given_",
+        "author": {
+            "name": author,
+            "url": "https://github.com/%s" % author,
+            # A public, stable URL that needs no hosting of our own.
+            "icon_url": "https://github.com/%s.png?size=64" % author,
+        },
+        "footer": {"text": "MifBridge - autonomous report loop"},
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "fields": [],
+    }
+    if outcome == "fixed":
+        embed["fields"].append({
+            "name": "What to do",
+            "value": "Pull `master` and rebuild the plugin to pick it up%s."
+                     % (" (commit `%s`)" % commit[:9] if commit else ""),
+            "inline": False,
+        })
+    elif commit:
+        embed["fields"].append({"name": "Commit", "value": "`%s`" % commit[:9], "inline": True})
+    embed["fields"].append({"name": "Status", "value": _TITLES.get(outcome, "Update"),
+                            "inline": True})
+    return embed
+
+
 def notify(issue, author, outcome, summary, commit=None, dry_run=False, supplied=None):
     if not trusted(author):
         log("%s is not a trusted reporter - not messaging anyone" % author)
@@ -124,31 +192,55 @@ def notify(issue, author, outcome, summary, commit=None, dry_run=False, supplied
         # Send anyway, without a ping. The channel still learns the report was handled, which is
         # more useful than silence - it just cannot tap the one person on the shoulder.
         log("no Discord id mapped for %s - posting without an @-mention" % author)
+    # compose() still builds the ONE-STRING version. It is the fallback payload and the thing the
+    # dry run prints beneath the card, so the two can never drift into describing different sends.
     body = compose(issue, author, mention, outcome, summary, commit)
+    # THE PING LIVES HERE AND ONLY HERE. A <@id> inside an embed renders as a mention and does not
+    # notify - Discord fires a notification only for mentions in the message body. Putting the whole
+    # message in the card would have looked better and silently stopped pinging the one person the
+    # message exists for.
+    head = body.splitlines()[0] if body else ""
+    embed = build_embed(issue, author, outcome, summary, commit, title=issue_title(issue))
 
     if dry_run:
         log("DRY RUN, would post:")
-        for l in body.splitlines():
-            log("  | " + l)
+        log("  content | " + head)
+        log("  embed   | %s" % embed["title"])
+        log("  embed   | colour #%06X, author %s" % (embed["color"], embed["author"]["name"]))
+        for l in embed["description"].splitlines():
+            log("  embed   | " + l)
+        for f in embed["fields"]:
+            log("  embed   | [%s] %s" % (f["name"], f["value"]))
         return True
 
     # allowed_mentions restricts pings to the ONE user this is about. Without it a summary that
     # happens to contain @everyone - and the summary is partly derived from a report someone else
     # wrote - would ping the whole server.
-    payload = {
-        "content": body,
-        "allowed_mentions": {"parse": [], "users": [mention] if mention else []},
-    }
-    req = urllib.request.Request(
-        hook, data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json", "User-Agent": "MifBridge-report-loop"})
-    try:
+    mentions = {"parse": [], "users": [mention] if mention else []}
+    payload = {"content": head, "embeds": [embed], "allowed_mentions": mentions}
+
+    def post(body_obj):
+        req = urllib.request.Request(
+            hook, data=json.dumps(body_obj).encode("utf-8"),
+            headers={"Content-Type": "application/json", "User-Agent": "MifBridge-report-loop"})
         with urllib.request.urlopen(req, timeout=20) as r:
-            log("posted to Discord (HTTP %s)" % r.status)
-            return True
+            return r.status
+
+    try:
+        log("posted to Discord (HTTP %s)" % post(payload))
+        return True
     except urllib.error.HTTPError as exc:
-        log("Discord refused it (HTTP %s) - the GitHub reply already went out, so this is cosmetic"
-            % exc.code)
+        # THE MESSAGE MATTERS MORE THAN THE CARD. An embed is one more thing that can be rejected -
+        # a field too long, a malformed timestamp - and a pretty payload that 400s delivers nothing
+        # at all. So the plain string that worked before this change is tried once more.
+        log("Discord refused the embed (HTTP %s) - retrying as plain text" % exc.code)
+        try:
+            log("posted to Discord as plain text (HTTP %s)"
+                % post({"content": body, "allowed_mentions": mentions}))
+            return True
+        except Exception as exc2:                                   # noqa: BLE001
+            log("plain-text retry failed too (%s) - the GitHub reply already went out, so this is "
+                "cosmetic" % str(exc2)[:90])
     except Exception as exc:
         log("could not reach Discord (%s) - the GitHub reply already went out, so this is cosmetic"
             % str(exc)[:120])
