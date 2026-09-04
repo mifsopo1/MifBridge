@@ -14750,3 +14750,27 @@ out-of-process the way ops_gen already does with gen_status.
       on a release boundary; the honest version needs Andre to say whether anything reads them yet.
 
       Worth doing soon rather than later - there are 12 sites now and the number only grows.
+
+- [x] **the check that stops the ninth create op repeating the retry-rename** DONE 2026-09-04
+      tools/audit_created_name_reported.py, gated at zero. The eight ops above were fixed by hand;
+      the addon had already chosen the answer four times and nothing verified the next op used it.
+
+      FOUR CORRECT ANSWERS, all already in the codebase, which is the point: report requestedName
+      with a flag; delegate to _created; report the new name (bake_texture's "imageRenamed", which
+      tells the caller strictly more); refuse the clash; or get-or-create. set_light_linking does
+      the last - .get(name) before .new() - and it is the quietest correct answer and the easiest to
+      mistake for a missing one.
+
+      THREE PRECISION RULES, each from reading a finding that turned out to be correct code:
+
+        a string literal is not the caller's name - set_compositing builds
+          node_groups.new("Compositing", ...) with a name it chose itself
+        nor is a formatted one - set_light_ies makes its text block as "%s_IES" % obj.name
+        requestedName ALONE still answers, because the caller holds both strings
+
+      And one wording trap worth recording: set_material_slots refuses a clash with "a name clash
+      was silently uniquified", not "already exists". Matching a single phrasing would have reported
+      the one op that handles this most carefully.
+
+      16 of 16 answer. Mutation-tested: removing create_node_group's reporting makes --check name it
+      and exit 1.
