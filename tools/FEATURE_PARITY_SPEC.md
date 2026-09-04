@@ -14599,3 +14599,25 @@ out-of-process the way ops_gen already does with gen_status.
       remembering: planting a file BEFORE the run puts it in the baseline, and running twice finds
       the first run's artifact already present, so both reported a false pass. Done properly - one
       run with render_still's guard removed exits 1 naming ".exr", one run with it restored exits 0.
+
+- [x] **set_render_settings stored a path render_still could not use** DONE 2026-09-04
+      The second half of the .exr defect, and the more instructive one. set_render_settings is where
+      an output path is REMEMBERED; render_still is where it fails. Validating only at render time
+      meant this op accepted an unusable filePath, answered ok, and left the failure to surface
+      later in a DIFFERENT endpoint, against a caller who had already been told it worked.
+
+      One implementation shared by both, not a second copy - the same conclusion the six duplicated
+      vector parsers reached earlier in the day.
+
+      THE GATE CAUGHT THE REGRESSION I INTRODUCED WHILE FIXING IT. Putting the check beside the
+      assignment it guards looked right: _apply_common runs first, so an unusable filePath refused
+      with "NOTHING was changed" after the engine and sample count had moved.
+      audit_mutate_then_deny went 0 -> 1 in the same minute the line was written. That is the
+      argument for gating it at zero rather than ratcheting it, stated as something that happened.
+
+      Verified as the WHOLE promise rather than the path alone: a refused call leaves engine,
+      filepath, resolution, format and samples all unchanged.
+
+      Found by sweeping all 26 ops that take a path-shaped parameter. Most of the apparent gaps were
+      `dataPath` - a property path, not a file - which is what matching on the word "path" gets you,
+      and why the sweep was read rather than acted on directly.
