@@ -15095,3 +15095,26 @@ out-of-process the way ops_gen already does with gen_status.
       nothing to do with what was being tested - one wrong parameter name and one op asked to do
       nothing. Reading "refused" as "handled" would have closed the whole linked-data question two
       defects short, and the only thing that caught it was writing UNKNOWN down instead of a count.
+
+- [x] **editing a shared mesh changed objects the caller never named** DONE 2026-09-04
+      Alt+D makes a linked duplicate: two objects, one mesh datablock, which is how anyone lays out
+      repeated geometry. apply_transform already refuses that case with exactly the right sentence -
+      "applying a transform would move every one of them - one of which you did not ask about" - and
+      only one other op in the addon checks anything. Measured on 5.0.1: clean_mesh and set_shading
+      each changed a second object and nothing in either response mentioned it, no field, no phrase.
+
+      REPORTED, NOT REFUSED, and the difference from apply_transform is the whole decision. That op
+      refuses because applying a transform MOVES the others, which is never what was asked for.
+      Editing the shared mesh is the opposite: changing one crate to change all of them is the point
+      of a linked duplicate, so refusing would remove the feature. clean_mesh, uv_unwrap and
+      set_shading now report meshSharedWith, alsoChangedCount and a note naming the objects.
+
+      THE CONSEQUENCE AUDIT COULD NOT SEE THEM, which is the more interesting half.
+      audit_blender_consequence_fields classifies by a curated word list, and its own definition
+      says a consequence field "says something did not happen, happened to SOMETHING ELSE, or
+      happened and was undone". The middle case had no word in the list, so meshSharedWith sailed
+      past the one audit built to catch exactly that. 18 consequence-shaped fields became 20, and no
+      pre-existing field was newly caught - the gap was specific to this shape, not general.
+
+      C111 in test_blender_consequence covers it, with a single-user negative control so a note that
+      was always present could not pass.
