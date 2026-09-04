@@ -137,24 +137,59 @@ def _material_json(mat, deep=False):
 
     # IMAGE TEXTURES AND THEIR PATHS. This is the field an Unreal-side import has to resolve,
     # so it is reported whether or not `deep` was asked for.
+    # AN IMAGE-LESS TEX_IMAGE NODE IS REPORTED, and that is the whole change here.
+    #
+    # This used to require `n.image is not None`, so a texture node with no image was skipped
+    # entirely - absent from `textures` and uncounted. That is precisely the state Blender renders
+    # MAGENTA: loud on screen, and this op reported textureCount 0, indistinguishable from a
+    # material that has no texture nodes at all. The read side hid the one state somebody looking
+    # at a bright pink material most needs to see.
+    #
+    # COLOUR SPACE IS REPORTED TOO, because it is the other way a texture is wrong while every
+    # field looks right: a normal or roughness map decoded as sRGB comes back through the transfer
+    # curve and every value the shader reads is off. set_material_texture chooses it correctly on
+    # the way in; this is how you check what a material IMPORTED from elsewhere actually has.
     textures = []
     for n in nodes:
-        if n.type == "TEX_IMAGE" and n.image is not None:
-            entry = {
-                "node": n.name,
-                "image": n.image.name,
-                "filepath": n.image.filepath,
-                "size": list(n.image.size),
-                "packed": bool(n.image.packed_file),
-            }
-            linked = []
-            for outsock in n.outputs:
-                for link in outsock.links:
-                    linked.append("%s.%s" % (link.to_node.name, link.to_socket.name))
-            entry["linkedTo"] = linked
-            textures.append(entry)
+        if n.type != "TEX_IMAGE":
+            continue
+        img = n.image
+        entry = {
+            "node": n.name,
+            "image": img.name if img is not None else None,
+            "filepath": img.filepath if img is not None else None,
+            "size": list(img.size) if img is not None else None,
+            "packed": bool(img.packed_file) if img is not None else None,
+            "colorSpace": (img.colorspace_settings.name if img is not None else None),
+            # THE TWO BROKEN STATES, named rather than left to be inferred from a null.
+            "hasImage": img is not None,
+            "hasPixels": (tuple(img.size) != (0, 0)) if img is not None else False,
+        }
+        linked = []
+        for outsock in n.outputs:
+            for link in outsock.links:
+                linked.append("%s.%s" % (link.to_node.name, link.to_socket.name))
+        entry["linkedTo"] = linked
+        if img is None:
+            entry["warning"] = (
+                "this texture node has NO IMAGE. Blender renders it MAGENTA - obvious on screen "
+                "and, until now, invisible here.")
+        elif tuple(img.size) == (0, 0):
+            entry["warning"] = (
+                "'%s' has no pixels (0x0), so its source did not resolve. Blender renders this "
+                "MAGENTA." % img.name)
+        elif not linked:
+            entry["warning"] = (
+                "this texture node is not connected to anything, so it is loaded and unused - "
+                "which reads identically to a working one in every other field.")
+        textures.append(entry)
     out["textures"] = textures
     out["textureCount"] = len(textures)
+    # SEPARATE COUNTS, because "how many texture nodes" and "how many will render" are different
+    # questions and the second is the one that decides what the material looks like.
+    out["texturesWithImage"] = len([e for e in textures if e["hasImage"]])
+    broken = [e["node"] for e in textures if e.get("warning")]
+    out["texturesNeedingAttention"] = broken or None
 
     if deep:
         out["links"] = [

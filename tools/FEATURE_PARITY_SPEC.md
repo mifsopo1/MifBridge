@@ -13532,3 +13532,30 @@ out-of-process the way ops_gen already does with gen_status.
       The lesson is the one the whole day kept teaching: a reason written into a SKIP is a claim,
       and an unmeasured claim in a skip list is invisible forever, because nothing ever runs the
       thing that would contradict it.
+
+- [x] **describe_material hid the one texture state you most need to see** DONE 2026-09-04
+      The loop required `n.image is not None`, so a TEX_IMAGE node with no image was skipped
+      entirely - absent from `textures` and uncounted. That is exactly the state Blender renders
+      MAGENTA: loud on screen, and this op reported textureCount 0, indistinguishable from a
+      material that has no texture nodes at all. Somebody staring at a bright pink material got a
+      response saying there was nothing to look at.
+
+      Found by the read/write lens pointed the other way. set_material_texture was written this
+      afternoon and refuses a missing file BEFORE creating anything, precisely so the magenta state
+      cannot be reached through it - but a material imported from elsewhere can be in that state
+      already, and the read op could not say so.
+
+      Three states are now named rather than left to be inferred from a null: no image at all, an
+      image that resolved to 0x0 pixels, and a texture loaded but connected to nothing - which reads
+      identically to a working one in every other field. texturesWithImage and
+      texturesNeedingAttention are separate counts, because "how many texture nodes" and "how many
+      will render" are different questions.
+
+      colorSpace is reported too. It is the other way a texture is wrong while every field looks
+      right - a normal or roughness map decoded as sRGB comes back through the transfer curve and
+      every value the shader reads is off. set_material_texture chooses it correctly on the way in;
+      this is how somebody checks what an imported material actually has.
+
+      Verified on 4.4 with a negative control: a working texture reports colorSpace sRGB and no
+      warning, an image-less node is flagged and named in texturesNeedingAttention, and the count
+      went from 1 to 2 because the broken one had simply not been there before.
