@@ -12948,3 +12948,55 @@ out-of-process the way ops_gen already does with gen_status.
 
       Two overclaims fell out of this and were fixed in the same commit. README and 00_ARCHITECTURE
       both said the matrix runs "every op" on all four builds. It never has.
+
+- [x] **the matrix compared STATUS and threw the answers away** DONE 2026-09-04
+      It asked "does this op still succeed on every build" and never "does it still succeed with
+      the SAME ANSWER". The call site was `table[name](payload)` with the return value discarded, so
+      the harness kept `{"status": "ok"}` and nothing else. That is the uv_unwrap hole: it returned
+      ok on all four builds while producing DIFFERENT UVs, and the only reason anybody found out was
+      a fingerprint hand-rolled inside that one op, because the harness could not have noticed.
+
+      Each result is now reduced to a comparable digest inside Blender - scalar leaves by dotted
+      path, lists as their LENGTH, floats rounded, the version string and the per-run temp dir
+      normalised out - and the outer compares those across builds. pid, python and elapsedSeconds
+      are DROPPED rather than baselined: they differ every run by construction, and three permanent
+      entries in the accepted list that can never be reviewed usefully are worse than no entry.
+
+      Ratcheted on (op, field), NOT on the values, for the reason audit_stale_counts gives: plenty
+      of fields differ because of Blender's own history - Principled sockets renamed at 4.0, Filmic
+      became AgX, BLENDER_EEVEE became BLENDER_EEVEE_NEXT and back at 5.0, pass count 29 to 30.
+      Baselining values would go red on every legitimate move. 65 pairs accepted after reading them.
+
+      IT WAS MUTATION-TESTED, and the first attempt was a false pass worth recording. Injecting a
+      per-build field into op_ping broke ping outright; the run exited 1 from the RAW EXCEPTION
+      while the value check correctly reported no drift, and exit 1 nearly read as proof. The
+      injection had also landed in the wrong function - the regex matched a later `return {` because
+      op_ping builds `out = {` - which is the wrong-occurrence trap for the second time this week.
+      Re-done against a unique anchor: no raw exceptions, drift reported with the per-build values,
+      exit 1. A check that cannot go red is not a check.
+
+- [x] **the geometry queries were measuring a Cube that ten ops had already reshaped** DONE 2026-09-04
+      Found by the value comparison above, on its first real run. closest_point_on_mesh from
+      [0,0,5] to a default cube is an exact 4.0. It reported 4.042868 on 3.6 and 4.2 and 2.948219 on
+      4.4 and 5.0, with faceIndex 11 against 7 - a geometry query apparently disagreeing across
+      Blender versions. Run in isolation it returns 4.0 on all four.
+
+      The alphabetical sweep had bisected the shared Cube at 'b', put a SUBSURF on it at 'a',
+      constrained it and made it an active rigid body, all before the queries at 'c' read it - and
+      the resulting shape differed per build. ray_cast had the same problem for the same reason: it
+      cast down from [0,0,5] into whatever was left at the origin.
+
+      MifProbe is a pristine cube at x=32 that nothing mutates, and the READ-ONLY queries now use
+      it: closest_point_on_mesh, ray_cast, face_info, mesh_stats, uv_info, object_info. All six left
+      the divergence list. The mutating ops keep the shared Cube, which is what it is for.
+
+      Fifth time a mutating op has been put in the sweep beside fixtures it wrecks. The first
+      suspicion here was bake_physics, added an hour earlier, dropping an ACTIVE rigid body under
+      gravity - wrong, and only ruled out by testing it rather than reasoning about it. It moved to
+      TEARDOWN anyway, because it does move the shared Cube and the next fixture would have paid.
+
+- [ ] **the temp-path normalisation silently did nothing for a while**
+      _TMP is stored forward-slashed so it can be substituted into payloads, but ops return whatever
+      the OS hands back, so every returned path failed to normalise and read as a cross-build diff.
+      Fixed by also replacing the os.sep spelling. Worth a look for the same shape elsewhere: a
+      normalisation that quietly matches nothing looks exactly like one that had nothing to do.

@@ -48,6 +48,7 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+VALUE_BASELINE = os.path.join(HERE, "blender_version_matrix_values.json")
 ADDON_PARENT = os.path.join(HERE, "blender-addon")
 
 INSTALL_GLOBS = (
@@ -61,22 +62,33 @@ INSTALL_GLOBS = (
 #
 # Anything absent from here is still called with {} - the refusal is recorded and is not a finding.
 PAYLOADS = {
-    "object_info": {"object": "Cube"},
+    "object_info": {"object": "MifProbe"},
     # THE ROUND TRIP. Written to a throwaway temp dir; {TMP} is substituted inside Blender.
     "export_mesh": {"object": "MifCutter", "file": "{TMP}/mif_rt.fbx"},
     "export_scene": {"objects": ["MifCutter"], "file": "{TMP}/mif_rt.obj"},
     "import_mesh": {"file": "{TMP}/mif_rt.fbx"},
     "import_scene": {"file": "{TMP}/mif_rt.obj"},
     "save_file": {"filepath": "{TMP}/mif_rt.blend"},
-    "face_info": {"object": "Cube"},
+    # THE READ-ONLY QUERIES GET THEIR OWN PRISTINE CUBE, and this is not tidiness.
+    #
+    # They used to read the shared Cube, which by the time the alphabetical sweep reaches 'c' has
+    # been bisected at 'b', given a SUBSURF at 'a', constrained, and marked an active rigid body.
+    # closest_point_on_mesh from [0,0,5] should be an exact 4.0 and was instead 4.042868 on two
+    # builds and 2.948219 on the other two, with faceIndex 11 vs 7 - a geometry query apparently
+    # disagreeing across Blender versions, entirely because the thing it measured was a different
+    # shape on each. Run alone it returns 4.0 on all four.
+    #
+    # MifProbe sits at x=32 where nothing else is built, and NOTHING mutates it. The mutating ops
+    # below keep the shared Cube, which is what it is for.
+    "face_info": {"object": "MifProbe"},
+    "ray_cast": {"origin": [32, 0, 5], "direction": [0, 0, -1]},
+    "closest_point_on_mesh": {"object": "MifProbe", "point": [32, 0, 5]},
+    "uv_info": {"object": "MifProbe"},
+    "mesh_stats": {"object": "MifProbe"},
     "select_faces": {"object": "Cube", "axis": "Z"},
-    "ray_cast": {"origin": [0, 0, 5], "direction": [0, 0, -1]},
-    "closest_point_on_mesh": {"object": "Cube", "point": [0, 0, 5]},
     "objects_overlap": {"a": "Cube", "b": "MifCutter"},
     "set_shading": {"object": "Cube", "smooth": True},
     "bisect_plane": {"object": "Cube", "planeCo": [0, 0, 0], "axis": "Z"},
-    "uv_info": {"object": "Cube"},
-    "mesh_stats": {"object": "Cube"},
     "set_vertex_color": {"object": "Cube", "name": "MifWear", "color": [1, 0, 0]},
     "rename_object": {"object": "MifSweepCube", "to": "MifRenamed"},
     "uv_unwrap": {"object": "Cube"},
@@ -162,10 +174,6 @@ PAYLOADS = {
     "add_cloth": {"object": "MifGrid"},
     "add_collision": {"object": "Cube"},
     "physics_info": {},
-    # TWO FRAMES OF ONE RIGID BODY. add_rigid_body sits at 'a' and runs BEFORE this at
-    # 'b', so the world and the cache already exist by the time the sweep gets here - the
-    # fixture was already being built and nothing was using it.
-    "bake_physics": {"start": 1, "end": 2},
     # 32x32 AT ONE SAMPLE, to a throwaway. The postcondition worth reaching is wroteFile,
     # which is stat'd off disk because bpy.ops.render.render() returns FINISHED whether or
     # not a file appeared.
@@ -257,6 +265,7 @@ TEARDOWN = [
     ("delete_object", {"object": "MifDoomed"}),
     ("delete_collection", {"collection": "MifDoomedColl"}),
     ("delete_view_layer", {"name": "MifDoomedVL"}),
+    ("bake_physics", {"start": 1, "end": 2}),
     ("clear_scene", {}),
     # THE ROUND TRIP, and it has to be last: open_file replaces bpy.data wholesale, so
     # anything after it would be looking at a different scene. save_file wrote this at
@@ -280,6 +289,9 @@ FIXTURES = [
     # for cloth, which refuses 8 vertices outright: "a quad has nothing to bend".
     ("create_primitive", {"kind": "cube", "name": "MifCutter", "location": [0.5, 0.5, 0.5]}),
     ("create_primitive", {"kind": "cube", "name": "MifSpare", "location": [4, 0, 0]}),
+    # READ ONLY, AND NOTHING BELOW MAY TOUCH IT. The query ops measure this and only
+    # this, so their numbers mean the same thing on every build.
+    ("create_primitive", {"kind": "cube", "name": "MifProbe", "location": [32, 0, 0]}),
     ("create_primitive", {"kind": "grid", "name": "MifGrid", "location": [0, 4, 0]}),
     ("create_material", {"name": "MifMatrixMat"}),
     ("set_material_slots", {"object": "Cube", "slots": ["MifMatrixMat"]}),
@@ -339,6 +351,13 @@ SKIP = {
     "delete_collection": "destructive - run by TEARDOWN after the sweep instead",
     "delete_view_layer": "destructive - run by TEARDOWN after the sweep instead",
     "clear_scene": "empties everything - run LAST by TEARDOWN",
+    # IT MOVES THE SHARED CUBE. add_rigid_body marks Cube ACTIVE at 'a', so baking at
+    # 'b' drops it under gravity and every later op reading Cube's geometry sees a
+    # fallen one. closest_point_on_mesh went from an exact 4.0 to 4.042868 on two
+    # builds and 2.948219 on the other two - a GEOMETRY QUERY disagreeing across
+    # versions for no reason but this. Fourth time a mutating op has been put in the
+    # sweep beside the fixtures it wrecks; TEARDOWN is where those go.
+    "bake_physics": "moves the shared Cube under gravity - run by TEARDOWN instead",
     # SAME TREATMENT AS THE DELETES, and for the same reason. Taking it out of SKIP
     # entirely put it into the ALPHABETICAL sweep at 'o', where it ran with no payload and
     # refused for a missing filepath - which then masked the teardown result. It belongs in
@@ -390,7 +409,7 @@ except Exception:
     print("MIFMATRIX" + json.dumps(out))
     raise SystemExit(0)
 
-import tempfile
+import os, tempfile
 _TMP = tempfile.mkdtemp(prefix="mifmatrix_").replace("\\", "/")
 
 def _sub(value):
@@ -401,6 +420,45 @@ def _sub(value):
     if isinstance(value, dict):
         return dict((k, _sub(v)) for k, v in value.items())
     return value
+
+# WHAT A RESULT IS REDUCED TO BEFORE IT CROSSES THE PROCESS BOUNDARY.
+#
+# The whole payload is too much - names, coordinates and paths differ per run for reasons that are
+# nobody's bug - and the status alone was too little, which is the hole this closes: uv_unwrap
+# returned ok on all four builds while producing DIFFERENT UVs, and the only reason anybody found
+# out was a fingerprint hand-rolled inside that one op. Nothing here kept enough to notice.
+#
+# So: scalar leaves by dotted path, lists reduced to their LENGTH, floats rounded, and the two
+# things that legitimately differ every run normalised out - this build's version string and the
+# per-run temp directory. Everything left is a value that has no business changing between builds.
+# FIELDS WITH NO CROSS-BUILD MEANING, dropped rather than baselined. A process id, a wall-clock
+# timing and the interpreter version differ every run by construction - baselining them would park
+# three permanent entries in the accepted list that say nothing and can never be reviewed usefully.
+# Everything else stays, including file sizes, which differ for real reasons worth accepting once.
+_NOISE = ("pid", "python", "elapsedSeconds")
+
+def _digest(value, prefix="", into=None):
+    if into is None:
+        into = {}
+    if prefix and prefix.rsplit(".", 1)[-1] in _NOISE:
+        return into
+    if isinstance(value, dict):
+        for k, v in value.items():
+            _digest(v, ("%%s.%%s" %% (prefix, k)) if prefix else str(k), into)
+    elif isinstance(value, (list, tuple)):
+        into[prefix + "[]"] = len(value)
+    elif isinstance(value, float):
+        into[prefix] = round(value, 6)
+    elif isinstance(value, str):
+        s = value.replace(_TMP, "<tmp>").replace(_TMP.replace("/", os.sep), "<tmp>")
+        if s == bpy.app.version_string:
+            s = "<version>"
+        into[prefix] = s[:120]
+    elif isinstance(value, (bool, int)) or value is None:
+        into[prefix] = value
+    else:
+        into[prefix] = type(value).__name__
+    return into
 
 payloads = _sub(json.loads(r"""%(payloads)s"""))
 skip = json.loads(r"""%(skip)s""")
@@ -432,8 +490,8 @@ for name in sorted(table):
         out["results"][name] = {"status": "skipped", "detail": skip[name]}
         continue
     try:
-        table[name](dict(payloads.get(name, {})))
-        out["results"][name] = {"status": "ok"}
+        _r = table[name](dict(payloads.get(name, {})))
+        out["results"][name] = {"status": "ok", "value": _digest(_r)}
     except MifOpError as exc:
         out["results"][name] = {"status": "refused", "detail": str(exc)[:220]}
     except Exception as exc:
@@ -518,6 +576,8 @@ def main():
     # a second time is how the first twelve payloads came out wrong.
     ap.add_argument("--show-refusals", action="store_true",
                     help="print the refusal message for ops refused on every build")
+    ap.add_argument("--update-value-baseline", action="store_true",
+                    help="accept the current cross-build value differences")
     args = ap.parse_args()
     only = {o.strip() for o in args.ops.split(",") if o.strip()}
     want_v = {v.strip() for v in args.versions.split(",") if v.strip()}
@@ -629,6 +689,58 @@ def main():
         print("read these BEFORE reading the reach numbers below:")
         for v, op, status, detail in bad_fixtures:
             print("  %-12s %-24s %-8s %s" % (v, op, status, detail[:90]))
+    # VALUE DRIFT. The status comparison above asks whether an op still SUCCEEDS on every build.
+    # This asks whether it still succeeds with the SAME ANSWER, which is a different question and
+    # the one that was going unasked: uv_unwrap returned ok on all four builds while producing
+    # different UVs, and the only reason anybody noticed was a fingerprint hand-rolled inside that
+    # one op. Nothing in this harness kept enough of a result to compare.
+    #
+    # RATCHETED ON (op, field), NOT on the values. Plenty of fields differ for reasons that are
+    # Blender's history rather than anybody's bug - the Principled socket renames at 4.0, Filmic
+    # becoming AgX, BLENDER_EEVEE becoming BLENDER_EEVEE_NEXT and back. Those are accepted once, by
+    # a person, and the finding is a field that starts differing when it did not before. Baselining
+    # the VALUES instead would go red on every legitimate move, which is the opposite of a ratchet.
+    value_diffs = []
+    for op in ops:
+        per = {}
+        for r in reports:
+            entry = r.get("results", {}).get(op, {})
+            if entry.get("status") != "ok":
+                per = None
+                break
+            per[r.get("version")] = entry.get("value") or {}
+        if not per or len(per) < len(reports):
+            continue
+        for field in sorted({k for d in per.values() for k in d}):
+            seen = {v: d.get(field, "<absent>") for v, d in per.items()}
+            if len({json.dumps(x, sort_keys=True, default=str) for x in seen.values()}) > 1:
+                value_diffs.append((op, field, seen))
+
+    try:
+        with io.open(VALUE_BASELINE, encoding="utf-8") as fh:
+            accepted = {tuple(row) for row in json.load(fh)}
+    except Exception:
+        accepted = set()
+    new_diffs = [d for d in value_diffs if (d[0], d[1]) not in accepted]
+
+    if args.update_value_baseline:
+        with io.open(VALUE_BASELINE, "w", encoding="utf-8", newline="\r\n") as fh:
+            json.dump(sorted([op, field] for op, field, _ in value_diffs), fh, indent=1)
+        print("\nvalue baseline updated: %d accepted (op, field) pair(s)" % len(value_diffs))
+
+    print("")
+    if new_diffs:
+        print("VALUE DRIFT - these ops still SUCCEED on every build and no longer AGREE:")
+        for op, field, seen in new_diffs:
+            print("  %-26s %s" % (op, field))
+            print("      " + "   ".join("%s=%s" % (v, str(x)[:26]) for v, x in sorted(seen.items())))
+        print("")
+        print("  A field that starts differing is either a Blender change worth knowing about or a")
+        print("  bug in the op. Read it, then accept it with --update-value-baseline.")
+    else:
+        print("no NEW cross-build value drift (%d known difference(s) accepted in %s)."
+              % (len(value_diffs), os.path.basename(VALUE_BASELINE)))
+
     print("")
     print("REACH - how far the calls actually got, which is not the same as the findings above:")
     for r in reports:
@@ -662,7 +774,7 @@ def main():
     print("A refusal is NOT a finding - an op declining because the default scene has no armature")
     print("is the op working. Raw exceptions and divergences are the findings; REACH is how much of")
     print("the table those findings actually cover.")
-    return 1 if (raised or fatal or suspect) else 0
+    return 1 if (raised or fatal or suspect or new_diffs) else 0
 
 
 if __name__ == "__main__":
