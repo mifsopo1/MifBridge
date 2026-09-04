@@ -11,10 +11,8 @@ from contextlib import redirect_stdout, redirect_stderr
 
 import bpy
 
-from .ops_common import (
-    MifOpError, jsonable, object_info, mesh_counts, take, take_bool, take_float,
-    reject_unknown, get_object, UU_PER_BU,
-)
+from .ops_common import (MifOpError, UU_PER_BU, get_object, jsonable, mesh_counts, object_info,
+                         reject_unknown, take, take_bool, take_float)
 
 ADDON_VERSION = (0, 1, 0)
 

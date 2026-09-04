@@ -37,10 +37,9 @@ import os
 
 import bpy
 
-from .ops_common import (MifOpError, check_output_path, get_object, jsonable, reject_unknown,
-                         rnd, take,
-                         take_bool, take_float, take_int,
-                         select_only, selection_restore, selection_snapshot)
+from .ops_common import (MifOpError, check_output_path, finite_float, get_object, jsonable,
+                         reject_unknown, rnd, select_only, selection_restore, selection_snapshot,
+                         take, take_bool, take_float, take_int)
 
 # Requested name -> the socket names it may be called on some supported Blender.
 # Order matters only for reporting; the first that EXISTS on this build wins.
@@ -326,7 +325,7 @@ def _coerce_socket(sock, prop, val):
             raise MifOpError("'%s' expects %d components on this Blender, got %d"
                              % (prop, want, len(vals)))
         return vals
-    return float(val)
+    return finite_float(val, prop)
 
 
 def _check_unlinked(sock, prop):

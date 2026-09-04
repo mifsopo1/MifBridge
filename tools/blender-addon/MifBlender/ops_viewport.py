@@ -16,8 +16,8 @@ actual render engine, so it is the only mode in which a flickering light flicker
 """
 import bpy
 
-from .ops_common import (finite_floats, MifOpError, check_axis_dict, get_object, reject_unknown, take,
-                         take_bool, take_float)
+from .ops_common import (MifOpError, check_axis_dict, finite_floats, get_object, reject_unknown,
+                         take, take_bool, take_float)
 
 _SHADE_KEYS = {"shading", "mode", "studioLight", "useSceneLights", "useSceneWorld",
                "showOverlays", "showGizmos", "colorType"}

@@ -31,8 +31,7 @@ import time
 import bpy
 
 from .ops_common import (MifOpError, check_output_path, reject_unknown, take, take_bool,
-                         take_float,
-                         take_int)
+                         take_float, take_int)
 
 _SETTINGS_KEYS = {
     "engine", "resolutionX", "resolutionY", "percentage", "samples",

@@ -28,9 +28,9 @@ object really is left holding the last value written. That is stated rather than
 """
 import bpy
 
-from .ops_common import (finite_floats, check_axis_dict, MifOpError, get_object, reject_unknown, rnd, select_only,
-                         selection_restore, selection_snapshot, take, take_bool, take_float,
-                         take_int)
+from .ops_common import (MifOpError, check_axis_dict, finite_float, finite_floats, get_object,
+                         reject_unknown, rnd, select_only, selection_restore, selection_snapshot,
+                         take, take_bool, take_float, take_int)
 
 _KEY_KEYS = {
     "object", "name", "frame", "location", "rotation", "scale",
@@ -229,13 +229,13 @@ def op_set_keyframe(params):
         try:
             if index is not None:
                 cur = getattr(holder, leaf)
-                cur[int(index)] = float(value)
+                cur[int(index)] = finite_float(value, "value")
             elif isinstance(value, (list, tuple)):
-                setattr(holder, leaf, tuple(float(v) for v in value))
+                setattr(holder, leaf, tuple(finite_float(v, "value") for v in value))
             elif isinstance(value, bool):
                 setattr(holder, leaf, value)
             else:
-                setattr(holder, leaf, float(value))
+                setattr(holder, leaf, finite_float(value, "value"))
         except (AttributeError, TypeError, ValueError) as exc:
             raise MifOpError("could not write %r to '%s' on the %s datablock: %s. NOTHING was "
                              "keyed." % (value, path, why, exc))

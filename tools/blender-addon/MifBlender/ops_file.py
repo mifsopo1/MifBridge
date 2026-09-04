@@ -27,7 +27,7 @@ import os
 
 import bpy
 
-from .ops_common import check_output_path, MifOpError, reject_unknown, take, take_bool
+from .ops_common import (MifOpError, check_output_path, reject_unknown, take, take_bool)
 
 # The ID collections a save can purge. Not every bpy.data collection - only the ones that carry
 # authored work somebody would miss, which is the same judgement clear_scene's purge list makes.

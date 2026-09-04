@@ -39,14 +39,7 @@ import urllib.request
 
 import bpy
 
-from .ops_common import (
-    MifOpError,
-    reject_unknown,
-    take,
-    take_bool,
-    take_float,
-    take_int,
-)
+from .ops_common import (MifOpError, reject_unknown, take, take_bool, take_float, take_int)
 
 # ---------------------------------------------------------------------------
 # Connection

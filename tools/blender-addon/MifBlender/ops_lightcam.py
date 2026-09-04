@@ -27,11 +27,10 @@ import os
 import bpy
 import mathutils
 
-from .ops_common import (finite_floats, check_axis_dict, MifOpError, camera_readback, get_object, light_readback, object_info,
-                         reject_unknown,
-                         refuse_unsupported_shadow, rnd, shadow_attr,
-                         selection_restore, selection_snapshot, take, take_bool, take_float,
-                         take_int)
+from .ops_common import (MifOpError, camera_readback, check_axis_dict, finite_floats, get_object,
+                         light_readback, object_info, refuse_unsupported_shadow, reject_unknown,
+                         rnd, selection_restore, selection_snapshot, shadow_attr, take, take_bool,
+                         take_float, take_int)
 
 # Blender's own enum, read off the RNA rather than remembered - the same discipline ops_create uses
 # for primitive sizing kwargs, and for the same reason: a hardcoded list goes stale silently.

@@ -35,20 +35,9 @@ import hashlib
 
 import bpy
 
-from .ops_common import (check_axis_dict, 
-    MifOpError,
-    get_object,
-    mesh_counts,
-    reject_unknown,
-    rnd,
-    select_only,
-    selection_restore,
-    selection_snapshot,
-    take,
-    take_bool,
-    take_float,
-    take_int,
-)
+from .ops_common import (MifOpError, check_axis_dict, get_object, mesh_counts, reject_unknown,
+                         rnd, select_only, selection_restore, selection_snapshot, take, take_bool,
+                         take_float, take_int)
 
 
 def _bone_dict(bone):

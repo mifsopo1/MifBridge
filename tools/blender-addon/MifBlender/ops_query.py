@@ -39,8 +39,8 @@ import bpy
 import mathutils
 import mathutils.bvhtree
 
-from .ops_common import (MifOpError, get_object, reject_unknown, rnd, take, take_bool,
-                         take_float, take_int)
+from .ops_common import (MifOpError, get_object, reject_unknown, rnd, take, take_bool, take_float,
+                         take_int)
 
 _RAY_KEYS = {"origin", "direction", "target", "object", "name", "distance", "evaluated"}
 # NO "name" ALIAS HERE. object is required and unambiguous, and param_reach flagged the alias

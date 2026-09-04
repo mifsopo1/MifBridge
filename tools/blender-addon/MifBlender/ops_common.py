@@ -141,6 +141,24 @@ def take_int(params, *names, default=None, required=False):
 
 
 
+def finite_float(value, key):
+    """One caller-supplied value as a finite float, or a refusal naming it.
+
+    The scalar twin of finite_floats, for the conversion sites that never see take_float: a node
+    socket default, a material input, a keyframe value, a UV coordinate. Each of those takes a value
+    out of the caller's dict and calls float() on it, and float("nan") succeeds.
+    """
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise MifOpError("'%s' must be a number, got %r. NOTHING was changed." % (key, value))
+    if not math.isfinite(number):
+        raise MifOpError("'%s' must be a finite number, got %r. NaN and Infinity are accepted by "
+                         "Blender and poison everything that reads it afterwards, silently. "
+                         "NOTHING was changed." % (key, value))
+    return number
+
+
 def finite_floats(values, key):
     """Every element as a finite float, or a refusal naming the one that is not.
 

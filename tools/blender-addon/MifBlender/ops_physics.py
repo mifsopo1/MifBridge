@@ -20,8 +20,8 @@ right in the viewport only if you happened to scrub through it.
 """
 import bpy
 
-from .ops_common import (MifOpError, get_object, reject_unknown, rnd, take, take_bool,
-                         take_float, take_int)
+from .ops_common import (MifOpError, get_object, reject_unknown, rnd, take, take_bool, take_float,
+                         take_int)
 
 _RB_KEYS = {"object", "name", "type", "mass", "friction", "bounciness", "restitution",
             "collisionShape", "kinematic", "margin", "linearDamping", "angularDamping"}

@@ -44,8 +44,8 @@ pipeline wants and is NOT how you place a second object next to a first.
 import bpy
 
 from .ops_common import (MifOpError, check_axis_dict, finite_floats, get_object, mesh_counts,
-                         object_info, reject_unknown, rnd, selection_restore,
-                         selection_snapshot, take, take_bool, take_float, take_int)
+                         object_info, reject_unknown, rnd, selection_restore, selection_snapshot,
+                         take, take_bool, take_float, take_int)
 
 # What each primitive really accepts. `size` is that operator's own size-like kwarg, or None when it
 # has none at all. `extras` is every other per-kind kwarg. Verified against bpy.ops RNA.

@@ -84,12 +84,10 @@ import bmesh
 import bpy
 from mathutils import Vector
 
-from .ops_common import (
-    MifOpError, axis_index, check_output_path, get_object, mesh_counts, object_info,
-    reject_unknown, rnd,
-    select_only, selection_restore, selection_snapshot, take, take_bool,
-    take_float, take_int, UU_PER_BU,
-)
+from .ops_common import (MifOpError, UU_PER_BU, axis_index, check_output_path, get_object,
+                         mesh_counts, object_info, reject_unknown, rnd, select_only,
+                         selection_restore, selection_snapshot, take, take_bool, take_float,
+                         take_int)
 
 # Pinned, not defaulted. Anything that changes the geometry, the axes or the
 # units of the written file lives in this dict so there is exactly one place to

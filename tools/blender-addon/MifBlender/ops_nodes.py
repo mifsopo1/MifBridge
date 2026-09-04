@@ -29,8 +29,8 @@ way out.
 """
 import bpy
 
-from .ops_common import (MifOpError, check_axis_dict, get_object, reject_unknown, take,
-                         take_bool, take_float)
+from .ops_common import (MifOpError, check_axis_dict, finite_float, get_object, reject_unknown,
+                         take, take_bool, take_float)
 
 _CREATE_KEYS = {"name", "type", "withGroupIO"}
 _ADDNODE_KEYS = {"group", "tree", "type", "nodeType", "name", "location", "inputs", "label",
@@ -199,7 +199,9 @@ def _socket_value(kind, sock_name, val, where, tail="NOTHING was changed."):
         return bool(val)
     if kind == "NodeSocketInt":
         return int(val)
-    return float(val)
+    # A NaN socket default is accepted by Blender and renders as black or as nothing, with the
+    # socket reading back nan and the response agreeing the value was written.
+    return finite_float(val, sock_name)
 
 
 # WHICH NODE TYPES HOLD ANOTHER TREE. A Group node is the only way to compose procedural systems,
@@ -288,7 +290,7 @@ def _write_node_property(node, key, value):
                 raise MifOpError("'%s' on a %s is a number, got %r. The node WAS added."
                                  % (key, node.bl_idname, value))
             try:
-                setattr(node, key, float(value))
+                setattr(node, key, finite_float(value, key))
             except (TypeError, ValueError):
                 raise MifOpError("'%s' on a %s is a number, got %r. The node WAS added."
                                  % (key, node.bl_idname, value))
