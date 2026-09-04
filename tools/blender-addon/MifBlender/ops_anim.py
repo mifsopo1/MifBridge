@@ -29,8 +29,9 @@ object really is left holding the last value written. That is stated rather than
 import bpy
 
 from .ops_common import (MifOpError, check_axis_dict, finite_float, finite_floats, finite_int,
-                         get_object, reject_unknown, rnd, select_only, selection_restore,
-                         selection_snapshot, take, take_bool, take_float, take_int)
+                         get_object, reject_unknown, require_editable, rnd, select_only,
+                         selection_restore, selection_snapshot, take, take_bool, take_float,
+                         take_int)
 
 _KEY_KEYS = {
     "object", "name", "frame", "location", "rotation", "scale",
@@ -156,6 +157,7 @@ def op_set_keyframe(params):
     """
     reject_unknown(params, _KEY_KEYS, "set_keyframe")
     obj = get_object(take(params, "object", "name", required=True))
+    require_editable(obj, "key")
     frame = take_float(params, "frame", required=True)
     interp = str(take(params, "interpolation", default="BEZIER", kind=str)).upper()
     if interp not in ("CONSTANT", "LINEAR", "BEZIER"):
@@ -1054,6 +1056,7 @@ def op_assign_action(params):
     """
     reject_unknown(params, {"object", "name", "action", "clear"}, "assign_action")
     obj = get_object(take(params, "object", "name", required=True))
+    require_editable(obj, "animate")
     clear = take_bool(params, "clear", default=False)
     want = take(params, "action", default=None, kind=str)
     if clear and want:

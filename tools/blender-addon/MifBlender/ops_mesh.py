@@ -85,9 +85,9 @@ import bpy
 from mathutils import Vector
 
 from .ops_common import (MifOpError, UU_PER_BU, axis_index, check_output_path, finite_floats,
-                         get_object, mesh_counts, object_info, reject_unknown, rnd, select_only,
-                         selection_restore, selection_snapshot, take, take_bool, take_float,
-                         take_int)
+                         get_object, mesh_counts, object_info, reject_unknown, require_editable,
+                         rnd, select_only, selection_restore, selection_snapshot, take, take_bool,
+                         take_float, take_int)
 
 # Pinned, not defaulted. Anything that changes the geometry, the axes or the
 # units of the written file lives in this dict so there is exactly one place to
@@ -1533,6 +1533,7 @@ def op_set_material_slots(params):
     """
     reject_unknown(params, _MATERIAL_SLOT_KEYS, "set_material_slots")
     obj = get_object(take(params, "object"), want_mesh=True)
+    require_editable(obj, "reslot")
     slots = params.get("slots")
     if not isinstance(slots, list) or not slots:
         raise MifOpError("'slots' is required: a list of material names in ORDER, "
@@ -3039,6 +3040,7 @@ def op_rename_object(params):
     rename_data = take_bool(params, "renameData", default=True)
 
     obj = get_object(src)
+    require_editable(obj, "rename")
     if obj.name == wanted:
         return {"ok": True, "object": obj.name, "renamedFrom": obj.name, "changed": False,
                 "dataName": getattr(obj.data, "name", None),
