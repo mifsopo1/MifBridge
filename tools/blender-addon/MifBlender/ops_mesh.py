@@ -86,8 +86,8 @@ from mathutils import Vector
 
 from .ops_common import (MifOpError, UU_PER_BU, axis_index, check_output_path, finite_floats,
                          get_object, mesh_counts, object_info, reject_unknown, require_editable,
-                         rnd, select_only, selection_restore, selection_snapshot, take, take_bool,
-                         take_float, take_int)
+                         rnd, select_only, selection_restore, selection_snapshot,
+                         shared_data_note, take, take_bool, take_float, take_int)
 
 # Pinned, not defaulted. Anything that changes the geometry, the axes or the
 # units of the written file lives in this dict so there is exactly one place to
@@ -2003,6 +2003,9 @@ def op_uv_unwrap(params):
                         if n in mesh.uv_layers and _uv_fingerprint(mesh.uv_layers[n]) != fp)
     _active_render = next((uv.name for uv in mesh.uv_layers if uv.active_render), None)
     return {
+        # SHARED MESH DATA - see ops_common.shared_data_note. This edit lands on every
+        # object sharing the datablock, and nothing here said so.
+        **shared_data_note(obj),
         "object": obj.name,
         "method": method,
         "uvLayersBefore": before,
@@ -2536,6 +2539,10 @@ def op_clean_mesh(params):
             "performed.")
     else:
         out["netElementsRemoved"] = removed_total
+    # SHARED MESH DATA. See ops_common.shared_data_note - this edit lands on every object
+    # that shares the datablock, which is what a linked duplicate is for and which nothing
+    # in this response said.
+    out.update(shared_data_note(obj))
     return out
 
 

@@ -345,6 +345,38 @@ def get_object(name, want_mesh=False):
     return obj
 
 
+def shared_data_note(obj):
+    """A response fragment naming the OTHER objects an edit to this mesh also changed.
+
+    Alt+D makes a linked duplicate: two objects, one mesh datablock. It is how anyone lays out
+    repeated geometry - a row of crates, a fence, a set of windows - so a real scene is full of
+    them, and editing the mesh through one object changes every object that shares it.
+
+    Measured on 5.0.1: clean_mesh and set_shading each changed a second object, and nothing in
+    either response mentioned it - no field, no phrase.
+
+    REPORTED, NOT REFUSED, and the difference from apply_transform is deliberate. That op refuses
+    outright because applying a transform MOVES the other objects, which is never what was asked
+    for - its message says "one of which you did not ask about". Editing the shared mesh is the
+    opposite case: changing one crate to change all of them is the entire point of a linked
+    duplicate, so refusing would remove the feature. What was missing is the caller knowing.
+    """
+    data = getattr(obj, "data", None)
+    users = getattr(data, "users", 1) or 1
+    if users <= 1:
+        return {}
+    others = sorted(o.name for o in bpy.data.objects
+                    if o.data is data and o.name != obj.name)
+    return {
+        "meshSharedWith": others,
+        "alsoChangedCount": len(others),
+        "sharedNote": ("'%s' shares its mesh data with %d other object(s) - %s - so this edit "
+                       "changed them too. That is what a linked duplicate is for; it is reported "
+                       "because nothing else would tell you."
+                       % (obj.name, len(others), ", ".join(others[:6]) or "(unnamed)")),
+    }
+
+
 def require_editable(obj, what="changed"):
     """Refuse a write to a LIBRARY-LINKED datablock, which Blender can never save.
 

@@ -40,7 +40,8 @@ import mathutils
 import mathutils.bvhtree
 
 from .ops_common import (MifOpError, edit_mode_stale, finite_floats, get_object, reject_unknown,
-                         require_editable, rnd, take, take_bool, take_float, take_int)
+                         require_editable, rnd, shared_data_note, take, take_bool, take_float,
+                         take_int)
 
 _RAY_KEYS = {"origin", "direction", "target", "object", "name", "distance", "evaluated"}
 # NO "name" ALIAS HERE. object is required and unambiguous, and param_reach flagged the alias
@@ -954,6 +955,9 @@ def op_set_shading(params):
     mesh.update()
     smooth_faces = sum(1 for p in mesh.polygons if p.use_smooth)
     return {
+        # SHARED MESH DATA - see ops_common.shared_data_note. This edit lands on every
+        # object sharing the datablock, and nothing here said so.
+        **shared_data_note(obj),
         "ok": True,
         "object": obj.name,
         "faceCount": len(mesh.polygons),

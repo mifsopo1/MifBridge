@@ -464,6 +464,46 @@ def main():
               and dirty.get("faceCount") != live,
               json.dumps(dirty)[:220])
 
+    # ------------------------------------------------------------------
+    # C111  AN EDIT TO A SHARED MESH CHANGES OBJECTS THE CALLER NEVER NAMED
+    # ------------------------------------------------------------------
+    # Alt+D makes a linked duplicate: two objects, one mesh datablock. It is how anyone lays out
+    # repeated geometry, so a real scene is full of them - and editing the mesh through one object
+    # changes every object that shares it. Measured on 5.0.1: clean_mesh and set_shading each
+    # changed a second object and NOTHING in either response mentioned it.
+    #
+    # REPORTED, NOT REFUSED, unlike apply_transform, which refuses this outright because applying a
+    # transform MOVES the others - "one of which you did not ask about". Editing the shared mesh is
+    # the opposite case: changing one crate to change all of them is the entire point of a linked
+    # duplicate. What was missing is the caller knowing it happened.
+    print("")
+    print("=== C111: an edit to a SHARED mesh says which other objects it changed ===")
+    B.call("create_primitive", {"kind": "cube", "name": "MifC_ShareA", "size": 2})
+    solo = B.call("set_shading", {"object": "MifC_ShareA", "smooth": True})
+    check("C111 a single-user mesh does NOT claim to be shared - the negative control, without "
+          "which a note that was always present would pass",
+          not solo.get("meshSharedWith"), json.dumps(solo)[:200])
+
+    # No op makes a linked duplicate - there is no reason for one - so this needs run_python, and
+    # skips politely without it, the same way A101's aim check does.
+    dup = B.call("run_python", {"code": (
+        "import bpy\n"
+        "a = bpy.data.objects['MifC_ShareA']\n"
+        "b = bpy.data.objects.new('MifC_ShareB', a.data)\n"
+        "bpy.context.scene.collection.objects.link(b)\n"
+        "result = a.data.users\n")})
+    if dup.get("ok") is False:
+        check("C111 (skipped) the shared-mesh check needs run_python, which is disabled here",
+              True, str(dup.get("error"))[:120])
+    else:
+        r = B.call("set_shading", {"object": "MifC_ShareA", "smooth": False})
+        shared = r.get("meshSharedWith") or []
+        check("C111 set_shading on a shared mesh names the OTHER object it changed (users=%s, "
+              "named %s) - the edit really does land on both, so silence here is the caller "
+              "believing they touched one" % (dup.get("result"), shared),
+              "MifC_ShareB" in shared and r.get("alsoChangedCount") == 1,
+              json.dumps(r)[:240])
+
     print("")
     print("=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))

@@ -58,7 +58,13 @@ CONSEQUENCE = re.compile(
     r"(?:^|[a-z_])("
     r"failed|failure|dropped|skipped|reverted|discarded|displaced|orphaned|lost|unresolved|"
     r"rejected|removed|truncated|clamped|partial|stale|broken|missing|invalid|incomplete|"
-    r"leftBehind|left_behind"
+    r"leftBehind|left_behind|"
+    # "HAPPENED TO SOMETHING ELSE" is in this file's own definition of a consequence field and was
+    # in none of its words. Added 2026-09-04 when shared_data_note started reporting
+    # meshSharedWith - an edit to a linked duplicate lands on every object sharing the datablock,
+    # which is the textbook case of a consequence the caller did not ask for and cannot otherwise
+    # see, and the regex sailed straight past it.
+    r"sharedWith|alsoChanged|alsoAffected|sideEffect"
     r")", re.I)
 
 # Reachable only through a path an unattended suite must not take, with the reason. Empty today.
