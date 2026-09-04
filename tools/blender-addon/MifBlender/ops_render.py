@@ -874,18 +874,34 @@ def op_set_color_management(params):
     # THE DISPLAY DEVICE GOES FIRST because it can re-populate the view transform list: the
     # transforms on offer are those the config defines FOR THAT DISPLAY. Validating a transform
     # against the old device's set would refuse a value that is about to become legal.
-    if dev is not None:
-        if ds is None:
-            raise MifOpError("this scene has no display_settings, so displayDevice cannot be set. "
-                             "NOTHING was changed.")
-        ds.display_device = _pick_enum(ds, "display_device", str(dev), "display device",
-                                       "set_color_management")
-    if vt is not None:
-        vs.view_transform = _pick_enum(vs, "view_transform", str(vt), "view transform",
-                                       "set_color_management")
-    if look is not None:
-        # VALIDATED AFTER the transform was applied, against what it NOW offers. See the docstring.
-        vs.look = _pick_enum(vs, "look", str(look), "look", "set_color_management")
+    device_before = ds.display_device if ds is not None else None
+    transform_before = vs.view_transform
+    try:
+        if dev is not None:
+            if ds is None:
+                raise MifOpError("this scene has no display_settings, so displayDevice cannot be "
+                                 "set. NOTHING was changed.")
+            ds.display_device = _pick_enum(ds, "display_device", str(dev), "display device",
+                                           "set_color_management")
+        if vt is not None:
+            vs.view_transform = _pick_enum(vs, "view_transform", str(vt), "view transform",
+                                           "set_color_management")
+        if look is not None:
+            # VALIDATED AFTER the transform was applied, against what it NOW offers - see the
+            # docstring - which is exactly why the device has to be PUT BACK if it refuses.
+            vs.look = _pick_enum(vs, "look", str(look), "look", "set_color_management")
+    except MifOpError:
+        # The ordering above is deliberate and cannot change: the device decides which transforms
+        # exist, so it must be written before a transform can be validated. That left a refused call
+        # having switched the display device while promising "NOTHING was changed" - true of the
+        # transform, false of the scene. Undone here rather than by reordering, because the order is
+        # the thing that makes the validation correct. The TRANSFORM is put back for the same
+        # reason one step further down: `look` is validated against what the transform now offers,
+        # so a refused look had already moved the transform.
+        if ds is not None and device_before is not None:
+            ds.display_device = device_before
+        vs.view_transform = transform_before
+        raise
     if exposure is not None:
         vs.exposure = exposure
     if gamma is not None:

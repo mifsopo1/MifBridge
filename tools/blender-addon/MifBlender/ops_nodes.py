@@ -623,9 +623,16 @@ def op_assign_node_group(params):
                 mod = m
                 break
     reused = mod is not None
+    # DECIDED HERE, where the two cases are already separate, rather than at the call below. The
+    # sentence a socket refusal ends with depends on whether this op just made a modifier, and
+    # writing that as a conditional at the call site hides the correlation from anything reading the
+    # code - including the audit, which cannot see that the "NOTHING was changed" branch is the one
+    # where nothing was created.
+    socket_tail = "NOTHING was changed."
     if mod is None:
         mod = obj.modifiers.new(name=str(mod_name or "GeometryNodes"), type="NODES")
         mod.node_group = tree
+        socket_tail = "The '%s' modifier WAS added." % mod.name
 
     applied, refused = {}, {}
     given = params.get("inputs")
@@ -655,9 +662,7 @@ def op_assign_node_group(params):
                 continue
             key, kind = entry
             try:
-                mod[key] = _socket_value(kind, k, v, "modifier '%s'" % mod.name,
-                                 "NOTHING was changed." if reused
-                                 else "The '%s' modifier WAS added." % mod.name)
+                mod[key] = _socket_value(kind, k, v, "modifier '%s'" % mod.name, socket_tail)
                 # READ BACK, because a pointer socket accepts a wrong-typed value silently on some
                 # paths and simply does not hold it. Reporting the NAME rather than the datablock
                 # keeps the response JSON-safe.

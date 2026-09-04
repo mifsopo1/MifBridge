@@ -73,6 +73,16 @@ GLOBAL_CLAIM = re.compile(
     r"(?:NOTHING|Nothing) was (?:[a-z]+|%s)"
     r"(?:\s+(?:to|from|on|in) (?:it|them|the (?:file|scene)))?\s*[.;]")
 
+# WHAT THE VERB PROMISES. "NOTHING was changed" is a promise about the scene; "NOTHING was baked" is
+# a promise about the bake. bake_texture switches the active UV layer, turns use_nodes on and makes
+# an image before it can discover the colour config has no non-colour space to write into - and it
+# says "NOTHING was baked", which is true. Holding it to a sentence it did not say would be wrong.
+#
+# Reported separately rather than dropped: what those ops leave behind is real (bake_texture's
+# orphaned image among it), it is just a LEAK question rather than a broken promise, and the leak
+# counter in blender_version_matrix is where that gets judged. Silence here would lose it.
+OPERATION_VERBS = ("baked", "rendered", "written", "exported", "imported", "saved")
+
 # Calls that reach real state. See the module docstring for why this is short.
 BPY_NEW_ROOTS = ("bpy.data", "bpy.context")
 
@@ -161,9 +171,19 @@ def _claim_text(node):
     joined = " ".join(parts)
     if not any(c in joined for c in CLAIMS):
         return None
-    if not GLOBAL_CLAIM.search(joined):
+    hit = GLOBAL_CLAIM.search(joined)
+    if not hit:
         return None
     return " ".join(joined.split())
+
+
+def _is_state_claim(claim):
+    """Does the promise cover scene state, or only the operation it names?"""
+    hit = GLOBAL_CLAIM.search(claim or "")
+    if not hit:
+        return False
+    verb = hit.group(0).split()[2].rstrip(".;")
+    return verb not in OPERATION_VERBS
 
 
 # Undoing calls. A refusal that removes what it made before speaking is telling the truth, and this
@@ -506,7 +526,7 @@ def scan_file(path):
     name = os.path.basename(path)
     helpers = _refusing_helpers(tree)
     cleaners = _cleaning_helpers(tree)
-    findings, delegating, reachable = [], [], []
+    findings, scoped, delegating, reachable = [], [], [], []
     for fn in tree.body:
         if not isinstance(fn, ast.FunctionDef):
             continue
@@ -548,13 +568,13 @@ def scan_file(path):
                     continue
                 if _restored_by_finally(mpath, rpath, finals)                         or _rolled_back_by_except(mpath, rpath, rollbacks):
                     continue
-                findings.append({
+                (findings if _is_state_claim(claim) else scoped).append({
                     "file": name, "func": fn.name, "wrote": label, "via": helper,
                     "writeLine": mstmt.lineno, "raiseLine": rstmt.lineno,
                     "claim": claim[:90],
                 })
                 break  # one finding per write is enough to send someone to the function
-    return findings, delegating, reachable
+    return findings, scoped, delegating, reachable
 
 
 def main():
@@ -569,11 +589,12 @@ def main():
         print("addon not found at %s" % ADDON)
         return 2
 
-    findings, delegating, reachable = [], [], []
+    findings, scoped, delegating, reachable = [], [], [], []
     files = sorted(f for f in os.listdir(ADDON) if f.startswith("ops_") and f.endswith(".py"))
     for f in files:
-        fo, de, re_ = scan_file(os.path.join(ADDON, f))
+        fo, sc_, de, re_ = scan_file(os.path.join(ADDON, f))
         findings.extend(fo)
+        scoped.extend(sc_)
         delegating.extend(de)
         reachable.extend(re_)
 
@@ -604,6 +625,15 @@ def main():
               " broke.")
         print("Fix by parsing every value that CAN refuse above the first write, as ops_create's"
               " _place_values does.")
+    if scoped:
+        print("")
+        print("PROMISED ONLY ABOUT THE OPERATION, not the scene - %d. NOT failures: an op that says"
+              % len(scoped))
+        print("\"NOTHING was baked\" and then leaves an image behind has told the truth. Listed")
+        print("because what they leave behind is a LEAK question, judged by the matrix, not here.")
+        for row in scoped:
+            print("  %-24s line %-5d %s" % (row["func"], row["writeLine"], row["wrote"]))
+
     if args.check and (findings or dead):
         return 1
     return 0

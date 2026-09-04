@@ -488,6 +488,14 @@ def check_static_audits():
                        # difference. Do not "finish the pair".
                        ("audit_blender_consequence_fields.py", ["--check"]),
                        ("audit_blender_dead_params.py", []),
+                       # EVERY REFUSAL'S OWN SENTENCE, gated 2026-09-04 at zero. Callers are told a
+                       # refused op is a no-op; seven ops broke that and one of them - set_camera -
+                       # moved the camera, its lens and its sensor while saying nothing had changed.
+                       # Static on purpose: the dynamic version of this question in
+                       # blender_version_matrix could not answer it, because that pass runs after
+                       # the sweep has applied each payload and re-applying an idempotent set_* op
+                       # changes nothing. Measured, not assumed - see the audit's own docstring.
+                       ("audit_mutate_then_deny.py", ["--check"]),
                        # TWO SUITES THAT NEED NO EDITOR, joined 2026-09-03. Both were found by
                        # asking which suites have NO record in suite_results.json at all - five did,
                        # and these two turned out to be static, so they had never been run for no
