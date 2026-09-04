@@ -5020,6 +5020,20 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_add_driver(object: str, data_path: str, index: int = None, expression: str = None,
+                  variables: list = None) -> dict:
+    "Wire a Blender property to an expression, and prove the driver actually EVALUATES. Drivers are the one animation feature that fails completely silently: a broken expression, or a variable pointing at an object that no longer exists, stays in place and evaluates to ZERO - nothing errors, nothing warns, and every field a caller can read looks perfectly correct. Blender shows it as a coloured field in the UI and reports it nowhere else. So this refuses a data_path that does not resolve (Blender would create the driver permanently invalid), refuses a variable whose target object does not exist, refuses a second driver on a path that already has one, and reports isValid plus the driven property read back through the depsgraph. variables is a list of {name, object, dataPath}. Read them back with bl_list_animation_data. Call mif_help(\"bl_add_driver\") first."
+    return _blender("add_driver", object=object, dataPath=data_path, index=index,
+                    expression=expression, variables=variables)
+
+
+@mcp.tool()
+def bl_remove_driver(object: str, data_path: str, index: int = None) -> dict:
+    "Remove a Blender driver and report what the property fell back to. A property with its driver removed returns to whatever it was last set to, which is NOT necessarily what it was displaying while driven - so the value is read back rather than assumed. A path with no driver is refused with a pointer to bl_list_animation_data rather than reported as a successful removal of nothing, and the removal is re-checked afterwards. Call mif_help(\"bl_remove_driver\") first."
+    return _blender("remove_driver", object=object, dataPath=data_path, index=index)
+
+
+@mcp.tool()
 def bl_add_constraint(object: str, type: str, bone: str = None, target: str = None,
                       subtarget: str = None, influence: float = None,
                       constraint_name: str = None) -> dict:

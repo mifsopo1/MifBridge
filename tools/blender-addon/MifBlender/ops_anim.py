@@ -1334,7 +1334,198 @@ def op_set_marker(params):
     }
 
 
+def _driver_target(obj, path, index):
+    """The existing driver fcurve for a path, or None."""
+    ad = getattr(obj, "animation_data", None)
+    if ad is None:
+        return None
+    for dr in (getattr(ad, "drivers", None) or []):
+        if dr.data_path == path and (index is None or dr.array_index == int(index)):
+            return dr
+    return None
+
+
+def op_add_driver(params):
+    """Wire a property to an expression, and PROVE the driver actually evaluates.
+
+    DRIVERS ARE THE ONE ANIMATION FEATURE THAT FAILS COMPLETELY SILENTLY. A driver with a broken
+    expression, or a variable pointing at an object that no longer exists, stays in place and
+    evaluates to ZERO. Nothing errors. Nothing warns. The property simply sits at 0 while every
+    field a caller can read - the expression, the variable, the data path - looks perfectly
+    correct. Blender shows it purple-then-red in the UI and reports it nowhere else.
+
+    params:
+      object (str, required)
+      dataPath (alias path, required)   the property to drive
+      index (int)                       array element; omitted drives element 0 for a vector
+      expression (str)                  default "var" - the driver's SCRIPTED expression
+      variables (list)                  [{name, object, dataPath}] - each becomes a driver
+                                        variable reading a property off another object
+
+    THE POSTCONDITION IS EVALUATION, not existence. is_valid is checked, and the driven property
+    is read back through the depsgraph, because a driver that exists and evaluates to nothing is
+    the normal failure and looks identical to a working one from the data.
+    """
+    reject_unknown(params, {"object", "name", "dataPath", "path", "index", "expression",
+                            "variables"}, "add_driver")
+    obj = get_object(take(params, "object", "name", required=True))
+    path = take(params, "dataPath", "path", default=None, kind=str)
+    if not path:
+        raise MifOpError("'dataPath' is required - the property to drive. NOTHING was added.")
+    index = params.get("index")
+
+    # THE PROPERTY MUST EXIST BEFORE IT CAN BE DRIVEN. Blender will happily create a driver on a
+    # path that resolves to nothing and leave it permanently invalid, which is the silent failure
+    # this op is arranged to prevent rather than to produce.
+    try:
+        obj.path_resolve(path)
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise MifOpError("'%s' does not resolve on '%s' (%s), so a driver on it would be created "
+                         "invalid and evaluate to zero forever. NOTHING was added."
+                         % (path, obj.name, exc))
+
+    if _driver_target(obj, path, index) is not None:
+        raise MifOpError("'%s' already has a driver on '%s'%s. Remove it first - Blender allows a "
+                         "second and the result is not what anybody means. NOTHING was added."
+                         % (obj.name, path, "" if index is None else "[%s]" % index))
+
+    variables = params.get("variables") or []
+    if not isinstance(variables, (list, tuple)):
+        raise MifOpError("'variables' must be a list of {name, object, dataPath}. NOTHING was "
+                         "added.")
+    resolved = []
+    for i, v in enumerate(variables):
+        if not isinstance(v, dict):
+            raise MifOpError("variables[%d] must be an object, got %r. NOTHING was added."
+                             % (i, v))
+        vname = str(v.get("name") or "var")
+        vobj_name = v.get("object")
+        vobj = bpy.data.objects.get(str(vobj_name)) if vobj_name else None
+        if vobj_name and vobj is None:
+            raise MifOpError("variables[%d] targets no object named '%s'. A driver variable "
+                             "pointing at nothing evaluates to zero SILENTLY, so this is refused "
+                             "rather than created. NOTHING was added." % (i, vobj_name))
+        resolved.append((vname, vobj, str(v.get("dataPath") or "location")))
+
+    before = None
+    try:
+        before = obj.path_resolve(path)
+        before = list(before) if hasattr(before, "__len__") else float(before)
+    except (TypeError, ValueError):
+        before = None
+
+    kwargs = {"data_path": path}
+    if index is not None:
+        kwargs["index"] = int(index)
+    try:
+        fc = obj.driver_add(**kwargs)
+    except (RuntimeError, TypeError) as exc:
+        raise MifOpError("Blender refused to add a driver on '%s': %s. NOTHING was added."
+                         % (path, exc))
+    # driver_add returns a LIST for a vector property when no index was given.
+    if isinstance(fc, list):
+        fc = fc[0]
+
+    drv = fc.driver
+    drv.type = "SCRIPTED"
+    for vname, vobj, vpath in resolved:
+        var = drv.variables.new()
+        var.name = vname
+        var.type = "SINGLE_PROP"
+        if vobj is not None:
+            var.targets[0].id = vobj
+            var.targets[0].data_path = vpath
+    drv.expression = str(take(params, "expression", default="var", kind=str))
+
+    bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    ev = obj.evaluated_get(dg)
+    try:
+        after = ev.path_resolve(path)
+        after = list(after) if hasattr(after, "__len__") else float(after)
+    except (ValueError, AttributeError, TypeError):
+        after = None
+
+    valid = bool(getattr(drv, "is_valid", True))
+    return {
+        "object": obj.name,
+        "dataPath": path,
+        "index": index,
+        "expression": drv.expression,
+        "variables": [{"name": v.name,
+                       "target": (v.targets[0].id.name if v.targets and v.targets[0].id
+                                  else None),
+                       "targetPath": (v.targets[0].data_path if v.targets else None)}
+                      for v in drv.variables],
+        # THE MEASUREMENT. is_valid is Blender's own verdict, and the evaluated value is the proof.
+        # A driver that exists and evaluates to nothing is the NORMAL failure and is identical to a
+        # working one from every other field.
+        "isValid": valid,
+        "valueBefore": before,
+        "valueAfterEvaluated": after,
+        # NO STATIC WARNING FIELD. The silent-failure explanation belongs in the tool help, where
+        # it is read BEFORE the call - a constant string in the response is something no suite can
+        # check and no caller can act on differently, which is what
+        # audit_blender_consequence_fields objects to and what open_file's discardedNote was
+        # removed for earlier today. isValid and evaluates are the measurements; they carry it.
+        "evaluates": valid and after is not None,
+    }
+
+
+def op_remove_driver(params):
+    """Remove a driver, and report what the property fell back to.
+
+    params:
+      object (str, required)
+      dataPath (alias path, required)
+      index (int)
+
+    A property with its driver removed returns to whatever it was last set to, which is not
+    necessarily what it was showing while driven - so the value is read back rather than assumed.
+    """
+    reject_unknown(params, {"object", "name", "dataPath", "path", "index"}, "remove_driver")
+    obj = get_object(take(params, "object", "name", required=True))
+    path = take(params, "dataPath", "path", default=None, kind=str)
+    if not path:
+        raise MifOpError("'dataPath' is required. NOTHING was removed.")
+    index = params.get("index")
+    if _driver_target(obj, path, index) is None:
+        raise MifOpError("no driver on '%s' for '%s'%s - list them with list_animation_data. "
+                         "NOTHING was removed."
+                         % (obj.name, path, "" if index is None else "[%s]" % index))
+
+    kwargs = {"data_path": path}
+    if index is not None:
+        kwargs["index"] = int(index)
+    try:
+        obj.driver_remove(**kwargs)
+    except (RuntimeError, TypeError) as exc:
+        raise MifOpError("Blender refused to remove the driver on '%s': %s." % (path, exc))
+
+    still = _driver_target(obj, path, index)
+    if still is not None:
+        raise MifOpError("asked to remove the driver on '%s' but one is still there. Do not trust "
+                         "this state." % path)
+    bpy.context.view_layer.update()
+    try:
+        now = obj.path_resolve(path)
+        now = list(now) if hasattr(now, "__len__") else float(now)
+    except (ValueError, AttributeError, TypeError):
+        now = None
+    return {
+        "object": obj.name,
+        "dataPath": path,
+        "index": index,
+        "removed": True,
+        "valueNow": now,
+        "fallbackNote": ("The property has returned to its own stored value, which is not "
+                         "necessarily what it was showing while driven."),
+    }
+
+
 OPS = {
+    "add_driver": op_add_driver,
+    "remove_driver": op_remove_driver,
     "list_markers": op_list_markers,
     "set_marker": op_set_marker,
     "bake_to_keyframes": op_bake_to_keyframes,
