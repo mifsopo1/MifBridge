@@ -190,6 +190,11 @@ def _is_mutation(node, made=()):
         dotted_call = _dotted(call.func) or ""
         if dotted_call.startswith("bpy.ops.") and dotted_call.count(".") >= 3:
             return "%s()" % dotted_call
+        # frame_set MOVES THE SCENE. evaluate_at_frame steps the timeline to read a value and the
+        # frame stays where it was left, so a refusal below one has changed the scene as surely as
+        # any property write - and it is a method call, invisible to a rule about `x.y = z`.
+        if getattr(call.func, "attr", "") == "frame_set":
+            return "%s()" % (dotted_call or "frame_set")
         if isinstance(call.func, ast.Name) and call.func.id == "setattr" and len(call.args) >= 2:
             return "setattr(%s, ...)" % (_dotted(call.args[0])
                                          or getattr(call.args[0], "id", "<expr>"))
@@ -334,7 +339,7 @@ def _except_rolls_back(node):
     return False
 
 
-def _restored_by_finally(mpath, rpath, finals):
+def _restored_by_finally(mpath, rpath, finals, label=None):
     """Is the write undone on the way out by a `finally` the raise passes through?
 
     export_scene deselects everything, sets the active object and moves the scene frame range, and
@@ -350,22 +355,45 @@ def _restored_by_finally(mpath, rpath, finals):
     for i, key in enumerate(mpath):
         if key[1] != "try" or key not in finals:
             continue
-        if rpath[:i + 1] != mpath[:i + 1]:
-            continue          # the raise is not inside this try, so the finally is not on its path
-        if finals[key]:
+        # THE RAISE DOES NOT HAVE TO BE INSIDE THE TRY. Requiring that missed the commoner and
+        # SAFER case: a write inside a try whose finally restores it, and a refusal further down
+        # the function. There the finally has ALREADY run by the time the refusal fires - more
+        # certainly restored than the inside case, where it runs during unwinding. Both are
+        # restored, so the position of the raise decides nothing. bake_to_keyframes samples world
+        # matrices inside such a try and refuses well below it.
+        restored = finals[key]
+        if restored is True:
+            return True
+        # MATCHED BY NAME rather than by presence. Any assignment in any finally used to suppress
+        # every write inside that try; requiring the finally to touch the same attribute or call the
+        # same method keeps export_scene and bake_to_keyframes silent without silencing a try whose
+        # finally happens to clean up something unrelated.
+        if restored and any(name in (label or "") for name in restored):
             return True
     return False
 
 
 def _finally_restores(node):
-    """Attribute names the finally re-assigns, plus whether it calls anything named *restore*."""
+    """What the finally puts back: attribute names it re-assigns and methods it calls.
+
+    True means "calls something named *restore*", which is a whole-state restore and needs no name
+    matching. Otherwise the caller checks whether the write it is judging touches one of these.
+    """
     names = set()
     for stmt in node.finalbody:
         for sub in ast.walk(stmt):
             if isinstance(sub, ast.Attribute) and isinstance(sub.ctx, ast.Store):
                 names.add(sub.attr)
-            if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name)                     and "restore" in sub.func.id.lower():
-                return True
+            if isinstance(sub, ast.Call):
+                fname = getattr(sub.func, "id", None) or getattr(sub.func, "attr", "") or ""
+                if "restore" in fname.lower():
+                    return True
+                # A RESTORING CALL, not only an assignment. bake_to_keyframes steps the timeline to
+                # sample world matrices and puts it back with `sc.frame_set(started_on)` in a
+                # finally - a method call, so a rule that only looked for `x.y = ...` started
+                # calling correct code a finding the moment frame_set counted as a write.
+                if fname:
+                    names.add(fname)
     return names
 
 
@@ -600,12 +628,19 @@ def _mutating_call(stmt, writers):
 
     Skips a statement that is itself already a mutation - `obj.foo = _helper()` is one write, not
     two, and reporting it twice would put the same line in the list under two names.
+
+    THE LABEL NAMES WHAT THE HELPER WRITES, not just that it does. _restored_by_finally matches a
+    finally against the write it is judging BY NAME, and bake_to_keyframes restores with
+    `sc.frame_set(...)` while its write is `_sample_world()` - the two are the same property and a
+    label saying only "_sample_world() writes" could not show it.
     """
     if isinstance(stmt, ast.Raise):
         return None
     for sub in _own_nodes(stmt):
         if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) and sub.func.id in writers:
-            return "%s() writes" % sub.func.id
+            what = writers[sub.func.id] if isinstance(writers, dict) else None
+            return "%s() writes %s" % (sub.func.id, " ".join(sorted(what))) if what \
+                else "%s() writes" % sub.func.id
     return None
 
 
@@ -715,14 +750,19 @@ def scan_source(name, src):
     tree = ast.parse(src)
     helpers = _refusing_helpers(tree)
     cleaners = _cleaning_helpers(tree)
-    writers = set()
+    writers = {}
     for helper in ast.walk(tree):
         if not isinstance(helper, ast.FunctionDef) or helper.name.startswith("op_"):
             continue
         inner, iterm, iowner, ifin, iroll = [], {}, {}, {}, {}
         _walk_body(helper.body, [], inner, iterm, iowner, ifin, iroll)
-        if any(_is_mutation(s) for s, _p in inner):
-            writers.add(helper.name)
+        wrote = set()
+        for s, _p in inner:
+            label = _is_mutation(s)
+            if label:
+                wrote.add(label.split("(")[0].split(" =")[0].split(".")[-1])
+        if wrote:
+            writers[helper.name] = wrote
     findings, scoped, delegating, reachable, unbacked = [], [], [], [], []
     for fn in tree.body:
         if not isinstance(fn, ast.FunctionDef):
@@ -740,7 +780,12 @@ def scan_source(name, src):
         # CALLER puts the call relative to its own refusal.
         made = _locally_created(fn)
         progress = _progress_names(fn)
-        mutations = [(s, p, _is_mutation(s, made) or _mutating_call(s, writers)) for s, p in stmts]
+        # A WRITE IN A `finally` IS CLEANUP. Every finally in this addon exists to put something
+        # back, so counting one as the op's own mutation reports the restore as the damage - which
+        # is exactly what happened to bake_to_keyframes' `finally: sc.frame_set(started_on)` the
+        # moment frame_set started counting as a write.
+        mutations = [(s, p, _is_mutation(s, made) or _mutating_call(s, writers)) for s, p in stmts
+                     if not any(key[1] == "finally" for key in p)]
         mutations = [(s, p, m) for s, p, m in mutations if m
                      and m.split(".")[0] not in removed
                      and not (scratch_until is not None and s.lineno < scratch_until)
@@ -800,7 +845,7 @@ def scan_source(name, src):
                     continue
                 if rstmt.lineno <= mstmt.lineno or _exclusive(mpath, rpath, terminal):
                     continue
-                if (_restored_by_finally(mpath, rpath, finals)
+                if (_restored_by_finally(mpath, rpath, finals, label)
                         or _rolled_back_by_except(mpath, rpath, rollbacks)):
                     continue
                 if _guarded_by_progress(rstmt, guards, progress):
@@ -1016,6 +1061,11 @@ def reach():
                 continue
             stmts, t2, o2, f2, r2 = [], {}, {}, {}, {}
             _walk_body(fn.body, [], stmts, t2, o2, f2, r2)
+            # A READER HAS NOTHING TO JUDGE. list_/get_/describe_/find_ ops refuse when their
+            # target is missing and write nothing at all, so counting them as UNJUDGED overstates
+            # the gap with ops that are correctly clean. Same prefix set audit_read_purity uses.
+            if fn.name.startswith(("op_list_", "op_get_", "op_describe_", "op_find_")):
+                continue
             if not any(_claim_text(s) or _refusing_calls(s, helpers, set()) for s, _p in stmts):
                 continue
             promising += 1
