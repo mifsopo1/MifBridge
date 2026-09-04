@@ -526,6 +526,14 @@ def scan_file(path):
     name = os.path.basename(path)
     helpers = _refusing_helpers(tree)
     cleaners = _cleaning_helpers(tree)
+    writers = set()
+    for helper in ast.walk(tree):
+        if not isinstance(helper, ast.FunctionDef) or helper.name.startswith("op_"):
+            continue
+        inner, iterm, iowner, ifin, iroll = [], {}, {}, {}, {}
+        _walk_body(helper.body, [], inner, iterm, iowner, ifin, iroll)
+        if any(_is_mutation(s) for s, _p in inner):
+            writers.add(helper.name)
     findings, scoped, delegating, reachable = [], [], [], []
     for fn in tree.body:
         if not isinstance(fn, ast.FunctionDef):
@@ -550,11 +558,16 @@ def scan_file(path):
                     raises.append((s, p, claim, helper))
 
         if raises and not mutations:
-            # Refuses with a promise but writes nothing itself. If it calls a helper that writes,
-            # the promise is only as good as the helper - and this audit cannot see that.
+            # Refuses with a promise but writes nothing itself. If it calls a helper that WRITES,
+            # the promise is only as good as the helper, and this audit cannot see that.
+            #
+            # Only helpers that actually mutate are listed. Naming every helper called from a
+            # promising op put _counts, _orphans and _op_exists on a list headed "writes in a
+            # helper" - pure readers, every one, and a blind spot advertised as bigger than it is
+            # is its own kind of wrong.
             for sub in ast.walk(fn):
                 if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) \
-                        and sub.func.id.startswith("_"):
+                        and sub.func.id in writers:
                     delegating.append((name, fn.name, sub.func.id))
                     break
 

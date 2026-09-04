@@ -208,6 +208,107 @@ def handler_start_line(fname, endpoint):
     return src[:idx].count("\n") if idx >= 0 else 0
 
 
+_WRITERS_CACHE = {}
+FUNC_DEF = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\([^;{)]*\)\s*(?:const\s*)?\{")
+_NOT_FUNCTIONS = ("if", "for", "while", "switch", "catch", "else", "do", "return", "sizeof")
+
+
+def writers_in(fname):
+    """Functions defined in this file whose body calls a mutator.
+
+    Coarse by design: it brace-matches anything shaped like a definition, so the keyword list is
+    what keeps `if (...) {` out. Close enough for a list whose whole job is to say how big the
+    unaudited edge is - and far better than the previous version, which matched each handler's own
+    signature and reported eighty handlers as delegating to themselves.
+    """
+    if fname in _WRITERS_CACHE:
+        return _WRITERS_CACHE[fname]
+    path = os.path.join(os.path.dirname(HERE), "Source", "MifBridge", "Private", fname)
+    try:
+        src = io.open(path, encoding="utf-8", errors="replace").read().replace("\r\n", "\n")
+    except OSError:
+        _WRITERS_CACHE[fname] = set()
+        return _WRITERS_CACHE[fname]
+    scrubbed = H.blank_comments_and_strings(src)
+    out = set()
+    for m in FUNC_DEF.finditer(scrubbed):
+        name = m.group(1)
+        if name in _NOT_FUNCTIONS:
+            continue
+        open_brace = scrubbed.find("{", m.end() - 1)
+        if open_brace < 0:
+            continue
+        depth, j = 0, open_brace
+        while j < len(scrubbed):
+            if scrubbed[j] == "{":
+                depth += 1
+            elif scrubbed[j] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        if MUTATOR_RE.search(scrubbed[open_brace:j]):
+            out.add(name)
+    _WRITERS_CACHE[fname] = out
+    return out
+
+
+_FAILING_CACHE = {}
+RETURN_FALSE = re.compile(r"\breturn\s+false\s*;")
+
+
+def mutates_before_failing(fn_body):
+    """Can this helper write and THEN report failure?
+
+    A helper that validates everything first and writes last is not a hole, however many mutators it
+    contains - WaterApplySpline is exactly that, and treating it as one produced the audit's only
+    false finding after the helper reach landed.
+    """
+    blks = blocks(fn_body)
+    muts = [m.start() for m in MUTATOR_RE.finditer(fn_body)]
+    fails = [m.start() for m in RETURN_FALSE.finditer(fn_body)]
+    for mpos in muts:
+        mpath = path_of(mpos, blks)
+        for fpos in fails:
+            if fpos > mpos and not exclusive(mpath, path_of(fpos, blks), fn_body):
+                return True
+    return False
+
+
+def failing_writers_in(fname):
+    """The subset of writers_in that can mutate on the way to reporting failure."""
+    if fname in _FAILING_CACHE:
+        return _FAILING_CACHE[fname]
+    path = os.path.join(os.path.dirname(HERE), "Source", "MifBridge", "Private", fname)
+    try:
+        src = io.open(path, encoding="utf-8", errors="replace").read().replace("\r\n", "\n")
+    except OSError:
+        _FAILING_CACHE[fname] = set()
+        return _FAILING_CACHE[fname]
+    scrubbed = H.blank_comments_and_strings(src)
+    out = set()
+    for name in writers_in(fname):
+        for m in re.finditer(r"\b%s\s*\([^;{)]*\)\s*(?:const\s*)?\{" % re.escape(name),
+                             scrubbed):
+            open_brace = scrubbed.find("{", m.end() - 1)
+            if open_brace < 0:
+                continue
+            depth, j = 0, open_brace
+            while j < len(scrubbed):
+                if scrubbed[j] == "{":
+                    depth += 1
+                elif scrubbed[j] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            if mutates_before_failing(scrubbed[open_brace:j + 1]):
+                out.add(name)
+            break
+    _FAILING_CACHE[fname] = out
+    return out
+
+
 def scan_body(fname, endpoint, body, base, findings, scoped, delegating):
     """One handler. Split out of scan() so --selftest can drive it with synthetic C++.
 
@@ -218,15 +319,31 @@ def scan_body(fname, endpoint, body, base, findings, scoped, delegating):
     scrubbed = H.blank_comments_and_strings(body)
     blks = blocks(scrubbed)
     muts = [(m.start(), m.group(1)) for m in MUTATOR_RE.finditer(scrubbed)]
+    # ...and calls to a helper IN THIS FILE that mutates. IKRig wraps every one of its writes in
+    # IKMarkDirty, so eleven endpoints there had no direct mutator at all and the audit could not
+    # see them. Handlers are skipped: H_ functions contain mutators by definition and a handler
+    # calling another handler is not this question.
+    local_writers = failing_writers_in(fname)
+    for m in re.finditer(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(", scrubbed):
+        name = m.group(1)
+        if name in local_writers and not name.startswith("H_") and name not in _NOT_FUNCTIONS:
+            muts.append((m.start(), name))
+    muts.sort()
     refs = []
     for m in REFUSE_RE.finditer(scrubbed):
         got = claim_at(body, scrubbed, m.start())
         if got:
             refs.append((m.start(), got[0], got[1]))
     if refs and not muts:
+        # Only helpers that actually mutate, and never the handler's own signature. Listing the
+        # first capitalised call in the body matched `H_<endpoint>(` itself and produced eighty rows
+        # of `H_x -> H_x` - a blind-spot list that measured nothing at all.
         for call in re.finditer(r"\b([A-Z][A-Za-z0-9_]*)\s*\(", scrubbed):
-            if call.group(1) not in ("Fail", "TEXT", "FString", "Refuse"):
-                delegating.append((fname, endpoint, call.group(1)))
+            helper = call.group(1)
+            if helper.startswith("H_") or helper in ("Fail", "TEXT", "FString", "Refuse"):
+                continue
+            if helper in writers_in(fname):
+                delegating.append((fname, endpoint, helper))
                 break
     flags = set(FLAG_SET.findall(scrubbed))
     for mpos, mname in muts:
@@ -290,8 +407,40 @@ SELFTEST = [
 ]
 
 
+# The helper rule is tested on its own because it reads whole files, which scan_body's synthetic
+# bodies cannot supply. Both directions, for the usual reason.
+HELPER_SELFTEST = [
+    ("helper writes, then fails", True, """
+    {
+        Obj->Modify();
+        if (Bad) { return false; }
+        return true;
+    }
+    """),
+    ("helper validates, then writes", False, """
+    {
+        if (Bad) { return false; }
+        Obj->Modify();
+        return true;
+    }
+    """),
+    ("helper writes in the arm that succeeds", False, """
+    {
+        if (Ok) { Obj->Modify(); return true; }
+        else { return false; }
+    }
+    """),
+]
+
+
 def selftest():
     bad = 0
+    for name, expect, body in HELPER_SELFTEST:
+        got = mutates_before_failing(body)
+        ok = got == expect
+        bad += 0 if ok else 1
+        print("  %-4s %-42s expected %-5s got %s"
+              % ("ok" if ok else "FAIL", name, expect, got))
     for name, should_fire, body in SELFTEST:
         findings, scoped, _ = [], [], []
         scan_body("selftest.cpp", "probe", "{" + body + "}", 0, findings, scoped, _)
@@ -301,7 +450,8 @@ def selftest():
         print("  %-4s %-42s expected %-5s got %s"
               % ("ok" if ok else "FAIL", name, should_fire, fired))
     print("")
-    print("selftest: %d case(s), %d failure(s)" % (len(SELFTEST), bad))
+    print("selftest: %d case(s), %d failure(s)"
+          % (len(SELFTEST) + len(HELPER_SELFTEST), bad))
     return bad
 
 
@@ -343,7 +493,9 @@ def main():
 
     if args.show_delegating:
         print("")
-        print("PROMISES BUT WRITES THROUGH A HELPER - not verifiable here (%d):" % len(delegating))
+        print("WRITES DELEGATED TO A HELPER - CHECKED, not a hole (%d):" % len(delegating))
+        print("The helper writes only below its last failure path, so when it reports failure it")
+        print("has not written. Listed because that is a property of the helper today, not a rule.")
         for fname, ep, helper in sorted(set(delegating))[:40]:
             print("  %-34s %-28s -> %s" % (fname, ep, helper))
 
