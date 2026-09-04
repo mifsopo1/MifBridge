@@ -1467,6 +1467,11 @@ def main():
     ok, msg = refuses(OCR.op_create_armature, {}, "EDIT mode", "NOTHING was created")
     check("B119 creating an armature from EDIT mode is refused - the mode switch it needs would "
           "drop whatever is being edited", ok, msg)
+    # RESTORED, and it was not at first. Leaving Cube in EDIT mode made five B123 checks
+    # fail for a reason that had nothing to do with what they test - a block that mutates
+    # shared stub state and does not put it back is the harness version of an op that
+    # leaves Blender in edit mode, which B119 exists to forbid.
+    _obj.mode = "OBJECT"
     sys.modules["bpy"].context.object = None
 
     ok, msg = refuses(OCR.op_create_empty, {"collection": "NoSuchColl"}, "no collection named",
@@ -1709,6 +1714,70 @@ def main():
     check("B122 a non-list indices is refused by type", ok, msg)
     ok, msg = refuses(OQ.op_face_info, {"object": "Cube", "limit": -1}, "cannot be negative")
     check("B122 a negative limit is refused", ok, msg)
+
+    print("")
+    print("=== B123: select_faces, bisect_plane, set_shading - refusals before any mesh work ===")
+    # THE PATTERN THESE THREE SHARE. Each walks or rewrites a mesh, so each is expensive to get
+    # wrong, and each is meant to be called repeatedly. Every argument is therefore validated before
+    # a polygon is touched - which is also the only part of them an offline stub can reach, since
+    # the geometry itself needs a live Blender.
+    from MifBlender import ops_query as OQ2
+
+    ok, msg = refuses(OQ2.op_select_faces, {"object": "Cube"}, "no criteria",
+                      "face_info already does")
+    check("B123 select_faces with no criteria is refused - it would return every face, which "
+          "face_info already does", ok, msg)
+    ok, msg = refuses(OQ2.op_select_faces, {"object": "Cube", "axis": "W"}, "axis must be one of")
+    check("B123 an unknown axis is refused with the valid set", ok, msg)
+    ok, msg = refuses(OQ2.op_select_faces, {"object": "Cube", "axis": "Z", "direction": [0, 0, 1]},
+                      "not both", "axis IS a direction")
+    check("B123 axis AND direction together is refused", ok, msg)
+    ok, msg = refuses(OQ2.op_select_faces, {"object": "Cube", "axis": "Z", "angle": 0},
+                      "cone HALF-angle")
+    check("B123 a zero cone angle is refused, and the message says it is a HALF-angle - the "
+          "difference between a hemisphere and everything", ok, msg)
+    ok, msg = refuses(OQ2.op_select_faces, {"object": "Cube", "minArea": 5, "maxArea": 1},
+                      "nothing can match")
+    check("B123 an inverted area range is refused rather than silently matching nothing", ok, msg)
+    ok, msg = refuses(OQ2.op_select_faces, {"object": "Cube", "boxMin": [0, 0, 0]},
+                      "BOTH corners")
+    check("B123 half a box is refused naming which corner is missing", ok, msg)
+    ok, msg = refuses(OQ2.op_select_faces, {"object": "Lamp", "axis": "Z"}, "no faces to select")
+    check("B123 select_faces on a non-MESH is refused", ok, msg)
+
+    ok, msg = refuses(OQ2.op_bisect_plane, {"object": "Cube"}, "planeCo", "world space")
+    check("B123 bisect_plane with no plane point is refused, and the message says WORLD space - "
+          "the space mistake is silent, because a cut that missed looks like one that did nothing",
+          ok, msg)
+    ok, msg = refuses(OQ2.op_bisect_plane, {"object": "Cube", "planeCo": [0, 0, 0]},
+                      "give the plane a direction")
+    check("B123 a plane point with no axis or normal is refused", ok, msg)
+    ok, msg = refuses(OQ2.op_bisect_plane, {"object": "Cube", "planeCo": [0, 0, 0], "axis": "Q"},
+                      "axis must be X, Y or Z")
+    check("B123 an unknown bisect axis is refused", ok, msg)
+    ok, msg = refuses(OQ2.op_bisect_plane, {"object": "Cube", "planeCo": [0, 0, 0], "axis": "Z",
+                                            "clearInner": True, "clearOuter": True},
+                      "empty mesh", "clear_mesh")
+    check("B123 clearing BOTH sides is refused - it empties the mesh, and clear_mesh is the op "
+          "that means to do that", ok, msg)
+    ok, msg = refuses(OQ2.op_bisect_plane, {"object": "Cube", "planeCo": [0, 0, 0],
+                                            "planeNo": [0, 0, 0]}, "zero length", "no plane")
+    check("B123 a zero-length plane normal is refused", ok, msg)
+    ok, msg = refuses(OQ2.op_bisect_plane, {"object": "Lamp", "planeCo": [0, 0, 0], "axis": "Z"},
+                      "cannot be bisected")
+    check("B123 bisecting a non-MESH is refused", ok, msg)
+
+    ok, msg = refuses(OQ2.op_set_shading, {"object": "Cube"}, "nothing to do")
+    check("B123 set_shading with no settings is refused", ok, msg)
+    ok, msg = refuses(OQ2.op_set_shading, {"object": "Cube", "autoSmoothAngle": 400},
+                      "DEGREES", "0-180")
+    check("B123 an out-of-range auto-smooth angle is refused, and the message says DEGREES - the "
+          "property underneath is radians", ok, msg)
+    ok, msg = refuses(OQ2.op_set_shading, {"object": "Cube", "smooth": True,
+                                           "indices": "nope"}, "must be a list")
+    check("B123 a non-list indices is refused by type", ok, msg)
+    ok, msg = refuses(OQ2.op_set_shading, {"object": "Lamp", "smooth": True}, "no shading to set")
+    check("B123 set_shading on a non-MESH is refused", ok, msg)
 
     print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")

@@ -5834,6 +5834,39 @@ def bl_assign_material_to_faces(object: str, slot: int, faces: list = None,
 
 
 @mcp.tool()
+def bl_select_faces(object: str, material: str = None, slot: int = None, axis: str = None,
+                    direction: list = None, angle: float = None, min_area: float = None,
+                    max_area: float = None, inside_box: list = None, box_min: list = None,
+                    box_max: list = None, smooth: bool = None, require_all: bool = None,
+                    limit: int = None, evaluated: bool = None) -> dict:
+    "Find the Blender faces matching a description - the missing half of bl_assign_material_to_faces, which takes face INDICES that nothing could compute. Working out which indices you wanted was raw Python; bl_select_edges had no counterpart for faces. Criteria: material or slot, a WORLD-space normal direction (axis or an arbitrary vector, with a cone half-angle in DEGREES), area range, a world box, and smooth/flat. They AND together by default. Read-only - nothing is written and no selection state is touched. The NORMAL TEST IS WORLD SPACE through the inverse transpose, because a face pointing up in local space on a rotated object does not point up in the world and 'which faces are the floor' is a world question every time. The box test uses the face CENTRE, so a large face straddling the boundary is decided by its middle. matchedPerCriterion is returned so that 'nothing matched' names the culprit instead of being a dead end, and the count is always exact even when the index list is capped."
+    return _blender("select_faces", object=object, material=material, slot=slot, axis=axis,
+                    direction=direction, angle=angle, minArea=min_area, maxArea=max_area,
+                    insideBox=inside_box, boxMin=box_min, boxMax=box_max, smooth=smooth,
+                    requireAll=require_all, limit=limit, evaluated=evaluated)
+
+
+@mcp.tool()
+def bl_bisect_plane(object: str, plane_co: list, axis: str = None, plane_no: list = None,
+                    clear_inner: bool = None, clear_outer: bool = None, fill: bool = None,
+                    threshold: float = None) -> dict:
+    "Cut a Blender mesh with a plane - the fundamental 'cut at a plane' that bevel, boolean, separate, decimate and clean are not. A boolean needs a second object authored, positioned and cleaned up for what is one plane. Works through bmesh rather than bpy.ops.mesh.bisect, which needs EDIT mode and a selection - a mode switch from a socket call can strand every op after it. THE PLANE IS WORLD SPACE and converted in, because 'cut at z=2.4' is a world statement every time and handing a local plane to a moved object cuts somewhere else silently. The postcondition is that the mesh actually MOVED: bisect raises nothing when the plane misses the geometry, so it would report success having changed not one vertex - if that happens the refusal quotes the object's world bounding box so you can see where the plane should have been."
+    return _blender("bisect_plane", object=object, planeCo=plane_co, axis=axis, planeNo=plane_no,
+                    clearInner=clear_inner, clearOuter=clear_outer, fill=fill,
+                    threshold=threshold)
+
+
+@mcp.tool()
+def bl_set_shading(object: str, smooth: bool = None, indices: list = None,
+                   auto_smooth_angle: float = None, weighted_normals: bool = None,
+                   weighted_normals_mode: str = None, keep_sharp: bool = None) -> dict:
+    "Smooth or flat shading, the auto-smooth angle, and weighted normals - none of which the addon addressed at all, so setting flat shading per polygon was a raw Python loop. Hard-surface game assets need it constantly: it is the difference between a bevelled edge reading as a crease and reading as a smear. AUTO-SMOOTH MOVED IN 4.1 AND THE OLD PROPERTY IS GONE - mesh.use_auto_smooth and auto_smooth_angle were REMOVED and replaced by a Smooth by Angle geometry-nodes modifier, so writing the old property on a 4.1+ build raises, and swallowing that would report success having changed nothing on exactly the builds most people run. Both routes are implemented and the response says which was taken, which matters because the 4.1+ one is a MODIFIER: it shows in the modifier list, applies on export, and can be removed. weighted_normals adds the modifier that fixes a bevelled corner shading wrong no matter what the smooth flags say."
+    return _blender("set_shading", object=object, smooth=smooth, indices=indices,
+                    autoSmoothAngle=auto_smooth_angle, weightedNormals=weighted_normals,
+                    weightedNormalsMode=weighted_normals_mode, keepSharp=keep_sharp)
+
+
+@mcp.tool()
 def bl_ray_cast(origin: list, direction: list = None, target: list = None, object: str = None,
                 distance: float = None, evaluated: bool = None) -> dict:
     "Fire a ray into a Blender scene and report what it hits. Chosen by COUNTING escapes, not from a wishlist: 13 of 21 bl_run_python escapes in one day's real work were ray casts - it is what answers 'what is at this point', 'what is under it', 'is anything across this edge', which every layout, level and hard-surface job is built on. WORLD COORDINATES IN AND OUT: obj.ray_cast is LOCAL on both sides, so handing it world coordinates gives a miss or a plausible WRONG hit with nothing to say so, and a moved or rotated object is the normal case - the conversion happens in the addon. Normals come back through the inverse transpose, not the object matrix, which is only correct under uniform scale. With no object it casts against the whole scene through the depsgraph, so it hits what is actually there - subdivided, displaced, mirrored, geometry-nodes output. With an object it uses that object's BASE mesh unless evaluated:true, and says so when the object has modifiers that make those differ. Pass target instead of direction to cast towards a point."
