@@ -77,10 +77,42 @@ CANDIDATES = [
     ("world_info", {}),
 ]
 
-# select_edges needs a selector that actually resolves to something real, or it tells you nothing
-# about whether a resolved selection mutates - boundaryOnly with no positional filter matches
-# whatever boundary edges the target object has, same predicate mif_mesh_roundtrip falls back to.
-_SELECT_EDGES_PARAMS = {"boundaryOnly": True}
+# Reads that take a TARGET OBJECT. Each gets object=<the scene's first mesh> injected, so the list
+# stays declarative and adding the fourteenth costs one line instead of another hand-written block
+# at the bottom of main().
+#
+# ADDED 2026-09-04. object_info and select_edges were written out longhand down there, and that is
+# precisely why the other thirteen were never probed - there was nothing to append to. The
+# argument-free widening earlier the same day took this audit from 4 ops to 17; these are the rest
+# of the read-shaped surface, and they are the half where the purity question is SHARPER, not
+# softer: several evaluate a depsgraph or build a BMesh to answer.
+#
+# Ops needing an armature, particle system or shape key will not be exercised against a plain mesh.
+# They are NAMED when that happens rather than quietly skipped, the same contract the UE twin keeps
+# for the fourteen it cannot reach.
+OBJECT_CANDIDATES = [
+    ("object_info", {}),
+    # allEdges, NOT boundaryOnly. The old selector was chosen so it would resolve against any
+    # target, and on the cube this audit actually runs against it matched 0 of 12 - a closed mesh
+    # has no boundary edges. So the one op here whose comment insisted an empty match "would prove
+    # nothing about whether a RESOLVED selection mutates" was, for its whole life, proving nothing.
+    # Caught by printing the match count next to the claim; it had been printing 0 all along.
+    ("select_edges", {"allEdges": True}),
+    ("face_info", {}),
+    # The same op again through the depsgraph. This is the most plausible mark-leaving read in the
+    # addon, so probing only the cheap half would have been decoration.
+    ("face_info", {"evaluated": True}),
+    ("uv_info", {}),
+    ("list_animation_data", {}),
+    ("list_bones", {}),
+    ("list_constraints", {}),
+    ("list_custom_properties", {}),
+    ("list_keyframes", {}),
+    ("list_modifiers", {}),
+    ("list_particles", {}),
+    ("list_shape_keys", {}),
+    ("list_vertex_groups", {}),
+]
 
 
 def snapshot():
@@ -166,41 +198,49 @@ def main():
             findings.append((op, d))
         base = after  # chain forward so op N's baseline is op N-1's real post-state
 
-    # object_info on itself: does asking about an object change what asking about it reports?
+    # Every read that takes a target, against the scene's first mesh.
     first_obj = sorted(base)[0]
-    before = copy.deepcopy(base)
-    r = _call("object_info", {"object": first_obj}, timeout=30.0)
-    after = snapshot()
-    if r.get("ok"):
-        exercised.append("object_info")
+    unreachable = []
+    for op, extra in OBJECT_CANDIDATES:
+        label = op if not extra else "%s(%s)" % (op, ",".join(sorted(extra)))
+        before = copy.deepcopy(base)
+        r = _call(op, dict(extra, object=first_obj), timeout=30.0)
+        after = snapshot()
+        if not r.get("ok"):
+            # NAMED, not swallowed. A read this audit could not exercise is a gap in its reach, and
+            # a gap it does not print is one nobody knows it has.
+            unreachable.append((label, str(r.get("error"))[:70]))
+            base = after
+            continue
+        exercised.append(label)
+        if op == "select_edges":
+            print("  select_edges matched %s of %s edges on '%s'"
+                  % (r.get("count"), r.get("totalEdges"), first_obj))
         d = diff_snapshots(before, after)
         if d:
-            findings.append(("object_info", d))
-    else:
-        print("  %-14s NOT EXERCISED - call failed: %s" % ("object_info", r.get("error")))
-    base = after if r.get("ok") else base
+            findings.append((label, d))
+        base = after
 
-    # select_edges against the same real object, with a selector that actually resolves (an empty
-    # match proves nothing about whether a resolved selection mutates).
-    before = copy.deepcopy(base)
-    r = _call("select_edges", dict(_SELECT_EDGES_PARAMS, object=first_obj), timeout=30.0)
-    after = snapshot()
-    if r.get("ok"):
-        exercised.append("select_edges")
-        matched = r.get("count")
-        print("  select_edges matched %s of %s edges on '%s'" %
-              (matched, r.get("totalEdges"), first_obj))
-        d = diff_snapshots(before, after)
-        if d:
-            findings.append(("select_edges", d))
-    else:
-        print("  %-14s NOT EXERCISED - call failed: %s" % ("select_edges", r.get("error")))
+    # list_group_nodes is NOT in the list above and that is not an oversight: it takes group/tree,
+    # not object, so it is a node-group read rather than an object read. It was in OBJECT_CANDIDATES
+    # for one run, where it failed on "unknown param(s) object" - the classification was done from
+    # the shape of the name and the registry disagreed, which is the same mistake as trusting an
+    # endpoint name over its handler. Named here so removing it from the wrong list does not quietly
+    # shrink the reach this audit reports.
+    print("")
+    print("NOT PROBED AT ALL: list_group_nodes - takes group/tree, needs a node group to exist.")
+
+    if unreachable:
+        print("")
+        print("NOT EXERCISED against a plain mesh - these need a fixture that has the feature:")
+        for label, why in unreachable:
+            print("  %-28s %s" % (label, why))
 
     print("")
     # The denominator was a hardcoded 5 and stayed 5 when the candidate list grew, which is the
     # small version of every stale number this repo keeps deleting.
     print("exercised: %d of %d candidate(s) (%s)"
-          % (len(exercised), len(CANDIDATES) + 2, ", ".join(exercised)))
+          % (len(exercised), len(CANDIDATES) + len(OBJECT_CANDIDATES), ", ".join(exercised)))
     if findings:
         print("")
         print("READ OPS THAT MOVED THE MESH:")
