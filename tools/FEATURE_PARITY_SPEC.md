@@ -14585,3 +14585,17 @@ out-of-process the way ops_gen already does with gen_status.
 
       NOT GITIGNORED, deliberately. Adding ".exr" to .gitignore would have hidden the symptom and
       left the op still writing into whatever directory it was launched from.
+
+- [x] **nothing checked that the test harness cleans up after itself** DONE 2026-09-04
+      The .exr above was found by a stray line in `git status` during an unrelated commit. That is
+      not a check, and the next one would have gone the same way.
+
+      blender_version_matrix now snapshots its launch directory and fails on anything new. It
+      renders, bakes and exports, and all of that belongs under TMP; a file appearing in the CWD
+      means an op resolved a path it could not use and fell back to the process's directory. The
+      message says to find the op before reaching for .gitignore, because the file is the symptom.
+
+      MUTATION-TESTED, and the first two attempts at that test were wrong in the same way worth
+      remembering: planting a file BEFORE the run puts it in the baseline, and running twice finds
+      the first run's artifact already present, so both reported a false pass. Done properly - one
+      run with render_still's guard removed exits 1 naming ".exr", one run with it restored exits 0.
