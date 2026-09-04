@@ -208,6 +208,10 @@
   "treeName"
  ],
  [
+  "set_light_influence",
+  "engine"
+ ],
+ [
   "set_light_shadow",
   "engine"
  ],

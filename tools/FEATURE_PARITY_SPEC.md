@@ -13582,3 +13582,37 @@ out-of-process the way ops_gen already does with gen_status.
       is left alone, because "3 material(s) have no users" carries a count that IS a cross-build
       fact and must keep differing. The baseline went 61 to 60 and that one entry now means
       something again.
+
+- [x] **a light's REACH could not be set at all** DONE 2026-09-04
+      The spec names LIGHTING as a first-class family, so it got the same lenses the rest of the
+      addon got today. set_light writes energy, colour, cone and size; set_light_shadow writes the
+      shadow settings; and NOTHING wrote a light's influence radius, its volumetric contribution, an
+      area light's spread, or a sun's shadow cascades. Those are most of what separates a lighting
+      rig that renders well from one that merely exists.
+
+      cutoff_distance is the one that matters most for a game pipeline: it is the distance past
+      which the light is not evaluated at all - the direct equivalent of an attenuation radius - and
+      it was unreachable.
+
+      A CUTOFF DOES NOTHING UNTIL use_custom_distance IS ON. Blender stores the distance either way,
+      so writing it alone changes a number and not the render, with every field reading back exactly
+      as asked. Passing cutoffDistance now turns the toggle on unless told otherwise, and
+      cutoffWasEnabledAutomatically says so - turning on something the caller did not mention is a
+      real change and should not be found later.
+
+      TWO AXES OF AVAILABILITY, and this is the refinement over set_light_shadow, whose map carries
+      build availability alone. A property can be missing because this BUILD lacks it
+      (transmission_factor and use_soft_falloff are 4.2 and later) or because this light TYPE lacks
+      it (spread is AREA only, square and show_cone are SPOT only, the cascades are SUN only). A
+      type mismatch reported as "this Blender has no X" is true in the letter and wrong in the part
+      that decides what the caller does next, so the two are separated and the type message says
+      retyping the light would make it available.
+
+      Every row read off bl_rna on 3.6.23, 4.2.17, 4.4.0 and 5.0.1 for all four light types.
+      Verified on 3.6 and 5.0: cutoff applies and auto-enables its toggle with a readback, spread
+      works on AREA and is refused on SPOT as a TYPE problem, cascades work on SUN and are refused
+      on AREA, and transmissionFactor is refused on 3.6 as a BUILD problem and applies on 5.0.
+
+      audit_message_endpoints caught bare op names in the MCP docstring where the tools carry the
+      bl_ prefix - the SECOND time today, after describe_material. The audit catches it every time,
+      which is the system working, but it is a slip worth not repeating a third time.

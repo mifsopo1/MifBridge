@@ -5076,6 +5076,24 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_set_light_influence(object: str, cutoff_distance: float = None,
+                           use_custom_distance: bool = None, volume_factor: float = None,
+                           transmission_factor: float = None, spread: float = None,
+                           soft_falloff: bool = None, square: bool = None,
+                           show_cone: bool = None, cascade_count: int = None,
+                           cascade_max_distance: float = None,
+                           cascade_exponent: float = None,
+                           cascade_fade: float = None) -> dict:
+    "How far a Blender light REACHES and what it reaches into - the half neither bl_set_light nor bl_set_light_shadow covered. bl_set_light writes energy, colour, cone and size; bl_set_light_shadow writes the shadow settings; nothing wrote a light's INFLUENCE RADIUS, its volumetric contribution, an area light's spread, or a sun's shadow cascades - and those are most of what separates a lighting rig that renders well from one that merely exists. cutoff_distance is the performance knob: the distance past which the light is not evaluated at all, the direct equivalent of an attenuation radius in a game engine. A CUTOFF DOES NOTHING UNTIL use_custom_distance IS ON - Blender stores the distance either way, so setting it alone changes a number and not the render while every field reads back exactly as asked; passing cutoff_distance turns the toggle on unless you say otherwise, and the response says so. TWO AXES OF AVAILABILITY, and the refusal says WHICH failed: a property can be missing because this BUILD lacks it (transmission_factor and soft_falloff are 4.2 and later) or because this light TYPE lacks it (spread is AREA only, square and show_cone are SPOT only, the cascades are SUN only). Every row was read off bl_rna on 3.6.23, 4.2.17, 4.4.0 and 5.0.1 for all four light types."
+    return _blender("set_light_influence", object=object, cutoffDistance=cutoff_distance,
+                    useCustomDistance=use_custom_distance, volumeFactor=volume_factor,
+                    transmissionFactor=transmission_factor, spread=spread,
+                    softFalloff=soft_falloff, square=square, showCone=show_cone,
+                    cascadeCount=cascade_count, cascadeMaxDistance=cascade_max_distance,
+                    cascadeExponent=cascade_exponent, cascadeFade=cascade_fade)
+
+
+@mcp.tool()
 def bl_set_light_shadow(object: str, enabled: bool = None, soft_size: float = None,
                         buffer_clip_start: float = None, color: list = None,
                         filter_radius: float = None, jitter: bool = None,

@@ -121,6 +121,11 @@ PAYLOADS = {
     # group each exist on some builds and not others, and the op correctly REFUSES
     # what a build lacks. A payload naming them would test the refusal rather than
     # the write, on whichever builds happen to lack them.
+    # cutoffDistance ONLY, and it exercises the toggle trap: use_custom_distance is off by
+    # default, so a stored distance would change a number and not the render. The
+    # type-specific keys are covered by the direct probes, where a refusal is the expected
+    # answer rather than a gap.
+    "set_light_influence": {"object": "Light", "cutoffDistance": 15.0},
     "set_light_shadow": {"object": "Light", "enabled": True, "softSize": 0.3},
     # THE CAMERA MUST BE PANO FIRST - the op refuses on a PERSP camera because the settings
     # "would be stored and never used", which is the op working. A fixture retypes MifPano.

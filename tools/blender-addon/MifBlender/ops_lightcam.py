@@ -1257,9 +1257,170 @@ def op_set_light_shadow(params):
         "blenderVersion": bpy.app.version_string,
     }
 
+
+_INFLUENCE_KEYS = {
+    "object", "light", "name", "cutoffDistance", "useCustomDistance", "volumeFactor",
+    "transmissionFactor", "spread", "softFalloff", "square", "showCone",
+    "cascadeCount", "cascadeMaxDistance", "cascadeExponent", "cascadeFade",
+}
+
+# param -> (real property, which TYPES have it, which BUILDS have it)
+#
+# TWO AXES, AND THE MESSAGE HAS TO SAY WHICH ONE FAILED. set_light_shadow's map carries build
+# availability only, so a property missing because of the light TYPE would be reported as "this
+# Blender has no X" - true in the letter and wrong in the part that matters, because the caller
+# then goes looking for the wrong fix. Every row below was read off bl_rna on 3.6.23, 4.2.17, 4.4.0
+# and 5.0.1, for all four light types.
+#
+#   transmission_factor   4.2 and later on EVERY type - absent on 3.6
+#   use_soft_falloff      4.2 and later, and only POINT and SPOT
+#   spread                AREA only, every build
+#   use_square/show_cone  SPOT only, every build
+#   shadow_cascade_*      SUN only, every build
+#   the rest              every type, every build
+_INFLUENCE_MAP = {
+    "cutoffDistance":     ("cutoff_distance", None, "every build"),
+    "useCustomDistance":  ("use_custom_distance", None, "every build"),
+    "volumeFactor":       ("volume_factor", None, "every build"),
+    "transmissionFactor": ("transmission_factor", None, "4.2 and later"),
+    "spread":             ("spread", ("AREA",), "every build"),
+    "softFalloff":        ("use_soft_falloff", ("POINT", "SPOT"), "4.2 and later"),
+    "square":             ("use_square", ("SPOT",), "every build"),
+    "showCone":           ("show_cone", ("SPOT",), "every build"),
+    "cascadeCount":       ("shadow_cascade_count", ("SUN",), "every build"),
+    "cascadeMaxDistance": ("shadow_cascade_max_distance", ("SUN",), "every build"),
+    "cascadeExponent":    ("shadow_cascade_exponent", ("SUN",), "every build"),
+    "cascadeFade":        ("shadow_cascade_fade", ("SUN",), "every build"),
+}
+_INFLUENCE_BOOL = {"useCustomDistance", "softFalloff", "square", "showCone"}
+_INFLUENCE_INT = {"cascadeCount"}
+
+
+def op_set_light_influence(params):
+    """How far a light reaches and what it reaches INTO - the half set_light never covered.
+
+    THE HOLE THIS CLOSES. set_light writes energy, colour, cone and size; set_light_shadow writes
+    the shadow settings. Nothing wrote a light's INFLUENCE RADIUS, its volumetric contribution, an
+    area light's spread, or a sun's shadow cascades - and those are most of what separates a lighting
+    rig that renders well from one that merely exists. cutoff_distance in particular is the
+    performance knob: it is the distance past which a light is not evaluated at all, the direct
+    equivalent of an attenuation radius in a game engine, and there was no way to set it.
+
+    A CUTOFF DOES NOTHING UNTIL use_custom_distance IS ON. Blender stores cutoff_distance whether or
+    not the toggle is set, so writing it alone changes a number and not the render - and every field
+    reads back exactly as asked. Passing cutoffDistance turns the toggle on unless useCustomDistance
+    says otherwise, and the response says which happened.
+
+    TWO AXES OF AVAILABILITY, and the refusal says which one failed. A property can be missing
+    because this BUILD does not have it (transmission_factor is 4.2 and later) or because this light
+    TYPE does not have it (spread is AREA only, cascades are SUN only). set_light_shadow's map
+    carries build availability alone, so a type mismatch there reads as "this Blender has no X" -
+    true in the letter and wrong in the part that decides what the caller does next.
+
+    params:
+      object / light / name (str)   which light. Required.
+      cutoffDistance (float)        the distance past which the light is not evaluated
+      useCustomDistance (bool)      whether the cutoff applies at all
+      volumeFactor (float)          contribution to volumetrics
+      transmissionFactor (float)    contribution through transmissive surfaces - 4.2 and later
+      spread (float)                AREA only - the angle the light emits over
+      softFalloff (bool)            POINT and SPOT, 4.2 and later
+      square (bool) / showCone (bool)   SPOT only
+      cascadeCount (int) / cascadeMaxDistance (float) / cascadeExponent (float) /
+      cascadeFade (float)           SUN only - the cascaded shadow map settings
+    """
+    reject_unknown(params, _INFLUENCE_KEYS, "set_light_influence")
+    want = take(params, "object", "light", "name", required=True, kind=str)
+    obj = get_object(want)
+    if obj.type != "LIGHT":
+        raise MifOpError("'%s' is a %s, not a LIGHT. NOTHING was changed." % (obj.name, obj.type))
+    data = obj.data
+    kind = str(data.type)
+
+    asked = [k for k in _INFLUENCE_MAP if params.get(k) is not None]
+    if not asked:
+        raise MifOpError("nothing to do - pass at least one of %s. NOTHING was changed."
+                         % ", ".join(sorted(_INFLUENCE_MAP)))
+
+    # EVERY KEY CHECKED BEFORE ANY IS WRITTEN, so a half-supported request does not leave half of
+    # itself applied - and the two reasons are reported separately.
+    wrong_type, wrong_build = [], []
+    for key in asked:
+        attr, types, availability = _INFLUENCE_MAP[key]
+        if types is not None and kind not in types:
+            wrong_type.append((key, attr, types))
+        elif attr not in data.bl_rna.properties:
+            wrong_build.append((key, attr, availability))
+    if wrong_type:
+        raise MifOpError(
+            "'%s' is of type %s, and %s. That is the light TYPE, not this Blender - retyping the "
+            "light with set_light would make it available. NOTHING was changed."
+            % (obj.name, kind,
+               "; ".join("%s (light.%s) exists only on %s" % (k, a, "/".join(ts))
+                         for k, a, ts in wrong_type)))
+    if wrong_build:
+        raise MifOpError(
+            "this Blender (%s) has no %s. Available on %s. Accepting the key and writing it only "
+            "where it exists is how a caller asks for something, does not get it, and is told "
+            "nothing - so it is refused. NOTHING was changed."
+            % (bpy.app.version_string,
+               "; ".join("%s (light.%s)" % (k, a) for k, a, _ in wrong_build),
+               "; ".join(v for _, _, v in wrong_build)))
+
+    applied = {}
+    for key in asked:
+        attr = _INFLUENCE_MAP[key][0]
+        if key in _INFLUENCE_BOOL:
+            value = take_bool(params, key, default=True)
+        elif key in _INFLUENCE_INT:
+            value = take_int(params, key)
+        else:
+            value = take_float(params, key)
+        setattr(data, attr, value)
+        applied[key] = value
+
+    # THE TOGGLE THAT MAKES THE DISTANCE MEAN ANYTHING. Blender stores cutoff_distance whether or
+    # not use_custom_distance is on, so a caller who sets only the distance gets a stored number and
+    # an unchanged render, with every field reading back exactly as requested.
+    auto_enabled = False
+    if "cutoffDistance" in applied and "useCustomDistance" not in applied \
+            and not data.use_custom_distance:
+        data.use_custom_distance = True
+        auto_enabled = True
+
+    # READ BACK PER KEY. Several of these clamp - a negative spread, a cascade count outside its
+    # range - and echoing the request would report a value the light does not have.
+    after, clamped = {}, {}
+    for key in asked:
+        stored = getattr(data, _INFLUENCE_MAP[key][0])
+        after[key] = round(float(stored), 6) if isinstance(stored, float) else stored
+        wanted = applied[key]
+        if isinstance(wanted, (int, float)) and not isinstance(wanted, bool) \
+                and abs(float(stored) - float(wanted)) > 1e-4:
+            clamped[key] = {"requested": wanted, "stored": after[key]}
+
+    engine = bpy.context.scene.render.engine
+    return {
+        "ok": True,
+        "light": obj.name,
+        "lightType": kind,
+        "engine": engine,
+        "applied": after,
+        "clamped": clamped or None,
+        "useCustomDistance": bool(data.use_custom_distance),
+        # SAID OUT LOUD, because turning a toggle on that the caller did not mention is a real
+        # change to how the light renders and should not be discovered later.
+        "cutoffWasEnabledAutomatically": auto_enabled,
+        "note": ("use_custom_distance was OFF, so the cutoff distance would have been stored and "
+                 "ignored - it has been turned ON. Pass useCustomDistance:false to store the "
+                 "distance without applying it.") if auto_enabled else None,
+        "blenderVersion": bpy.app.version_string,
+    }
+
 OPS = {
     "set_light_linking": op_set_light_linking,
     "set_light_shadow": op_set_light_shadow,
+    "set_light_influence": op_set_light_influence,
     "set_light_ies": op_set_light_ies,
     "set_camera_panorama": op_set_camera_panorama,
     "create_light": op_create_light,
