@@ -7,6 +7,8 @@
 #include "HAL/FileManager.h"
 #include "HAL/PlatformMisc.h"      // GetEnvironmentVariable - MifBridge.cpp includes it for the same reason
 #include "Misc/App.h"
+#include "Misc/ConfigCacheIni.h"   // GConfig - [MifBridge] GameRoot, the ini half of the
+                                   // game-root setting that replaced a hardcoded path
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 
@@ -14,11 +16,8 @@ namespace MifBridge
 {
 	namespace
 	{
-		// Live DDS2 install root (C:\SteamLibrary, NOT D:\Steam). The reference here used to be
-		// "see docs/04, docs/11"; docs/04 has never existed in this repository and docs/11 here is
-		// about UE4 port feasibility. Those notes are the author's separate DDS2 modding
-		// documentation, not anything shipped with this plugin.
-		// NEITHER OF THESE IS A LITERAL ANY MORE, for two different reasons.
+		// WHERE THE GAME YOU ARE MODDING LIVES. Not a literal, and no fallback - see below.
+		// NEITHER OF THESE IS A LITERAL, for two different reasons.
 		//
 		// The retoc path used to read C:/Users/<author>/.cargo/bin/retoc.exe, which put the
 		// author's Windows account name into every published binary and every clone of this source,
@@ -26,14 +25,51 @@ namespace MifBridge
 		// same file on the machine it was written for - cargo installs there by definition - so
 		// nothing changes here and nothing personal ships.
 		//
-		// Both also take an environment override so these three endpoints are usable by someone
-		// whose game is not in this exact Steam folder. Unset, the defaults behave exactly as they
-		// did before, so this is additive rather than a workflow change.
+		// THE GAME ROOT HAS NO DEFAULT, AND THAT IS THE FIX. It used to fall back to a literal
+		// path into one specific commercial game inside one specific Steam library, which is the
+		// same defect the retoc path above was fixed for and was left behind by that pass - it
+		// called the env override "additive rather than a workflow change", which it was, and which
+		// is exactly why the literal survived.
+		//
+		// With it unset - the default for anybody who is not the author - read_modloader_log
+		// returned that path in its `path` field and in its not-found error, and trigger_cook built
+		// all six of gameRoot/paksDir/deployMods/deployLogicMods/ue4ssLog from it. So the answer to
+		// "where is my game" was somebody else's game, on somebody else's drive.
+		//
+		// There is no sensible default for this. A wrong guess is worse than none, because it
+		// yields a plausible path that silently is not yours. Empty means REFUSE, and the refusal
+		// says how to set it - see MifRequireGameRoot below.
 		FString MifGameRoot()
 		{
 			const FString Env = FPlatformMisc::GetEnvironmentVariable(TEXT("MIF_GAME_ROOT"));
 			if (!Env.IsEmpty()) { return Env.Replace(TEXT("\\"), TEXT("/")); }
-			return TEXT("C:/SteamLibrary/steamapps/common/Drug Dealer Simulator 2/DrugDealerSimulator2");
+			// An ini setting as well as an env var, so a machine that always mods the same game
+			// configures it once instead of exporting a variable into every shell that might
+			// launch the editor.
+			FString Ini;
+			if (GConfig && GConfig->GetString(TEXT("MifBridge"), TEXT("GameRoot"), Ini, GEngineIni)
+				&& !Ini.TrimStartAndEnd().IsEmpty())
+			{
+				return Ini.TrimStartAndEnd().Replace(TEXT("\\"), TEXT("/"));
+			}
+			return FString();
+		}
+
+		/** Refuse, in one place and one wording, when nobody has said where the game is.
+
+		    ONE FUNCTION SO THE THREE ENDPOINTS CANNOT DRIFT. Three separate "if empty" checks would
+		    have three messages, two of which would eventually stop mentioning the ini. */
+		bool MifRequireGameRoot(const TSharedRef<FJsonObject>& Out, FString& OutRoot)
+		{
+			OutRoot = MifGameRoot();
+			if (!OutRoot.IsEmpty()) { return true; }
+			Fail(Out, TEXT("this endpoint needs to know where the GAME you are modding is installed, ")
+					  TEXT("and nothing has said. There is deliberately no default: a guess would be a ")
+					  TEXT("plausible path that is not yours. Set either the MIF_GAME_ROOT environment ")
+					  TEXT("variable, or GameRoot under [MifBridge] in DefaultEngine.ini - for example ")
+					  TEXT("GameRoot=D:/Steam/steamapps/common/YourGame/YourGame - and call again. ")
+					  TEXT("NOTHING was changed."));
+			return false;
 		}
 
 		FString MifRetocExe()
@@ -122,8 +158,8 @@ namespace MifBridge
 	{
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("path"), TEXT("lines"), TEXT("filter") },
-			TEXT("path (optional - defaults to the live DDS2 UE4SS.log), lines (tail size, 1-5000, default 80), filter (plain substring)"),
-			{ { TEXT("logPath"), TEXT("spell it path - or omit it entirely to tail the live DDS2 UE4SS.log") },
+			TEXT("path (optional - defaults to UE4SS.log under the configured game root), lines (tail size, 1-5000, default 80), filter (plain substring)"),
+			{ { TEXT("logPath"), TEXT("spell it path - or omit it entirely to tail UE4SS.log under the configured game root") },
 			  { TEXT("file"), TEXT("spell it path") },
 			  { TEXT("maxLines"), TEXT("spell it lines - it is the tail size, clamped to 1-5000") },
 			  { TEXT("limit"), TEXT("spell it lines - it is the tail size, clamped to 1-5000") },
@@ -137,7 +173,12 @@ namespace MifBridge
 		FString Path = JStr(In, TEXT("path"));
 		if (Path.IsEmpty())
 		{
-			Path = MifGameRoot() + TEXT("/Binaries/Win64/ue4ss/UE4SS.log");
+			// ONLY WHEN THE CALLER DID NOT SAY. Someone who passes an explicit path does not need a
+			// game root configured at all, and refusing them for want of a setting they are not
+			// using would be the tool inventing a requirement.
+			FString Root;
+			if (!MifRequireGameRoot(Out, Root)) { return; }
+			Path = Root + TEXT("/Binaries/Win64/ue4ss/UE4SS.log");
 		}
 		const int32 Lines = FMath::Clamp(JInt(In, TEXT("lines"), 80), 1, 5000);
 		const FString Filter = JStr(In, TEXT("filter"));
@@ -328,7 +369,11 @@ namespace MifBridge
 		const FString Mod = JStr(In, TEXT("mod"), TEXT("<ModName>"));
 		const FString Asset = JStr(In, TEXT("asset"), TEXT("<AssetName>"));
 
-		const FString Root = MifGameRoot();
+		// EVERY PATH BELOW IS DERIVED FROM THIS ONE, so an empty root does not produce a partly
+		// useful answer - it produces six paths rooted at the filesystem root, which is nonsense
+		// wearing the shape of an answer. Refuse instead.
+		FString Root;
+		if (!MifRequireGameRoot(Out, Root)) { return; }
 		const FString PaksDir = Root + TEXT("/Content/Paks");
 		const FString DeployMods = Root + TEXT("/Content/Paks/Mods");
 		const FString DeployLogicMods = Root + TEXT("/Content/Paks/LogicMods/") + Mod;
@@ -338,7 +383,10 @@ namespace MifBridge
 		Out->SetBoolField(TEXT("executed"), false);
 		Out->SetStringField(TEXT("note"),
 			TEXT("Plan only — MifBridge does not run cook/deploy from inside the editor (it operates on live game paks, out-of-editor). ")
-			TEXT("Cook itself has no documented one-liner; use Brando's DDS2 SDK for content mods. The preferred DDS2 lane SKIPS cook: ")
+			// GENERIC BECAUSE THE TECHNIQUE IS. This named one game's SDK and its author's handle;
+		// the retoc lane it describes is how UE4SS-style cooked-game modding works generally, and
+		// that half is worth keeping for anyone.
+		TEXT("Cook itself has no documented one-liner; a game-specific SDK is usually the route for content mods. The preferred lane SKIPS cook: ")
 			TEXT("retoc to-legacy (extract) -> byte-patch the .uexp (same-size swaps only) -> retoc to-zen (repack) -> deploy."));
 
 		TArray<TSharedPtr<FJsonValue>> Plan;
@@ -367,7 +415,11 @@ namespace MifBridge
 		TArray<TSharedPtr<FJsonValue>> Caveats;
 		PushLine(Caveats, TEXT("The retoc to-zen lane runs WHILE the game is open; the ModKit UnrealPak lane requires the game CLOSED (else it locks the .ucas)."));
 		PushLine(Caveats, TEXT("A plain override _P pak goes to Content/Paks/Mods/ (flat), NOT Content/Paks/LogicMods/ (that folder is only for UE4SS BPModLoaderMod ModActor mods)."));
-		PushLine(Caveats, TEXT("Live DDS2 install is on C:/SteamLibrary, NOT the D:/Steam path used for DDS1."));
+		// DELETED, NOT GENERALISED: "the install is on C:/SteamLibrary, not D:/Steam" was true of
+		// exactly one machine and one pair of games, and there is no version of that sentence which
+		// means anything to a reader. Where the game is now comes from MIF_GAME_ROOT or the ini,
+		// which is the same information in a form that is theirs.
+		PushLine(Caveats, TEXT("gameRoot below is whatever MIF_GAME_ROOT or [MifBridge] GameRoot says - every other path here is derived from it, so a wrong root makes all of them wrong together."));
 		Out->SetArrayField(TEXT("caveats"), Caveats);
 	}
 }

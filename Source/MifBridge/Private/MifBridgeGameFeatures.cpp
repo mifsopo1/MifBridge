@@ -252,7 +252,7 @@ namespace MifBridge
 	{
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("name"), TEXT("plugin"), TEXT("pluginName") },
-			TEXT("name (aliases: plugin, pluginName) - a plugin name like 'DDS2Casino'"),
+			TEXT("name (aliases: plugin, pluginName) - a plugin name like 'MyGameFeature'"),
 			{ { TEXT("nameContains"), TEXT("describe takes one exact name - list_game_feature_plugins is the one that filters") },
 			  { TEXT("url"), TEXT("this takes the plugin NAME; the file-protocol URL is derived for you and returned") } }))
 		{
@@ -271,7 +271,7 @@ namespace MifBridge
 		{
 			Fail(Out, FString::Printf(
 				TEXT("no plugin named '%s' was discovered. list_game_feature_plugins enumerates the game "
-					 "feature ones; note this takes a PLUGIN NAME (like 'DDS2Casino'), not a path."), *Name));
+					 "feature ones; note this takes a PLUGIN NAME (like 'MyGameFeature'), not a path."), *Name));
 			return;
 		}
 
