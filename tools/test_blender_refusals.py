@@ -288,6 +288,65 @@ def main():
     check("B106 an AREA-only key on a SPOT light is refused", ok, detail)
 
     print("")
+    print("=== B108: the animation ops - every one added 2026-09-03 ===")
+    for label, fn, params, words in (
+            ("evaluate_at_frame without frames", ops_anim.op_evaluate_at_frame,
+             {"object": "Cube"}, ["frames", "required"]),
+            ("evaluate_at_frame with an empty list", ops_anim.op_evaluate_at_frame,
+             {"object": "Cube", "frames": []}, ["non-empty"]),
+            ("evaluate_at_frame with a non-number", ops_anim.op_evaluate_at_frame,
+             {"object": "Cube", "frames": ["x"]}, ["must be a number"]),
+            ("delete_keyframe without a dataPath", ops_anim.op_delete_keyframe,
+             {"object": "Cube"}, ["dataPath", "required"]),
+            ("edit_fcurve with nothing to change", ops_anim.op_edit_fcurve,
+             {"object": "Cube", "dataPath": "location"}, ["nothing to change"]),
+            ("edit_fcurve with an unknown interpolation", ops_anim.op_edit_fcurve,
+             {"object": "Cube", "dataPath": "location", "interpolation": "ZZBOGUS"},
+             ["unknown interpolation", "LINEAR"]),
+            ("add_fcurve_modifier with an unknown type", ops_anim.op_add_fcurve_modifier,
+             {"object": "Cube", "dataPath": "location", "type": "ZZBOGUS"},
+             ["unknown fcurve modifier type"]),
+            ("add_driver without a dataPath", ops_anim.op_add_driver,
+             {"object": "Cube"}, ["dataPath", "required"]),
+            ("add_driver on a path that does not resolve", ops_anim.op_add_driver,
+             {"object": "Cube", "dataPath": "zz.bogus"},
+             ["does not resolve", "evaluate to zero"]),
+            ("add_nla_strip without an action", ops_anim.op_add_nla_strip,
+             {"object": "Cube"}, ["action", "required"]),
+            ("add_nla_strip naming an action that does not exist", ops_anim.op_add_nla_strip,
+             {"object": "Cube", "action": "NoSuchZz"}, ["no action named"]),
+            ("set_marker without a name", ops_anim.op_set_marker, {}, ["name", "required"]),
+            ("set_marker binding a NON-camera", ops_anim.op_set_marker,
+             {"name": "M", "frame": 1, "camera": "Cube"}, ["not a CAMERA"]),
+            ("set_marker creating one with no frame", ops_anim.op_set_marker,
+             {"name": "NoSuchMarkerZz"}, ["frame' is required"]),
+            ("bake_to_keyframes with end before start", ops_anim.op_bake_to_keyframes,
+             {"object": "Cube", "frameStart": 50, "frameEnd": 10}, ["before", "NOTHING was baked"]),
+    ):
+        ok, detail = refuses(fn, params, *words)
+        check("B108 %s" % label, ok, detail)
+
+    print("")
+    print("=== B109: scene and file ops ===")
+    from MifBlender import ops_scene
+    for label, fn, params, words in (
+            ("set_custom_property without a key", ops_scene.op_set_custom_property,
+             {"object": "Cube"}, ["key", "required"]),
+            ("set_custom_property on an INTERNAL key", ops_scene.op_set_custom_property,
+             {"object": "Cube", "key": "cycles", "value": 1}, ["internal key"]),
+            ("set_custom_property with no value", ops_scene.op_set_custom_property,
+             {"object": "Cube", "key": "K"}, ["value", "required"]),
+            ("set_object_visibility with no flags at all", ops_scene.op_set_object_visibility,
+             {"object": "Cube"}, ["no visibility flag"]),
+            ("set_object_visibility on a missing object", ops_scene.op_set_object_visibility,
+             {"object": "NoSuchZz", "hideRender": True}, ["no object named"]),
+            ("open_file on a path that does not exist", ops_file.op_open_file,
+             {"filepath": "/zz/no/such/file/anywhere.blend"}, ["no file at"]),
+    ):
+        ok, detail = refuses(fn, params, *words)
+        check("B109 %s" % label, ok, detail)
+
+    print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
     # THE NEGATIVE CONTROL. Every check above proves something is refused; without this, a guard
     # that refused EVERYTHING would score full marks. Retyping to SPOT while setting spotAngle is
