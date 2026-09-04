@@ -2868,3 +2868,45 @@ correct.
 **THE TEST FOR THIS, WHEN WRITING A NEW OP:** ask what would still read as correct if the feature
 did nothing at all. If the answer is "everything I am about to return", the postcondition is in the
 wrong place. It is not enough for the op to be honest; it has to be *able* to be wrong.
+
+## An erasure that reads as an honest absence (2026-09-03)
+
+`run_all_suites` wrote its results with `json.dump(results, f)` over `"w"`. Every run that narrowed
+the suite list therefore **deleted the record of every suite it did not run**. It was found in a
+`git diff` before an unrelated commit: an `--offline` run had taken `suite_results.json` from 346
+records to 9, and nothing anywhere said so.
+
+**IT WAS NEVER AN `--offline` PROBLEM.** Three paths narrow the list and **one of them is the
+default** — PIE suites are skipped unless `--with-pie`, so an ordinary full sweep erased their
+results every single time. A name filter did the same. The records most likely to be missing were
+the ones hardest to produce.
+
+**THE DAMAGE HIDES IN THE ONE PLACE NOBODY LOOKS: THE DIFFERENCE BETWEEN NEVER AND NO LONGER.**
+`audit_suite_reach` reports a suite with no record as *never run*. That is indistinguishable from a
+record deleted sixty seconds ago, and its own docstring already complains this file cost it "two
+false leads out of five". A stale record is honest by comparison — it carries a `ranAt` somebody can
+disbelieve. An absence carries nothing to disbelieve, so it gets believed.
+
+The same shape sat in `report_repro`, found by grepping for the write rather than by hitting it, and
+it was sharper there: the bridge-died path prints *"the remaining reports are left queued"* — which
+says nothing was lost — directly above a write that dropped their previous responses. Nothing reads
+that file programmatically, by design, so the only consumer is a person and what was deleted was the
+evidence they were about to read.
+
+**THE RULE.** A file that accumulates across runs must be **merged, never replaced**, and the merge
+key must be the record's real identity — `(suite, pass)` here, not `suite`. Getting that wrong is
+the same bug quieter: the first version of the fix carried 168 records forward where 337 were
+expected, and looked like a success.
+
+**WHETHER TO PRUNE IS NOT A DETAIL, AND THE ANSWER DIFFERS PER FILE.** `run_all_suites` drops records
+for a suite file that no longer exists, or a merge would resurrect deleted suites forever.
+`report_repro` prunes *nothing*, because a report leaves the queue once handled and pruning to the
+live queue would delete precisely the finished work the file is kept for. Copying one policy to the
+other would have destroyed data in the name of the fix.
+
+**AND THE FIX HAD TO BE MADE REACHABLE BEFORE IT COULD BE TRUSTED.** Both write paths are unreachable
+offline — one needs an editor, the other returns early on an empty queue — so both merges were
+lifted to module-level functions with the filesystem check injected. Left inline, the fix for a
+data-loss bug would itself have shipped unverified, which is the same mistake one layer up.
+`test_release_gates` R200 and `test_report_intake` T601–T606 now hold them, each ground-truthed by
+restoring the exact defect it replaced.

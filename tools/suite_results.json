@@ -364,9 +364,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "29 PASS  0 FAIL",
-  "seconds": 0.8,
+  "seconds": 0.9,
   "editorSurvived": null,
-  "ranAt": 1788484062.906091,
+  "ranAt": 1788484478.3478744,
   "tail": ""
  },
  {
@@ -444,9 +444,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 56   FAIL 0",
-  "seconds": 0.1,
+  "seconds": 0.2,
   "editorSurvived": null,
-  "ranAt": 1788484063.0369482,
+  "ranAt": 1788484478.506768,
   "tail": ""
  },
  {
@@ -1096,7 +1096,7 @@
   "summary": "PASS 22   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788484063.1207588,
+  "ranAt": 1788484478.6040912,
   "tail": ""
  },
  {
@@ -1176,7 +1176,7 @@
   "summary": "PASS 24   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788484063.2273138,
+  "ranAt": 1788484478.7333038,
   "tail": ""
  },
  {
@@ -1856,7 +1856,7 @@
   "summary": "PASS 25   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788484063.2942843,
+  "ranAt": 1788484478.8115354,
   "tail": ""
  },
  {
@@ -2176,7 +2176,7 @@
   "summary": "PASS 29   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788484063.4117055,
+  "ranAt": 1788484478.9513261,
   "tail": ""
  },
  {
@@ -2443,10 +2443,10 @@
   "suite": "test_release_gates.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 11   FAIL 0",
+  "summary": "PASS 16   FAIL 0",
   "seconds": 0.2,
   "editorSurvived": null,
-  "ranAt": 1788484063.571848,
+  "ranAt": 1788484479.1773229,
   "tail": ""
  },
  {
@@ -2473,10 +2473,10 @@
   "suite": "test_report_intake.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 34   FAIL 0",
+  "summary": "PASS 40   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788484063.6834328,
+  "ranAt": 1788484479.3043394,
   "tail": ""
  },
  {
@@ -2576,7 +2576,7 @@
   "summary": "PASS 16   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788484063.7880828,
+  "ranAt": 1788484479.4279892,
   "tail": ""
  },
  {

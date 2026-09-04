@@ -38,6 +38,57 @@ TIMEOUT = 900
 KNOWN_FLAGS = {"--once", "--with-pie", "--anyway", "--offline"}
 
 
+def merge_suite_records(existing, fresh, suite_exists):
+    """Fold this run's records into the ones already on disk. Returns (kept, dropped).
+
+    WHY THIS IS NOT A PLAIN OVERWRITE. The caller wrote `json.dump(results, ...)` over "w" until
+    2026-09-03, so a PARTIAL run silently DELETED the record of every suite it did not run. Found in
+    a git diff before an unrelated commit: an --offline run had taken suite_results.json from 346
+    records to 9.
+
+    It was never an --offline-only problem, and that is the part worth stating. THREE paths narrow
+    the suite list and ONE IS THE DEFAULT - PIE suites are skipped unless --with-pie, so an ordinary
+    full sweep erased their results every single time. A name filter did the same. The records most
+    likely to be missing were the ones hardest to produce.
+
+    The damage was invisible in the worst direction. audit_suite_reach reports a suite with no
+    record as NEVER RUN, which is indistinguishable from one whose record was deleted a minute ago,
+    and its own docstring already complains that this file cost it "two false leads out of five". A
+    deletion that reads as an honest absence is worse than a stale record, because a stale record at
+    least carries a ranAt somebody can disbelieve.
+
+    THE KEY IS (suite, pass), NOT suite. Each suite runs TWICE by default - the second pass catches
+    state the first left behind - and both records are kept. Keying on the name alone silently
+    halves the file, which is exactly how the first version of this merge behaved: it carried 168
+    records forward where 337 were expected, turning loud data loss into quiet data loss. Measured
+    rather than assumed - HEAD held 346 records over 173 suites, exactly two apiece.
+
+    Untouched records keep their OLD ranAt deliberately. That is the honest state: the suite was not
+    run just now, and audit_suite_reach should go on calling it stale against the source. A --once
+    run likewise leaves the previous pass-2 record in place - stale, not absent, and carrying its
+    own ranAt for anybody to disbelieve. Absence is the reading that misleads.
+
+    THE ONE THING DROPPED is a record whose suite file no longer exists, decided by the injected
+    `suite_exists` predicate rather than by touching the disk here - which is what lets this be
+    tested. A merge that never forgets would resurrect deleted suites forever. This is the
+    deliberate difference from report_repro.merge_results, which prunes NOTHING: a report leaves the
+    queue once handled, so pruning there would delete the finished evidence the file is kept for.
+
+    Sort keys are stringified and pass defaults to -1, because a record missing either field would
+    otherwise raise on a mixed-type comparison - and a crash here loses the whole file, since the
+    write never happens.
+    """
+    def key(rec):
+        return (str(rec.get("suite")), rec.get("pass") if isinstance(rec.get("pass"), int) else -1)
+
+    merged = {}
+    for rec in list(existing) + list(fresh):
+        merged[key(rec)] = rec
+    kept = [merged[k] for k in sorted(merged) if suite_exists(k[0])]
+    dropped = sorted({k[0] for k in merged} - {str(r.get("suite")) for r in kept})
+    return kept, dropped
+
+
 def running_shipping_builds():
     """UE game builds running right now, by process name. Empty list if it cannot tell.
 
@@ -336,49 +387,18 @@ def main():
     except Exception:
         pass
 
-    # MERGE, DO NOT REPLACE. This was `json.dump(results, ...)` until 2026-09-03, and it meant a
-    # PARTIAL run silently DELETED the record of every suite it did not run. Found by looking at a
-    # git diff before a commit: an --offline run had taken the file from 346 records to 9.
-    #
-    # It is not an --offline-only problem, and that is the part worth stating. THREE paths above
-    # narrow `suites`, and one of them is the DEFAULT: PIE suites are skipped unless --with-pie, so
-    # an ordinary full sweep was erasing their results every single time. A name filter does the
-    # same. So the records most likely to be missing were the ones hardest to produce.
-    #
-    # The damage is invisible in the worst way. audit_suite_reach reports a suite with no record as
-    # NEVER RUN, which is indistinguishable from one whose record was deleted a minute ago, and its
-    # own docstring already complains that this file cost it "two false leads out of five". A
-    # deletion that reads as an honest absence is worse than a stale record, because a stale record
-    # at least carries a ranAt somebody can disbelieve.
-    #
-    # Untouched records keep their OLD ranAt deliberately. That is the honest state: the suite was
-    # not run just now, and audit_suite_reach should go on calling it stale against the source. The
-    # one thing that IS dropped is a record for a suite file that no longer exists - a merge that
-    # never forgets would resurrect deleted suites forever, and the offline-list guard above already
-    # treats a named-but-missing suite as an error rather than a shrug.
-    # THE KEY IS (suite, pass), NOT suite. Each suite is run TWICE by default - the second pass is
-    # what catches state a first pass left behind - and both records are kept. Keying on the name
-    # alone silently halves the file, which is how the first version of this merge behaved: it
-    # carried 168 records forward where 337 were expected, turning one kind of data loss into a
-    # quieter one. Measured rather than assumed: HEAD held 346 records over 173 suites, exactly two
-    # apiece.
-    #
-    # A --once run therefore leaves the previous pass-2 record in place, which is deliberate and the
-    # same reasoning as the ranAt paragraph above: that record is STALE, not absent, and it carries
-    # its own ranAt for anybody to disbelieve. Absence is the reading that misleads.
+    # MERGE, DO NOT REPLACE - see merge_suite_records for the whole story. Kept as a module-level
+    # function so an offline suite can reach it: everything else in this file needs an editor, so
+    # left inline the fix for a data-loss bug would itself have shipped unverified.
     path = os.path.join(here, "suite_results.json")
-    merged = {}
+    existing = []
     try:
         with open(path) as f:
-            for rec in json.load(f):
-                merged[(rec.get("suite"), rec.get("pass"))] = rec
+            existing = json.load(f)
     except Exception:
         pass                      # no file, or an unreadable one: this run becomes the whole record
-    for rec in results:
-        merged[(rec["suite"], rec["pass"])] = rec
-    kept = [merged[k] for k in sorted(merged, key=lambda k: (str(k[0]), k[1]))
-            if os.path.isfile(os.path.join(here, str(k[0])))]
-    dropped = sorted({str(k[0]) for k in merged} - {r["suite"] for r in kept})
+    kept, dropped = merge_suite_records(
+        existing, results, lambda name: os.path.isfile(os.path.join(here, name)))
     if dropped:
         print("dropped record(s) for %d suite(s) that no longer exist: %s"
               % (len(dropped), ", ".join(dropped)))

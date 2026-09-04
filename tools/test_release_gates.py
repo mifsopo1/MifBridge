@@ -117,6 +117,50 @@ def main():
         R.ROOT = real_root
         shutil.rmtree(sandbox, ignore_errors=True)
 
+    # ------------------------------------------------------------------ R200
+    print("")
+    print("=== R200 run_all_suites.merge_suite_records - a partial sweep must not erase ===")
+    # WHY HERE. This is sweep infrastructure whose failure mode is destroying the evidence a release
+    # is judged on, which is the same family as the gates above: tooling that must behave at the
+    # moment nobody is watching. It has no suite of its own, and a third file to remember is worse
+    # than one block in the file that already runs offline and is already gated.
+    #
+    # WHAT IT GUARDS. Until 2026-09-03 the runner wrote its results over "w", so any run that
+    # narrowed the suite list DELETED the record of every suite it skipped - and one of the three
+    # narrowing paths is the DEFAULT, since PIE suites are excluded unless --with-pie. An --offline
+    # run took the file from 346 records to 9. The predicate is injected so this needs no disk.
+    import run_all_suites as RS
+    always = lambda name: True
+
+    old = [{"suite": "a.py", "pass": 1}, {"suite": "a.py", "pass": 2}, {"suite": "b.py", "pass": 1}]
+    kept, dropped = RS.merge_suite_records(old, [{"suite": "c.py", "pass": 1}], always)
+    check("R200 a narrowed sweep CARRIES FORWARD the suites it never ran - the whole bug",
+          [(r["suite"], r["pass"]) for r in kept]
+          == [("a.py", 1), ("a.py", 2), ("b.py", 1), ("c.py", 1)], "got %s" % kept)
+
+    # THE KEY IS (suite, pass). Keying on the name alone silently halves the file, which is what the
+    # first version of this fix actually did - 168 carried where 337 were expected.
+    kept, _ = RS.merge_suite_records(old, [{"suite": "a.py", "pass": 2, "rc": 9}], always)
+    check("R200 both passes of a suite survive - keying on the name alone halves the file",
+          len(kept) == 3 and kept[1]["rc"] == 9,
+          "got %s" % [(r["suite"], r["pass"], r.get("rc")) for r in kept])
+
+    kept, dropped = RS.merge_suite_records(
+        old, [], lambda name: name != "b.py")
+    check("R200 a record for a suite file that no longer exists is DROPPED",
+          dropped == ["b.py"] and all(r["suite"] != "b.py" for r in kept),
+          "dropped=%s kept=%s" % (dropped, [r["suite"] for r in kept]))
+
+    check("R200 an empty run is not an erasure",
+          len(RS.merge_suite_records(old, [], always)[0]) == 3)
+
+    # A MIXED-TYPE SORT IS A CRASH, not a wrong order, and a crash loses the WHOLE file because the
+    # write never happens. Same hazard as T606 in test_report_intake.
+    kept, _ = RS.merge_suite_records([{"suite": "z.py"}, {"pass": 1}], [{"suite": "a.py", "pass": 1}],
+                                     always)
+    check("R200 records missing suite or pass sort instead of crashing the sort",
+          len(kept) == 3, "got %s" % kept)
+
     # ------------------------------------------------------------------ R100
     print("")
     # LAST, and it is about the whole run: this suite must be incapable of changing the repository.
