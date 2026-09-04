@@ -464,6 +464,90 @@ def main():
     check("B111 and this swept the whole table too", checked >= 100, "checked %d" % checked)
 
     print("")
+    print("=== B112: render_animation refuses BEFORE spawning, and render_status keeps its three "
+          "answers apart ===")
+    # WHY THIS ONE IS WORTH TESTING OFFLINE MORE THAN MOST. Every refusal here is protecting MINUTES
+    # of somebody's machine, and the failure it guards against is not an error - it is a render that
+    # runs to completion and produces the WRONG FRAMES, because the file on disk was not the scene
+    # the caller was looking at. A guard that fires after the spawn is not a guard.
+    import os as _os
+    import tempfile as _tf
+    from MifBlender import ops_render
+
+    bpy = sys.modules["bpy"]
+    saved = (bpy.data.filepath, bpy.data.is_dirty, bpy.context.scene.camera)
+    try:
+        bpy.data.filepath, bpy.data.is_dirty = "", False
+        ok, msg = refuses(ops_render.op_render_animation, {}, "saved", "save_file")
+        check("B112 an unsaved session is refused and pointed at save_file - there is no file to "
+              "render out of process", ok, msg)
+
+        real = _os.path.join(_tf.gettempdir(), "mif_b112_probe.blend")
+        with open(real, "wb") as fh:
+            fh.write(b"not really a blend, and nothing here opens it")
+
+        bpy.data.filepath, bpy.data.is_dirty = real, True
+        ok, msg = refuses(ops_render.op_render_animation, {}, "unsaved changes", "NOT the scene")
+        check("B112 a DIRTY session is refused - the file on disk is not the scene you are looking "
+              "at, so the render would silently produce the wrong frames", ok, msg)
+
+        bpy.data.filepath, bpy.data.is_dirty = real + ".gone", False
+        ok, msg = refuses(ops_render.op_render_animation, {}, "no file is there")
+        check("B112 a filepath whose file was moved or deleted since the save is refused", ok, msg)
+
+        bpy.data.filepath, bpy.data.is_dirty = real, False
+        bpy.context.scene.camera = None
+        ok, msg = refuses(ops_render.op_render_animation, {}, "no camera", "set_camera")
+        check("B112 no scene camera is refused BEFORE the spawn - every frame would fail",
+              ok, msg)
+
+        bpy.context.scene.camera = bpy.data.objects["Cam"]
+        ok, msg = refuses(ops_render.op_render_animation, {"frameStart": 50, "frameEnd": 10},
+                          "before", "renders nothing")
+        check("B112 an inverted frame range is refused rather than spawning a no-op render",
+              ok, msg)
+
+        ok, msg = refuses(ops_render.op_render_animation, {"frameStep": 0}, "frameStep", "at least 1")
+        check("B112 a zero frame step is refused - range() would produce an empty render", ok, msg)
+
+        # THE THREE-ANSWER RULE, and the one that strands a caller if it breaks. An id this Blender
+        # has never seen must NOT read as unfinished: a caller told "not finished" polls forever for
+        # a process nobody is running. It is not an exception either - asking about a job that has
+        # expired is a legitimate question with a real answer.
+        # CALLED THROUGH A CATCHER, because a raising op must be a FAILED CHECK and not a dead
+        # suite. Ground-truthing this block by making the unknown-job branch fall through produced a
+        # TypeError that killed the run at this line - the defect WAS caught, but every check after
+        # it silently never ran and no summary printed. A harness that dies on the first defect
+        # reports one problem and hides the rest, which is the same shape as an op that crashes
+        # instead of refusing - the thing B111 exists to forbid.
+        def answers(params):
+            try:
+                return ops_render.op_render_status(params), None
+            except Exception as exc:                          # noqa: BLE001
+                return {}, "raised %s: %s" % (type(exc).__name__, str(exc)[:90])
+
+        res, raised = answers({"jobId": "ranim_never_existed"})
+        check("B112 an unknown job answers unknownJob rather than raising",
+              res.get("unknownJob") is True, raised or "got %s" % res)
+        check("B112 and it says explicitly that this is NOT a report of an unfinished render - "
+              "the confusion that makes a caller wait forever",
+              "NOT" in str(res.get("error", "")) and "unfinished" in str(res.get("error", "")),
+              raised or "got %s" % res.get("error"))
+        check("B112 an unknown job carries no running/exitCode fields to be misread as progress",
+              "running" not in res and "framesRendered" not in res,
+              raised or "got keys %s" % sorted(res))
+
+        res, raised = answers({})
+        check("B112 render_status with no jobId LISTS jobs instead of guessing which one you meant",
+              isinstance(res.get("jobs"), list), raised or "got %s" % res)
+    finally:
+        bpy.data.filepath, bpy.data.is_dirty, bpy.context.scene.camera = saved
+        try:
+            _os.remove(_os.path.join(_tf.gettempdir(), "mif_b112_probe.blend"))
+        except OSError:
+            pass
+
+    print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
     # THE NEGATIVE CONTROL. Every check above proves something is refused; without this, a guard
     # that refused EVERYTHING would score full marks. Retyping to SPOT while setting spotAngle is

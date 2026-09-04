@@ -5382,6 +5382,19 @@ def bl_render_still(file_path: str = None, frame: float = None, samples: int = N
 
 
 @mcp.tool()
+def bl_render_animation(frame_start: int = None, frame_end: int = None,
+                        frame_step: int = None) -> dict:
+    "Render a frame RANGE out of process and return immediately with a jobId to poll - the only shape that works, because every addon op runs on Blender's main thread under a 150s job timeout, so an in-process animation render freezes the bridge and the MCP gives up while the render carries on. It renders the SAVED .blend, not this session, so it refuses on an unsaved or dirty file rather than silently rendering the wrong scene; there is deliberately no output override, because -o would desynchronise the frame paths from the ones progress is measured against. Every expected frame path is stat'd BEFORE the render so a leftover file from an earlier run cannot be counted as progress. Poll with bl_render_status."
+    return _blender("render_animation", frameStart=frame_start, frameEnd=frame_end,
+                    frameStep=frame_step)
+
+
+@mcp.tool()
+def bl_render_status(job_id: str = None, log_lines: int = None) -> dict:
+    "How far an out-of-process render has actually got, measured on disk rather than asked of the process. framesRendered counts only files whose mtime is at or after the job start. Keeps three answers distinct that must never be collapsed: unknownJob (never started here, or Blender restarted and the table went with it - NOT 'unfinished', which is how a caller waits forever), running, and exited-with-a-code, where a non-zero exit still reports the real frames already on disk. For a movie container it reports framesVerifiable:false instead of a frame count it never checked. Omit job_id to list the jobs this Blender knows about."
+    return _blender("render_status", jobId=job_id, logLines=log_lines)
+
+@mcp.tool()
 def bl_set_world(color: list = None, strength: float = None, hdri: str = None,
                  rotation: float = None, mist_use: bool = None, mist_start: float = None,
                  mist_depth: float = None, use_as_light: bool = None, name: str = None) -> dict:

@@ -11769,6 +11769,25 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       other, and it needs a running PIE session, so it is attended-only and cannot go in an
       unattended sweep.
 
+- [ ] **render_animation cannot render a scene other than the active one** (2 hours)
+      A `scene` parameter was in the first draft of render_animation and was taken out before
+      commit. Blender renders another scene with `-S <name>`, so the child half is one flag;
+      the reason it came out is the OTHER half. Every path in the response and every mtime in
+      the postcondition is computed from bpy.context.scene.render.frame_path(), so a child
+      rendering scene B while this op measured scene A would report progress against files
+      nobody was writing - and report it confidently. An accepted parameter that is quietly
+      wrong is worse than an absent one, so it was removed rather than shipped.
+
+      Doing it properly means taking the render settings, output path and frame range from the
+      NAMED scene throughout, and refusing a name that does not exist in bpy.data.scenes with
+      the list of ones that do. The camera check, the range check and the writable-directory
+      probe all have to move to that scene too - each of them currently reads
+      bpy.context.scene, and three of the five would silently pass on the wrong one.
+
+      Worth doing: multi-scene files are normal in mograph and previs, where a file holds a
+      shot per scene and a batch render walks them. Not urgent: a caller can switch the active
+      scene, save, and render, which is what the current op supports honestly.
+
 - [ ] **handlers that MUTATE and then answer "NOTHING was changed"** (half a day + a rebuild)
       A false claim of that exact sentence is the worst outcome available here, because every
       refusal in this codebase is held to it and callers are told to trust it. Six sites named by a
@@ -11891,7 +11910,38 @@ out-of-process the way ops_gen already does with gen_status.
       magenta-sentinel signature asks whether the buffer CHANGED, not whether what landed is right.
       A pixel signature cannot see a transfer curve.
 
-- [ ] **Tier 1 - the session survives and produces something** (2 of 5 left)
+- [ ] **Tier 1 - the session survives and produces something** (1 of 5 left)
+      DONE 2026-09-03: render_animation + render_status, built to the design below rather
+      than around it. Out of process on the SAVED .blend, returning a jobId immediately;
+      polled by render_status, which measures frames ON DISK with an mtime at or after the
+      job start rather than believing the child or counting leftovers.
+
+      ONE THING THE DESIGN ALLOWED AND THE BUILD REFUSED: an output override. `-o` would have
+      desynchronised the paths computed here with scene.render.frame_path() from the paths the
+      child actually writes, and that per-frame enumeration is the only thing making the
+      progress number real. Frame RANGE is overridable because -s/-e change no path. Set the
+      output with set_render_settings, save_file, then render.
+
+      A `scene` parameter was written and then REMOVED before commit rather than shipped
+      half-working - see the open item below.
+
+      Refusals fire before the spawn, which is the point: an unsaved session, a DIRTY one (the
+      file on disk is not the scene you are looking at, so the render completes and produces
+      the WRONG frames - the worst outcome available), a filepath whose file has since moved,
+      no scene camera, an inverted range, a zero step, and an unwritable output directory
+      probed by actually writing to it, because os.access reports the DACL on Windows and not
+      the effective permission.
+
+      render_status keeps THREE answers apart that strand a caller if any two merge: unknown
+      job (never started here, or Blender restarted and the process-local table went with it),
+      running, and exited-with-a-code - where a non-zero exit still reports the real frames on
+      disk, because a killed render leaves real output. For a movie container it reports
+      framesVerifiable:false instead of a count it never checked.
+
+      VERIFIED OFFLINE ONLY, and that limit is real: B112 in test_blender_refusals covers all
+      ten refusal and answer-shape contracts with no Blender, ground-truthed by removing the
+      dirty guard and by making the unknown-job branch fall through. NOTHING here proves a
+      frame renders. That needs a live Blender and a real .blend.
       DONE 2026-09-03: save_file / open_file / file_info (new ops_file.py) and render_info.
       save_file was the whole point - nothing this addon authored survived the process before it.
       Its postcondition is purgedOrphans, what the save DESTROYED, counted before the write
@@ -11900,7 +11950,9 @@ out-of-process the way ops_gen already does with gen_status.
       set_color_management is no longer urgent: the correctness bug behind it was the BAKE colour
       space, fixed separately - images.new() defaults to sRGB and every NORMAL/ROUGHNESS/AO/SHADOW
       map written through this bridge carried a gamma curve.
-      DESIGN, written 2026-09-03 rather than implemented in a hurry at the end of a long session.
+      DESIGN, written 2026-09-03 rather than implemented in a hurry at the end of a long
+      session, and BUILT TO 2026-09-03. Kept below as written so the built thing can be read
+      against what was intended - including the one place they differ, the output override.
       The op is the largest remaining hole and the wrong shape of it is worse than none, because a
       job that reports a timeout and KEEPS RENDERING leaves a caller who thinks nothing happened
       while the machine is pinned for ten minutes.
@@ -11949,7 +12001,7 @@ out-of-process the way ops_gen already does with gen_status.
                                             postcondition that matters is the count of datablocks
                                             with users==0 and use_fake_user==False, because those
                                             are what the save DESTROYS.
-        render_animation + render_status    the largest single hole. Must run OUT OF PROCESS on a
+        render_animation + render_status    DONE 2026-09-03. Runs OUT OF PROCESS on a
                                             saved .blend and be polled like gen_status; in-process
                                             is structurally impossible under the 150s wall.
                                             Enumerate frame_path() with mtimes BEFORE rendering,

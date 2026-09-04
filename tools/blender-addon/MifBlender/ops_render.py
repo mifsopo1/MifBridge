@@ -25,11 +25,13 @@ file afterwards and reports its real size, the same way the UE arm's ui_scenario
 "wroteFile" is a measurement, not the operator's opinion.
 """
 import os
+import subprocess
 import time
 
 import bpy
 
-from .ops_common import MifOpError, reject_unknown, take, take_bool, take_float
+from .ops_common import (MifOpError, reject_unknown, take, take_bool, take_float,
+                         take_int)
 
 _SETTINGS_KEYS = {
     "engine", "resolutionX", "resolutionY", "percentage", "samples",
@@ -373,8 +375,311 @@ def op_render_info(params):
     return out
 
 
+# NO "scene" KEY. Rendering a DIFFERENT scene out of process is a real Blender feature (-S), and it
+# was in the first draft of this set - then removed, because frame_path() would still have been
+# computed on bpy.context.scene while the child rendered another one, so every path in the response
+# and every mtime in the postcondition would have described the wrong scene. A parameter that is
+# accepted and quietly wrong is worse than one that is absent. Tracked in the spec instead.
+_ANIM_KEYS = {"frameStart", "frameEnd", "start", "end", "frameStep", "step"}
+_STATUS_KEYS = {"jobId", "job", "id", "logLines"}
+
+# THE JOB TABLE. A render outlives the request that started it, which is the whole point of this
+# pair, so the addon has to remember it somewhere. Module-level and therefore PROCESS-LOCAL: it does
+# NOT survive a Blender restart, and render_status says "unknown job" rather than "not finished" for
+# an id it has never seen. Those are different answers and conflating them is how a caller waits
+# forever for something nobody is doing.
+_JOBS = {}
+_JOB_SEQ = [0]
+
+# Formats that write ONE file for the whole range instead of a file per frame. For these the frame
+# count inside the container is not visible from the filesystem, and any per-frame progress number
+# would be invented. Named explicitly rather than guessed from the extension.
+_CONTAINER_FORMATS = {"FFMPEG", "AVI_JPEG", "AVI_RAW"}
+
+
+def _log_tail(path, lines):
+    """Last `lines` lines of the job log, read defensively - the log may not exist yet."""
+    try:
+        with open(path, "rb") as fh:
+            try:
+                fh.seek(-65536, os.SEEK_END)
+            except OSError:
+                fh.seek(0)                       # log shorter than the window
+            text = fh.read().decode("utf-8", "replace")
+        return text.splitlines()[-lines:]
+    except Exception:                            # noqa: BLE001
+        return []
+
+
+def op_render_animation(params):
+    """Render a frame RANGE out of process, and return immediately with a job to poll.
+
+    WHY THIS CANNOT BE AN IN-PROCESS OP, which is the whole reason it looks like this. Every op in
+    this addon runs on Blender's main thread, and server.DEFAULT_JOB_TIMEOUT is 150s. An animation
+    render therefore freezes the addon completely - the socket stops answering, bl_status included -
+    and the MCP gives up while the render CARRIES ON. That is the worst possible failure: a caller
+    told nothing happened, and a machine pinned for ten minutes doing exactly what they asked. The
+    timeout ladder elsewhere is deliberately Blender-gives-up-first so a failure has a real error
+    rather than an abandoned job, and a long render inverts it.
+
+    So this spawns `blender -b <saved file> -a` as a separate process and hands back a jobId.
+
+    IT RENDERS THE FILE ON DISK, NOT THIS SESSION, and every refusal here follows from that:
+
+      * bpy.data.filepath must be set. There is nothing to render out of process otherwise.
+      * bpy.data.is_dirty must be False. A dirty session means the file on disk is NOT what you are
+        looking at, so the render would silently produce the wrong scene - lit differently, framed
+        differently, at a different resolution. Silently wrong is worse than refused.
+      * THERE IS NO OUTPUT OVERRIDE, deliberately. The obvious `-o` flag would desynchronise the
+        paths this op computes with scene.render.frame_path() from the paths the child actually
+        writes, and the per-frame postcondition below is the only thing that makes a progress
+        number real. Set the output with set_render_settings, save_file, then render here. Frame
+        RANGE is safe to override and is accepted, because -s/-e change no path.
+
+    THE POSTCONDITION IS PER-FRAME AND IS TAKEN BEFORE THE RENDER STARTS. Every expected frame path
+    is enumerated and stat'd FIRST, recording what was already there. A frame counts as rendered
+    only if its mtime is at or after the job start - a leftover file from a previous run passes any
+    existence check, which is how a progress number reports 100% before a single pixel is drawn.
+
+    FOR A CONTAINER FORMAT (FFMPEG, AVI) there is exactly ONE output path and the number of frames
+    inside it is NOT knowable from the filesystem. render_status says so with framesVerifiable:false
+    rather than reporting a count it never checked.
+
+    params:
+      frameStart / start (int)   default scene.frame_start
+      frameEnd / end (int)       default scene.frame_end
+      frameStep / step (int)     default scene.frame_step
+    """
+    reject_unknown(params, _ANIM_KEYS, "render_animation")
+    sc = bpy.context.scene
+    r = sc.render
+
+    blend = bpy.data.filepath
+    if not blend:
+        raise MifOpError("this session has never been saved, so there is no file to render out of "
+                         "process. Save it with save_file first (repointSession:true, or pass the "
+                         "path here after saving). NOTHING was started.")
+    if bpy.data.is_dirty:
+        raise MifOpError("the session has unsaved changes, so the file on disk is NOT the scene you "
+                         "are looking at - rendering it would silently produce the wrong frames. "
+                         "Save first with save_file (repointSession:true). NOTHING was started.")
+    if not os.path.isfile(blend):
+        raise MifOpError("bpy.data.filepath is '%s' but no file is there - it was moved or deleted "
+                         "since the last save. NOTHING was started." % blend)
+    if sc.camera is None:
+        raise MifOpError("scene '%s' has no camera, so every frame would fail. Set one with "
+                         "set_camera. NOTHING was started." % sc.name)
+
+    start = take_int(params, "frameStart", "start", default=sc.frame_start)
+    end = take_int(params, "frameEnd", "end", default=sc.frame_end)
+    step = take_int(params, "frameStep", "step", default=sc.frame_step)
+    if step < 1:
+        raise MifOpError("frameStep must be at least 1, got %d. NOTHING was started." % step)
+    if end < start:
+        raise MifOpError("frameEnd %d is before frameStart %d - that range renders nothing. "
+                         "NOTHING was started." % (end, start))
+
+    # THE OUTPUT DIRECTORY IS CHECKED BY WRITING TO IT, not by asking os.access. On Windows access()
+    # reports the DACL and not the effective permission, so it says yes for directories a write then
+    # fails on. Minutes of render are the thing being protected here; one probe file is cheap.
+    frames = list(range(start, end + 1, step))
+    container = r.image_settings.file_format in _CONTAINER_FORMATS
+    if container:
+        paths = [bpy.path.abspath(r.frame_path(frame=start))]
+    else:
+        paths = [bpy.path.abspath(r.frame_path(frame=f)) for f in frames]
+    outdir = os.path.dirname(paths[0])
+    try:
+        if not os.path.isdir(outdir):
+            os.makedirs(outdir)
+        probe = os.path.join(outdir, ".mif_render_probe")
+        with open(probe, "wb") as fh:
+            fh.write(b"x")
+        os.remove(probe)
+    except Exception as exc:                     # noqa: BLE001
+        raise MifOpError("the output directory '%s' cannot be written (%s). The render would run "
+                         "for minutes and produce nothing. NOTHING was started." % (outdir, exc))
+
+    # WHAT WAS ALREADY THERE, recorded before a single frame is drawn. Without this a progress
+    # number counts files somebody else made.
+    before = {}
+    for p in paths:
+        try:
+            before[p] = os.path.getmtime(p)
+        except OSError:
+            before[p] = None
+
+    exe = bpy.app.binary_path
+    if not exe or not os.path.isfile(exe):
+        raise MifOpError("bpy.app.binary_path is '%s', which is not a file - this Blender cannot "
+                         "spawn a copy of itself to render with. NOTHING was started." % exe)
+
+    _JOB_SEQ[0] += 1
+    job_id = "ranim%d_%d" % (os.getpid(), _JOB_SEQ[0])
+    log_path = os.path.join(outdir, "%s.log" % job_id)
+    argv = [exe, "-b", blend, "-s", str(start), "-e", str(end), "-j", str(step), "-a"]
+
+    started = time.time()
+    try:
+        log_fh = open(log_path, "wb")
+        popen = subprocess.Popen(argv, stdout=log_fh, stderr=subprocess.STDOUT,
+                                 stdin=subprocess.DEVNULL, cwd=outdir)
+    except Exception as exc:                     # noqa: BLE001
+        raise MifOpError("could not start '%s' (%s). NOTHING was started." % (exe, exc))
+
+    _JOBS[job_id] = {
+        "popen": popen, "logHandle": log_fh, "log": log_path, "paths": paths,
+        "frames": frames, "before": before, "started": started, "blend": blend,
+        "container": container, "argv": argv,
+    }
+
+    # render_info's OTHER diagnoses are carried as warnings rather than refusals. A black render is
+    # not the same failure as a render that cannot run, and refusing on "no world" would block the
+    # legitimate case of a scene lit entirely by emissive materials.
+    warnings = [b for b in op_render_info({})["blockers"] if "no scene camera" not in b]
+
+    return {
+        "ok": True,
+        "jobId": job_id,
+        "pid": popen.pid,
+        "blendFile": blend,
+        "frameStart": start, "frameEnd": end, "frameStep": step,
+        "framesExpected": len(frames),
+        "outputDir": outdir,
+        # A SAMPLE, AND THE NAME SAYS SO. This was outputPaths plus an outputPathsTruncated
+        # boolean, and the boolean was a claim about the response that no suite could check -
+        # reaching it needs a live Blender, past every refusal and a spawn. Rather than ship an
+        # unverifiable flag, the truth moved into the field name: compare its length against
+        # framesExpected. One fewer thing that can be wrong without anybody noticing.
+        "outputPathsSample": paths if len(paths) <= 8 else paths[:8],
+        "fileFormat": r.image_settings.file_format,
+        "containerFormat": container,
+        # STATED, not implied. For a movie container there is one file and the frames inside it
+        # cannot be counted from outside, so render_status will never report per-frame progress.
+        "framesVerifiable": not container,
+        "existingFramesOverwritten": sorted(p for p, m in before.items() if m is not None),
+        "log": log_path,
+        "warnings": warnings,
+        "note": ("started out of process on the SAVED file - this session's unsaved state is not "
+                 "part of it. Poll with render_status(jobId). The job is process-local and is "
+                 "forgotten if Blender restarts."),
+    }
+
+
+def op_render_status(params):
+    """How far has an out-of-process render actually got - measured on disk, not asked of anyone.
+
+    THREE ANSWERS THAT MUST STAY DISTINCT, because collapsing any two of them strands a caller:
+
+      unknown job    this Blender has never heard of that id. It was never started here, or Blender
+                     restarted and the table went with it. NOT "still running" - a caller told that
+                     waits forever for a process nobody is running.
+      running        the child is alive. framesRendered is what is ON DISK with an mtime at or after
+                     the job start, never what the child claims.
+      finished       the child exited. exitCode is reported RAW, and finished does NOT mean complete:
+                     a render killed halfway exits non-zero with real frames on disk, and both facts
+                     are reported rather than one being turned into a verdict.
+
+    Called with no jobId it lists the jobs this Blender knows about.
+
+    params:
+      jobId / job / id (str)  which job. Omit to list all known jobs.
+      logLines (int)          how much log tail to return. Default 20.
+    """
+    reject_unknown(params, _STATUS_KEYS, "render_status")
+    job_id = take(params, "jobId", "job", "id", kind=str)
+    lines = take_int(params, "logLines", default=20)
+
+    if not job_id:
+        return {
+            "ok": True,
+            "jobs": [{"jobId": k, "pid": j["popen"].pid, "running": j["popen"].poll() is None,
+                      "framesExpected": len(j["frames"]), "blendFile": j["blend"]}
+                     for k, j in sorted(_JOBS.items())],
+            "note": ("jobs are process-local. An id started before a Blender restart is not here "
+                     "and reports unknownJob, which is not the same as unfinished."),
+        }
+
+    job = _JOBS.get(job_id)
+    if job is None:
+        return {
+            "ok": True,
+            "unknownJob": True,
+            "jobId": job_id,
+            "knownJobs": sorted(_JOBS),
+            "error": ("no job '%s' in this Blender. It was never started here, or Blender has "
+                      "restarted since - the table does not survive that. This is NOT a report "
+                      "that the render is unfinished." % job_id),
+        }
+
+    code = job["popen"].poll()
+    running = code is None
+
+    # THE MEASUREMENT. A frame counts only if it exists AND its mtime is at or after the job start.
+    # Existence alone counts leftovers from a previous run, which is how a progress bar reads 100%
+    # before anything has been drawn - the same rule render_still needed and for the same reason.
+    rendered, stale = [], []
+    for p in job["paths"]:
+        try:
+            mtime = os.path.getmtime(p)
+        except OSError:
+            continue
+        (rendered if mtime >= job["started"] else stale).append(p)
+
+    out = {
+        "ok": True,
+        "jobId": job_id,
+        "pid": job["popen"].pid,
+        "running": running,
+        "exitCode": code,
+        "elapsedSeconds": round(time.time() - job["started"], 1),
+        "framesExpected": len(job["frames"]),
+        "blendFile": job["blend"],
+        "outputDir": os.path.dirname(job["paths"][0]),
+        "logTail": _log_tail(job["log"], lines),
+        "log": job["log"],
+    }
+    if job["container"]:
+        # ONE FILE, and the frames inside it are not countable from here. Saying so is the honest
+        # answer; a count derived from the frame range would be a restatement of the request.
+        out["framesVerifiable"] = False
+        out["containerWritten"] = bool(rendered)
+        out["containerPath"] = job["paths"][0]
+        out["note"] = ("a movie container was requested, so there is one output file and the frame "
+                       "count inside it cannot be verified from the filesystem. containerWritten "
+                       "says only that the file was touched by this job.")
+    else:
+        out["framesVerifiable"] = True
+        out["framesRendered"] = len(rendered)
+        out["framesRemaining"] = len(job["frames"]) - len(rendered)
+        out["staleFramesIgnored"] = len(stale)
+        if stale:
+            out["staleNote"] = ("%d expected path(s) exist but predate this job and are NOT counted "
+                                "- they are leftovers from an earlier render" % len(stale))
+    if not running:
+        _close_log(job)
+        out["complete"] = (code == 0 and (out.get("containerWritten")
+                                          if job["container"] else not out["framesRemaining"]))
+        if code != 0:
+            out["error"] = ("the render process exited with code %s. Frames already on disk are "
+                            "still reported above - a killed render leaves real output." % code)
+    return out
+
+
+def _close_log(job):
+    """Release the log handle once the child is gone, so the file is not held open forever."""
+    fh = job.pop("logHandle", None)
+    if fh is not None:
+        try:
+            fh.close()
+        except Exception:                        # noqa: BLE001
+            pass
+
+
 OPS = {
     "set_render_settings": op_set_render_settings,
     "render_still": op_render_still,
     "render_info": op_render_info,
+    "render_animation": op_render_animation,
+    "render_status": op_render_status,
 }
