@@ -1011,6 +1011,122 @@ def main():
     del cube.modifiers
 
     print("")
+    print("=== B116: the compositor - four ways to be ON and doing nothing ===")
+    # THE SUBSYSTEM WAS UNREACHABLE. create_node_group could make a CompositorNodeTree, but that is
+    # a node GROUP in bpy.data.node_groups; the scene's compositor is scene.node_tree, a different
+    # tree nothing in the module could address. Every blocker below is a state where the tree reads
+    # perfectly and the rendered file is unprocessed - which is why the read op is the point, not a
+    # convenience beside the authoring ops.
+    from MifBlender import ops_nodes as ON
+
+    class _CN(object):
+        def __init__(self, kind, name, mute=False):
+            self.bl_idname, self.name, self.label, self.mute = kind, name, "", mute
+            self.inputs, self.outputs = [], []
+
+    class _CL(object):
+        def __init__(self, fn, tn):
+            self.from_node, self.to_node = fn, tn
+
+    class _CT(object):
+        def __init__(self, kind, nodes, links, name="Compositing"):
+            self.bl_idname, self.nodes, self.links, self.name = kind, nodes, links, name
+
+    # THE TERMINAL-PER-TREE-TYPE FIX. list_group_nodes looked only for NodeGroupOutput, so aimed at
+    # a compositor it would have called a correctly wired tree inert.
+    terms, note = ON._terminals(_CT("CompositorNodeTree", [], []))
+    check("B116 a compositor tree's terminal is the Composite node, not a Group Output - the old "
+          "code would have called a correctly wired compositor inert",
+          "CompositorNodeComposite" in terms and "Composite node" in note, "got %s / %s" % (terms, note))
+    terms, note = ON._terminals(_CT("GeometryNodeTree", [], []))
+    check("B116 and a geometry tree still terminates at the Group Output, with its own wording",
+          terms == ("NodeGroupOutput",) and "geometry through UNCHANGED" in note,
+          "got %s / %s" % (terms, note))
+
+    bpy = sys.modules["bpy"]
+    sc = bpy.context.scene
+    sc.render.use_compositing = True
+    sc.render.use_sequencer = False
+    sc.sequence_editor = None
+    sc.use_nodes = False
+    sc.node_tree = None
+
+    # THE RESOLVER MUST REFUSE, NOT ENABLE. Turning use_nodes on from a lookup would mean a read op
+    # silently switched compositing on for the whole scene.
+    ok, msg = refuses(lambda _: ON._scene_tree(), None, "use_nodes is off", "set_compositing")
+    check("B116 addressing the compositor while use_nodes is off is refused and points at "
+          "set_compositing", ok, msg)
+    check("B116 and the refusal did NOT switch compositing on behind the caller's back",
+          sc.use_nodes is False, "use_nodes became %s" % sc.use_nodes)
+
+    ok, msg = refuses(ON.op_create_node_group, {"name": ON.SCENE_COMPOSITOR}, "reserved")
+    check("B116 a node group cannot be created under the reserved compositor name - a precedence "
+          "rule would make which tree you addressed depend on what happened to exist", ok, msg)
+
+    res, err = succeeds(ON.op_compositor_info, {})
+    check("B116 use_nodes off is reported as a blocker saying the render is written unprocessed",
+          any("use_nodes is OFF" in b for b in res.get("blockers", [])), err or "got %s" % res)
+
+    # THE CLASSIC. Tree on, pipeline off: the backdrop updates and the file is untouched.
+    rl, comp = _CN("CompositorNodeRLayers", "Render Layers"), _CN("CompositorNodeComposite", "Composite")
+    sc.use_nodes = True
+    sc.node_tree = _CT("CompositorNodeTree", [rl, comp], [_CL(rl, comp)])
+    sc.render.use_compositing = False
+    res, err = succeeds(ON.op_compositor_info, {})
+    check("B116 a correctly wired tree with use_compositing OFF is still a blocker - two "
+          "independent switches, and this is the one that is usually missed",
+          any("use_compositing is OFF" in b for b in res.get("blockers", []))
+          and res.get("compositorAffectsRender") is False, err or "got %s" % res.get("blockers"))
+
+    sc.render.use_compositing = True
+    res, err = succeeds(ON.op_compositor_info, {})
+    check("B116 and with both switches on and the tree wired, there are no blockers left",
+          res.get("blockers") == [] and res.get("compositorAffectsRender") is True,
+          err or "got %s" % res.get("blockers"))
+
+    # A VIEWER IS NOT A COMPOSITE. This is why "it looks right in the compositor" and the file is
+    # wrong - the Viewer feeds the backdrop only.
+    viewer = _CN("CompositorNodeViewer", "Viewer")
+    sc.node_tree = _CT("CompositorNodeTree", [rl, viewer], [_CL(rl, viewer)])
+    res, err = succeeds(ON.op_compositor_info, {})
+    check("B116 a tree wired only to a VIEWER is a blocker that names the backdrop - the reason it "
+          "looks right in the compositor while the saved file is wrong",
+          any("Viewer" in b and "backdrop" in b for b in res.get("blockers", [])),
+          err or "got %s" % res.get("blockers"))
+
+    sc.node_tree = _CT("CompositorNodeTree", [rl, comp], [])
+    res, err = succeeds(ON.op_compositor_info, {})
+    check("B116 a Composite node with nothing linked into it is a DIFFERENT blocker from having no "
+          "Composite node - one needs wiring, the other needs a node",
+          any("nothing is linked into it" in b for b in res.get("blockers", [])),
+          err or "got %s" % res.get("blockers"))
+
+    muted = _CN("CompositorNodeGlare", "Glare", mute=True)
+    sc.node_tree = _CT("CompositorNodeTree", [rl, muted, comp], [_CL(rl, muted), _CL(muted, comp)])
+    res, err = succeeds(ON.op_compositor_info, {})
+    check("B116 a MUTED node is reported - it passes its input straight through while sitting in "
+          "the graph looking applied",
+          res.get("mutedNodes") == ["Glare"]
+          and any("MUTED" in b for b in res.get("blockers", [])), err or "got %s" % res)
+
+    # THE VSE OVERRIDE, and the judgement that an EMPTY sequencer is not a blocker - calling the
+    # normal case a problem is how a blocker list gets ignored.
+    sc.node_tree = _CT("CompositorNodeTree", [rl, comp], [_CL(rl, comp)])
+    sc.render.use_sequencer = True
+    sc.sequence_editor = None
+    res, err = succeeds(ON.op_compositor_info, {})
+    check("B116 use_sequencer on with NO strips is not a blocker - the normal case, and calling it "
+          "one would train people to ignore the list",
+          res.get("blockers") == [], err or "got %s" % res.get("blockers"))
+    sc.sequence_editor = types.SimpleNamespace(sequences_all=[1, 2])
+    res, err = succeeds(ON.op_compositor_info, {})
+    check("B116 use_sequencer WITH strips is a blocker - the VSE runs after the compositor and its "
+          "output is what gets written",
+          any("VSE holds 2 strip" in b for b in res.get("blockers", [])),
+          err or "got %s" % res.get("blockers"))
+    sc.render.use_sequencer = False
+
+    print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
     # THE NEGATIVE CONTROL. Every check above proves something is refused; without this, a guard
     # that refused EVERYTHING would score full marks. Retyping to SPOT while setting spotAngle is

@@ -5537,6 +5537,20 @@ def bl_list_particles(object: str) -> dict:
 
 
 @mcp.tool()
+def bl_set_compositing(enabled: bool = None, use_compositing: bool = None,
+                       use_sequencer: bool = None, with_default_nodes: bool = None) -> dict:
+    "Turn the Blender scene compositor on, and the SECOND switch that also has to be on. TWO INDEPENDENT FLAGS decide whether compositing happens: scene.use_nodes (a tree exists and is edited) and scene.render.use_compositing (the render PIPELINE runs it). With the first on and the second off, the whole tree reads perfectly, the compositor backdrop updates, and the rendered file is completely unprocessed - nothing reports it. Both are set and both read back. Wires a default Render Layers -> Composite pair when the tree is empty, because an empty compositor writes nothing at all. Afterwards, address the tree from bl_add_group_node / bl_link_group_nodes / bl_list_group_nodes by passing tree:'scene:compositor'."
+    return _blender("set_compositing", enabled=enabled, useCompositing=use_compositing,
+                    useSequencer=use_sequencer, withDefaultNodes=with_default_nodes)
+
+
+@mcp.tool()
+def bl_compositor_info(view_layer: str = None) -> dict:
+    "What the Blender compositor IS, and every way it can be on and doing nothing. The whole subsystem was unreachable before: bl_create_node_group can make a CompositorNodeTree, but that is a node GROUP in bpy.data.node_groups, while the scene's compositor is scene.node_tree - a different tree nothing could address - so glare, grading, denoise, cryptomatte and file output were outside the typed path. Reports four distinct blockers because the fix differs for each: use_nodes off; use_compositing off (the classic - backdrop updates, file untouched); no Composite node linked (a Viewer is NOT a substitute, it feeds the backdrop only, which is why it looks right in the compositor and the saved file is wrong); and no Render Layers feeding it. Also muted nodes, VSE strips that replace the compositor's output wholesale, and which view-layer passes are actually enabled."
+    return _blender("compositor_info", viewLayer=view_layer)
+
+
+@mcp.tool()
 def bl_create_node_group(name: str = None, type: str = None, with_group_io: bool = None) -> dict:
     "Create a Blender node group - a geometry node tree by default, with Group Input/Output already wired to a Geometry socket pair. A geometry group with no geometry sockets cannot drive a modifier at all. Group sockets moved to tree.interface in Blender 4.0 and the old tree.inputs/outputs are GONE rather than deprecated; both are handled."
     return _blender("create_node_group", name=name, type=type, withGroupIO=with_group_io)

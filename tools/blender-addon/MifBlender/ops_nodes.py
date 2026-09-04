@@ -37,6 +37,12 @@ _ASSIGN_KEYS = {"object", "name", "group", "tree", "modifierName", "inputs"}
 
 
 def _tree(name):
+    # THE ONE CHOKEPOINT ALL FIVE AUTHORING OPS GO THROUGH, which is why the scene compositor is
+    # reached here rather than by a parallel set of compositor add/link/list ops. scene.node_tree is
+    # not in bpy.data.node_groups - it belongs to the scene - so before 2026-09-03 nothing in this
+    # module could address it and the entire compositing subsystem was outside the typed path.
+    if name == SCENE_COMPOSITOR:
+        return _scene_tree()
     t = bpy.data.node_groups.get(name)
     if t is None:
         raise MifOpError("no node group named '%s'. create_node_group makes one; the groups in "
@@ -78,6 +84,11 @@ def op_create_node_group(params):
     """Create a geometry node group, with Group Input/Output wired to a Geometry socket pair."""
     reject_unknown(params, _CREATE_KEYS, "create_node_group")
     name = str(take(params, "name", default="MifNodes", kind=str))
+    if name == SCENE_COMPOSITOR:
+        raise MifOpError("'%s' is reserved: it addresses the SCENE's compositing tree from the ops "
+                         "in this module, and a node group by that name would make which one you "
+                         "meant depend on what happened to exist. Pick another name. NOTHING was "
+                         "created." % SCENE_COMPOSITOR)
     kind = str(take(params, "type", default="GeometryNodeTree", kind=str))
     if kind not in ("GeometryNodeTree", "ShaderNodeTree", "CompositorNodeTree"):
         raise MifOpError("type must be GeometryNodeTree, ShaderNodeTree or CompositorNodeTree, "
@@ -274,7 +285,12 @@ def op_list_group_nodes(params):
               "to": "%s.%s" % (l.to_node.name, l.to_socket.name),
               "valid": bool(l.is_valid)} for l in tree.links]
 
-    outs = [n for n in tree.nodes if n.bl_idname == "NodeGroupOutput"]
+    # THE TERMINAL DEPENDS ON THE TREE TYPE. This looked only for NodeGroupOutput, which a
+    # compositor tree does not have by design - so pointed at one it would have reported "nothing
+    # is connected to the Group Output" for a perfectly wired compositor. A wrong answer from a
+    # field whose entire purpose is telling you the tree is inert.
+    terminals, note = _terminals(tree)
+    outs = [n for n in tree.nodes if n.bl_idname in terminals]
     reachable = False
     if outs:
         seen, stack = set(), [outs[0]]
@@ -288,15 +304,14 @@ def op_list_group_nodes(params):
                     if link.from_node.bl_idname == "NodeGroupInput":
                         reachable = True
                     stack.append(link.from_node)
-        reachable = reachable or any(l.to_node.bl_idname == "NodeGroupOutput" for l in tree.links)
+        reachable = reachable or any(l.to_node.bl_idname in terminals for l in tree.links)
     return {"group": tree.name, "nodes": nodes, "links": links,
             "nodeCount": len(nodes), "linkCount": len(links),
             "interface": _iface_items(tree),
             "outputReachable": reachable,
-            "reachabilityNote": (None if reachable else
-                                 "nothing is connected to the Group Output, so this tree passes "
-                                 "geometry through UNCHANGED. Blender treats that as valid and "
-                                 "reports no error.")}
+            "treeType": getattr(tree, "bl_idname", None),
+            "outputNodes": [n.name for n in outs],
+            "reachabilityNote": None if reachable else note}
 
 
 def op_assign_node_group(params):
@@ -349,7 +364,260 @@ def op_assign_node_group(params):
                            "to a modifier that is not working.")}
 
 
+_COMPOSITING_KEYS = {"enabled", "useCompositing", "useSequencer", "withDefaultNodes"}
+_COMPINFO_KEYS = {"viewLayer"}
+
+# THE RESERVED TREE NAME. The scene's compositor is scene.node_tree, which is NOT in
+# bpy.data.node_groups - it is a tree owned by the scene - so the five node-authoring ops here could
+# not reach it at all. Rather than grow a parallel set of add/link/list ops for compositing, _tree
+# resolves this one reserved string to it, and every one of them works on the compositor unchanged.
+#
+# create_node_group REFUSES to create a group by this name, which is what keeps the reservation from
+# ever being ambiguous. A precedence rule - "a real group of that name wins" - would have been the
+# other option, and it makes the reachable set depend on what somebody happened to call something.
+SCENE_COMPOSITOR = "scene:compositor"
+
+# THE TERMINAL NODE IS NOT THE SAME IN EVERY TREE TYPE, and getting this wrong produces a WRONG
+# answer rather than a missing one. list_group_nodes looked only for NodeGroupOutput, which a
+# compositor tree does not have by design - so it would have reported "nothing is connected to the
+# Group Output" for a perfectly wired compositor.
+_TERMINALS = {
+    "GeometryNodeTree": ("NodeGroupOutput",),
+    "ShaderNodeTree": ("NodeGroupOutput", "ShaderNodeOutputMaterial", "ShaderNodeOutputWorld",
+                       "ShaderNodeOutputLight"),
+    "CompositorNodeTree": ("CompositorNodeComposite", "NodeGroupOutput"),
+}
+
+
+def _terminals(tree):
+    """The bl_idnames that count as this tree's OUTPUT, and a phrase describing the pass-through."""
+    kind = getattr(tree, "bl_idname", "GeometryNodeTree")
+    if kind == "CompositorNodeTree":
+        return _TERMINALS[kind], ("nothing is connected to a Composite node, so this compositor "
+                                  "writes NOTHING to the render result. Blender treats that as "
+                                  "valid and reports no error.")
+    if kind == "ShaderNodeTree":
+        return _TERMINALS[kind], ("nothing is connected to an output node, so this shader tree "
+                                  "contributes nothing.")
+    return _TERMINALS.get(kind, _TERMINALS["GeometryNodeTree"]), (
+        "nothing is connected to the Group Output, so this tree passes geometry through "
+        "UNCHANGED. Blender treats that as valid and reports no error.")
+
+
+def _scene_tree():
+    """The scene's compositing tree, or a refusal that says how to turn it on.
+
+    NOT a mutator. Enabling use_nodes here would mean a read op quietly switched compositing on for
+    the whole scene, which changes what every subsequent render does - the same objection that keeps
+    world_info off _background_node.
+    """
+    sc = bpy.context.scene
+    if not sc.use_nodes or sc.node_tree is None:
+        raise MifOpError("scene '%s' has no compositing tree - scene.use_nodes is off, so there is "
+                         "nothing to address. Turn it on with set_compositing, which can also wire "
+                         "the default Render Layers -> Composite pair. NOTHING was changed."
+                         % sc.name)
+    return sc.node_tree
+
+
+def op_set_compositing(params):
+    """Turn the scene compositor on or off - and the SECOND switch that also has to be on.
+
+    TWO INDEPENDENT FLAGS DECIDE WHETHER COMPOSITING HAPPENS, and having one on and the other off is
+    the classic silent failure:
+
+      scene.use_nodes              whether a compositing tree EXISTS and is edited
+      scene.render.use_compositing whether the render PIPELINE runs it
+
+    With use_nodes on and use_compositing off, the whole tree sits there reading perfectly, the
+    backdrop in the compositor updates, and the rendered file is completely unprocessed. Nothing
+    reports it. So both are set here and both are read back.
+
+    params:
+      enabled (bool)            scene.use_nodes. Default true.
+      useCompositing (bool)     scene.render.use_compositing. Defaults to follow `enabled`, since
+                                turning the tree on and leaving the pipeline off is never what
+                                somebody meant.
+      useSequencer (bool)       scene.render.use_sequencer - the VSE runs AFTER the compositor and
+                                overrides it if a strip exists.
+      withDefaultNodes (bool)   wire Render Layers -> Composite if the tree is empty. Default true
+                                when enabling, because an empty compositor writes nothing at all.
+    """
+    reject_unknown(params, _COMPOSITING_KEYS, "set_compositing")
+    sc = bpy.context.scene
+    enabled = take_bool(params, "enabled", default=True)
+    before = {"useNodes": bool(sc.use_nodes),
+              "useCompositing": bool(sc.render.use_compositing),
+              "useSequencer": bool(sc.render.use_sequencer)}
+
+    sc.use_nodes = enabled
+    use_comp = params.get("useCompositing")
+    sc.render.use_compositing = bool(use_comp) if use_comp is not None else enabled
+    if params.get("useSequencer") is not None:
+        sc.render.use_sequencer = take_bool(params, "useSequencer", default=True)
+
+    added = []
+    tree = sc.node_tree
+    if enabled and tree is not None and take_bool(params, "withDefaultNodes", default=True):
+        if not len(tree.nodes):
+            rl = tree.nodes.new("CompositorNodeRLayers")
+            comp = tree.nodes.new("CompositorNodeComposite")
+            rl.location = (-300, 0)
+            comp.location = (300, 0)
+            tree.links.new(rl.outputs["Image"], comp.inputs["Image"])
+            added = [rl.name, comp.name]
+
+    after = {"useNodes": bool(sc.use_nodes),
+             "useCompositing": bool(sc.render.use_compositing),
+             "useSequencer": bool(sc.render.use_sequencer)}
+    # VERIFIED INDIVIDUALLY. use_nodes is on the scene and use_compositing is on scene.render -
+    # two datablocks - and the whole point of this op is that having one without the other is the
+    # failure, so a check that only looked at one would miss exactly what it exists for.
+    if after["useNodes"] != enabled:
+        raise MifOpError("set scene.use_nodes to %s but it reads back as %s"
+                         % (enabled, after["useNodes"]))
+    return {
+        "ok": True,
+        "scene": sc.name,
+        "before": before,
+        "nodesAdded": added,
+        "treeName": tree.name if tree is not None else None,
+        "addressAs": SCENE_COMPOSITOR,
+        "note": ("address this tree from add_group_node, link_group_nodes and list_group_nodes by "
+                 "passing tree:'%s' - it is the scene's own tree and is not in bpy.data.node_groups."
+                 % SCENE_COMPOSITOR),
+        **after,
+    }
+
+
+def op_compositor_info(params):
+    """What the compositor IS, and every way it can be on and doing nothing.
+
+    THE WHOLE SUBSYSTEM WAS UNREACHABLE before 2026-09-03. create_node_group could make a
+    CompositorNodeTree, but that is a node GROUP in bpy.data.node_groups - the scene's compositor is
+    scene.node_tree, a different tree that nothing here could address. So glare, colour grading,
+    denoising, cryptomatte, lens distortion, file output and every other post-process was outside
+    the typed path entirely.
+
+    FOUR WAYS TO BE ON AND INERT, each reported as a distinct blocker because the fix differs:
+
+      use_nodes off                 no tree at all; the render is unprocessed
+      use_compositing off           the tree exists and is edited and the render PIPELINE skips it.
+                                    This is the classic one - the backdrop updates while the file
+                                    on disk is untouched.
+      no Composite node linked      the tree runs and writes nothing to the render result. A Viewer
+                                    node is NOT a substitute: it feeds the backdrop only, which is
+                                    why "it looks right in the compositor" and the file is wrong.
+      no Render Layers feeding it   the compositor is not looking at the render at all.
+
+    params:
+      viewLayer (str)   which view layer's enabled passes to report. Default the active one.
+    """
+    reject_unknown(params, _COMPINFO_KEYS, "compositor_info")
+    sc = bpy.context.scene
+    vl_name = take(params, "viewLayer", kind=str)
+    if vl_name:
+        vl = sc.view_layers.get(vl_name)
+        if vl is None:
+            known = sorted(v.name for v in sc.view_layers)
+            raise MifOpError("no view layer named '%s' in scene '%s'. Present: %s."
+                             % (vl_name, sc.name, ", ".join(known)))
+    else:
+        vl = bpy.context.view_layer
+
+    out = {
+        "ok": True,
+        "scene": sc.name,
+        "useNodes": bool(sc.use_nodes),
+        "useCompositing": bool(sc.render.use_compositing),
+        "useSequencer": bool(sc.render.use_sequencer),
+        "viewLayer": vl.name,
+        "addressAs": SCENE_COMPOSITOR,
+    }
+    blockers = []
+
+    if not sc.use_nodes or sc.node_tree is None:
+        blockers.append("scene.use_nodes is OFF, so there is no compositing tree and the render is "
+                        "written unprocessed. Turn it on with set_compositing.")
+        out["nodeCount"] = 0
+    else:
+        tree = sc.node_tree
+        out["treeName"] = tree.name
+        out["nodeCount"] = len(tree.nodes)
+        by_type = {}
+        for n in tree.nodes:
+            by_type[n.bl_idname] = by_type.get(n.bl_idname, 0) + 1
+        out["nodesByType"] = by_type
+        out["nodes"] = [{"name": n.name, "type": n.bl_idname, "label": n.label,
+                         "muted": bool(getattr(n, "mute", False))} for n in tree.nodes]
+        out["linkCount"] = len(tree.links)
+
+        composites = [n for n in tree.nodes if n.bl_idname == "CompositorNodeComposite"]
+        viewers = [n for n in tree.nodes if n.bl_idname == "CompositorNodeViewer"]
+        rlayers = [n for n in tree.nodes if n.bl_idname == "CompositorNodeRLayers"]
+        fed = {l.to_node.name for l in tree.links}
+        out["compositeNodes"] = [n.name for n in composites]
+        out["compositeConnected"] = any(n.name in fed for n in composites)
+        out["renderLayersNodes"] = [n.name for n in rlayers]
+        out["renderLayersFeeding"] = any(l.from_node.bl_idname == "CompositorNodeRLayers"
+                                         for l in tree.links)
+        out["mutedNodes"] = [n.name for n in tree.nodes if getattr(n, "mute", False)]
+
+        if not composites:
+            blockers.append("there is no Composite node in the tree, so the compositor writes "
+                            "NOTHING to the render result%s."
+                            % (" - the Viewer node feeds the backdrop only, which is why it looks "
+                               "right in the compositor and the saved file is wrong" if viewers
+                               else ""))
+        elif not out["compositeConnected"]:
+            blockers.append("the Composite node exists but nothing is linked into it, so the "
+                            "compositor writes nothing to the render result%s."
+                            % (" - a Viewer node is connected, and that feeds the backdrop only"
+                               if any(n.name in fed for n in viewers) else ""))
+        if not rlayers:
+            blockers.append("there is no Render Layers node, so the compositor is not looking at "
+                            "the render at all.")
+        elif not out["renderLayersFeeding"]:
+            blockers.append("the Render Layers node is not linked to anything, so the render is "
+                            "not entering the compositor.")
+        if out["mutedNodes"]:
+            blockers.append("%d node(s) are MUTED and pass their input straight through: %s."
+                            % (len(out["mutedNodes"]), ", ".join(out["mutedNodes"][:8])))
+
+    if sc.use_nodes and not sc.render.use_compositing:
+        blockers.append("scene.render.use_compositing is OFF, so the render pipeline SKIPS the "
+                        "compositor entirely. The tree still exists, the backdrop still updates, "
+                        "and the file on disk is completely unprocessed - the two switches are "
+                        "independent and this is the one that is usually missed.")
+    if sc.render.use_sequencer:
+        # NOT A BLOCKER BY ITSELF. The VSE only overrides the compositor when strips exist, and a
+        # scene with an empty sequencer is the normal case - calling that a blocker would train
+        # people to ignore the list.
+        seq = getattr(sc, "sequence_editor", None)
+        strips = len(getattr(seq, "sequences_all", []) or []) if seq else 0
+        out["sequencerStrips"] = strips
+        if strips:
+            blockers.append("use_sequencer is on and the VSE holds %d strip(s). The sequencer runs "
+                            "AFTER the compositor and its output is what gets written, so the "
+                            "compositor's result can be replaced wholesale." % strips)
+
+    passes = {}
+    for attr in dir(vl):
+        if attr.startswith("use_pass_"):
+            try:
+                passes[attr[len("use_pass_"):]] = bool(getattr(vl, attr))
+            except (AttributeError, TypeError):     # noqa: PERF203
+                continue
+    out["enabledPasses"] = sorted(k for k, v in passes.items() if v)
+    out["availablePasses"] = sorted(passes)
+
+    out["blockers"] = blockers
+    out["compositorAffectsRender"] = not blockers
+    return out
+
 OPS = {
+    "set_compositing": op_set_compositing,
+    "compositor_info": op_compositor_info,
     "create_node_group": op_create_node_group,
     "add_group_node": op_add_group_node,
     "link_group_nodes": op_link_group_nodes,

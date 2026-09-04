@@ -12268,6 +12268,46 @@ out-of-process the way ops_gen already does with gen_status.
       on first run from an incomplete stub rather than a real defect, and they surfaced as
       named failures instead of a dead suite because succeeds() had just been added for
       exactly that.
+- [x] **the compositor - the whole subsystem was unreachable** (2 ops + a wrong answer fixed) DONE 2026-09-03
+      set_compositing and compositor_info, and the five existing node-authoring ops now address the
+      scene compositor too.
+
+      "no compositing" was never quite the claim - create_node_group accepts CompositorNodeTree.
+      But that makes a node GROUP in bpy.data.node_groups, and the scene's compositor is
+      scene.node_tree, a tree owned by the scene that nothing in ops_nodes could reach. So glare,
+      colour grading, denoise, cryptomatte, lens distortion, vignettes and file output were all
+      outside the typed path, on a subsystem the standing rule names explicitly.
+
+      EXTENDED, NOT DUPLICATED. _tree is the single chokepoint all five authoring ops go through,
+      so resolving one reserved name there gives add_group_node, link_group_nodes and
+      list_group_nodes the compositor for free - rather than a parallel set of compositor add/link/
+      list ops doing the same job. create_node_group refuses to create a group under that name,
+      which is what keeps the reservation unambiguous forever; the alternative, a precedence rule,
+      makes which tree you addressed depend on what somebody happened to call something.
+
+      AND IT FIXED A WRONG ANSWER ON THE WAY. list_group_nodes decided reachability by looking for
+      NodeGroupOutput, which a compositor tree does not have by design - so pointed at one it would
+      have reported "nothing is connected to the Group Output" for a perfectly wired compositor.
+      Not a missing answer, a false one, from the field whose entire purpose is saying the tree is
+      inert. The terminal is now per tree type, with per-type wording.
+
+      FOUR WAYS TO BE ON AND DOING NOTHING, each its own blocker because each needs a different
+      fix: use_nodes off; use_compositing off - the classic, where the tree reads perfectly, the
+      backdrop updates and the file on disk is completely unprocessed, because these are two
+      independent switches; no Composite node linked, where a Viewer node is NOT a substitute since
+      it feeds the backdrop only, which is exactly why it looks right in the compositor and the
+      saved file is wrong; and no Render Layers feeding it. Plus muted nodes, and VSE strips, which
+      run AFTER the compositor and replace its output wholesale.
+
+      AN EMPTY SEQUENCER IS DELIBERATELY NOT A BLOCKER even with use_sequencer on, because that is
+      the normal state of most scenes and calling the normal case a problem is how a blocker list
+      gets ignored. A plant that flags it is one of the four ground truths.
+
+      B116, thirteen checks, offline - node graphs and two booleans are stored data. Ground-truthed
+      with four plants: the old terminal bug, dropping the use_compositing check, a resolver that
+      ENABLES use_nodes rather than refusing (a read op must not switch compositing on for the whole
+      scene behind the caller), and the empty-sequencer false positive.
+
 - [ ] **Tier 5 - craft depth** (1 of 5 left)
       DONE 2026-09-03: set_camera_panorama, move_keyframes, set_light_ies, set_light_linking.
 
