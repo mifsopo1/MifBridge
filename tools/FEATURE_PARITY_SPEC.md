@@ -15041,3 +15041,33 @@ out-of-process the way ops_gen already does with gen_status.
       suite cannot reach face_info (no mesh.polygons, no material_slots) and the socket suites
       cannot enter edit mode, so it goes through run_python with the graceful skip A101 uses when
       that switch is off. A check that cannot run is worse than none.
+
+- [x] **a LINKED object could be moved, and the move was unsaveable** DONE 2026-09-04
+      Nothing in this addon mentioned .library - not once - and linking is how production files are
+      assembled, so an agent driving a real scene meets linked data immediately. Built a source
+      .blend, linked a cube into a fresh file, pointed ops at it on 5.0.1:
+
+        transform_object  ACCEPTED, moved it, reported the new location as fact. Blender can never
+                          save that change; it is gone on the next reload and nothing said so.
+        set_shading       ACCEPTED, changed nothing at all, answered ok.
+
+      Both refuse now, naming the library file and pointing at the fix.
+
+      A LIBRARY OVERRIDE IS NOT LINKED DATA for this purpose. Overrides exist precisely so the local
+      file can change selected properties, so testing only `.library` would refuse the one case
+      overrides were invented for.
+
+- [ ] **which other ops write to an object they did not check is editable**
+      require_editable is applied to the two ops measured above, deliberately and not more. 43 sites
+      pass want_mesh=True and not all of them WRITE - boolean_op resolves its CUTTER that way, and
+      booleaning against a linked object is a perfectly good thing to do. Putting the check in
+      get_object would trade one silent failure for a broken workflow.
+
+      The sweep is: for each op that resolves an object, does it WRITE to that object, and if so is
+      the object checked for editability. That is the same read-the-handler discipline
+      audit_mutate_then_deny needed, and it wants the same treatment - an audit rather than a list,
+      so the next op written gets it too.
+
+      Worth doing next time this area is open. The two fixed are the ones a caller hits first
+      (moving something, shading something); the rest are mesh operations that a linked object would
+      usually not be the target of.
