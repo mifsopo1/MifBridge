@@ -5619,7 +5619,7 @@ def bl_delete_view_layer(name: str) -> dict:
 @mcp.tool()
 def bl_set_compositing(enabled: bool = None, use_compositing: bool = None,
                        use_sequencer: bool = None, with_default_nodes: bool = None) -> dict:
-    "Turn the Blender scene compositor on, and the SECOND switch that also has to be on. TWO INDEPENDENT FLAGS decide whether compositing happens: scene.use_nodes (a tree exists and is edited) and scene.render.use_compositing (the render PIPELINE runs it). With the first on and the second off, the whole tree reads perfectly, the compositor backdrop updates, and the rendered file is completely unprocessed - nothing reports it. Both are set and both read back. Wires a default Render Layers -> Composite pair when the tree is empty, because an empty compositor writes nothing at all. Afterwards, address the tree from bl_add_group_node / bl_link_group_nodes / bl_list_group_nodes by passing tree:'scene:compositor'."
+    "Turn the Blender scene compositor on, and the SECOND switch that also has to be on. TWO INDEPENDENT FLAGS decide whether compositing happens: scene.use_nodes (a tree exists and is edited) and scene.render.use_compositing (the render PIPELINE runs it). With the first on and the second off, the whole tree reads perfectly, the compositor backdrop updates, and the rendered file is completely unprocessed - nothing reports it. Both are set and both read back. Wires a default Render Layers -> Composite pair when the tree is empty, because an empty compositor writes nothing at all. Afterwards, address the tree from bl_add_group_node / bl_link_group_nodes / bl_list_group_nodes by passing tree:'scene:compositor'. The same resolver reaches 'scene:world', 'material:<name>' and 'world:<name>'."
     return _blender("set_compositing", enabled=enabled, useCompositing=use_compositing,
                     useSequencer=use_sequencer, withDefaultNodes=with_default_nodes)
 
@@ -5640,7 +5640,7 @@ def bl_create_node_group(name: str = None, type: str = None, with_group_io: bool
 def bl_add_group_node(group: str, type: str, name: str = None, location: list = None,
                       inputs: dict = None, label: str = None, operation: str = None,
                       data_type: str = None, domain: str = None, mode: str = None) -> dict:
-    "Add a node to a Blender node group. `inputs` is {socketName: value} and a name that does not match a real socket is refused with the sockets the node actually has - a value written to a socket that is not there vanishes without a word."
+    "Add a node to a Blender node group. `inputs` is {socketName: value} and a name that does not match a real socket is refused with the sockets the node actually has - a value written to a socket that is not there vanishes without a word. The `group` argument also addresses trees that are OWNED by something rather than living in bpy.data.node_groups: 'scene:compositor', 'scene:world', 'material:<name>' and 'world:<name>'. That is how a MATERIAL's shader graph is authored - bl_describe_material could read one in full while bl_set_material_properties could write only the Principled BSDF's own sockets, so the addon could describe a graph in detail and not add a node to it."
     return _blender("add_group_node", group=group, type=type, name=name, location=location,
                     inputs=inputs, label=label, operation=operation, dataType=data_type,
                     domain=domain, mode=mode)
@@ -5649,7 +5649,7 @@ def bl_add_group_node(group: str, type: str, name: str = None, location: list = 
 @mcp.tool()
 def bl_link_group_nodes(group: str, from_node: str, to_node: str, from_socket: str = None,
                         to_socket: str = None) -> dict:
-    "Wire one node's output into another's input inside a Blender node group. links.new returns a link object even when Blender immediately drops it as invalid (mismatched socket types), so the link is read back and `linked` is a measurement rather than the call's return."
+    "Wire one node's output into another's input inside a Blender node group. links.new returns a link object even when Blender immediately drops it as invalid (mismatched socket types), so the link is read back and `linked` is a measurement rather than the call's return. The `group` argument also addresses trees that are OWNED by something rather than living in bpy.data.node_groups: 'scene:compositor', 'scene:world', 'material:<name>' and 'world:<name>'. That is how a MATERIAL's shader graph is authored - bl_describe_material could read one in full while bl_set_material_properties could write only the Principled BSDF's own sockets, so the addon could describe a graph in detail and not add a node to it."
     return _blender("link_group_nodes", group=group, fromNode=from_node, toNode=to_node,
                     fromSocket=from_socket, toSocket=to_socket)
 
@@ -5664,7 +5664,7 @@ def bl_add_group_interface(group: str, name: str, socket_type: str = None, in_ou
 
 @mcp.tool()
 def bl_list_group_nodes(group: str) -> dict:
-    "Every node and link in a Blender node group, plus whether the Group Output is actually reachable. That last line is the point: an unlinked Group Output is NOT an error - the modifier passes geometry through unchanged, which is indistinguishable from a tree that ran and did nothing."
+    "Every node and link in a Blender node group, plus whether the Group Output is actually reachable. That last line is the point: an unlinked Group Output is NOT an error - the modifier passes geometry through unchanged, which is indistinguishable from a tree that ran and did nothing. The TERMINAL depends on the tree type - a Composite node for the compositor, a Material/World Output for a shader tree, a Group Output for a geometry group - so the answer is right for each rather than reporting a correctly wired compositor as inert. The `group` argument also addresses trees that are OWNED by something rather than living in bpy.data.node_groups: 'scene:compositor', 'scene:world', 'material:<name>' and 'world:<name>'. That is how a MATERIAL's shader graph is authored - bl_describe_material could read one in full while bl_set_material_properties could write only the Principled BSDF's own sockets, so the addon could describe a graph in detail and not add a node to it."
     return _blender("list_group_nodes", group=group)
 
 

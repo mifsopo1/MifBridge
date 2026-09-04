@@ -12411,6 +12411,37 @@ out-of-process the way ops_gen already does with gen_status.
       armature refusal fires before any datablock exists" is measurable rather than asserted. Four
       plants, each caught - including putting the ordering bug back.
 
+- [x] **material and world shader graphs - a read half that was thorough and a write half one node deep** DONE 2026-09-03
+      No new ops. The reserved-target resolver added for the compositor now also reaches
+      'material:<name>', 'world:<name>' and 'scene:world', so add_group_node, link_group_nodes and
+      list_group_nodes author those trees unchanged.
+
+      THE ASYMMETRY, MEASURED BY READING BOTH HALVES. describe_material reports a material's whole
+      node tree - every node, every link, every image texture and its filepath - and
+      set_material_properties could write only the Principled BSDF's own socket values. So the
+      addon could DESCRIBE a shader graph in full detail and not add a single node to one: no mix
+      shaders, no procedural noise, no bump or normal map wired, no UV mapping node, no emission
+      blend. Not a missing feature so much as a missing HALF.
+
+      WHY IT WAS INVISIBLE: a material's node tree is owned by the material and a world's by the
+      world, so neither is in bpy.data.node_groups and _tree could not reach either. Exactly the
+      shape the compositor turned out to have, one datablock over.
+
+      A RESOLVER, NOT A SECOND SET OF OPS, and that is affordable because add_group_node was
+      already tree-agnostic - it calls tree.nodes.new(ntype) and names tree.bl_idname in its own
+      error message. The only thing missing was a way to hand it the tree. list_group_nodes needed
+      nothing either: its terminal table already knew ShaderNodeOutputMaterial and OutputWorld from
+      the compositor work.
+
+      THE RESOLVER REFUSES use_nodes OFF RATHER THAN ENABLING IT. Switching it on as a side effect
+      of ADDRESSING a material would convert a flat-colour material into a node-based one - a
+      different thing to render, decided by a lookup. Same objection that keeps world_info off
+      _background_node and compositor_info off scene.use_nodes.
+
+      B120, thirteen checks, including a negative control: an ordinary name must still go to
+      bpy.data.node_groups, without which a resolver that claimed every name would pass everything
+      else. Three plants, all caught - and the negative control is what caught the third.
+
 - [ ] **Tier 5 - craft depth** (1 of 5 left)
       DONE 2026-09-03: set_camera_panorama, move_keyframes, set_light_ies, set_light_linking.
 

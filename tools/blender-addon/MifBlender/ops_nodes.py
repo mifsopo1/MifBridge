@@ -41,8 +41,9 @@ def _tree(name):
     # reached here rather than by a parallel set of compositor add/link/list ops. scene.node_tree is
     # not in bpy.data.node_groups - it belongs to the scene - so before 2026-09-03 nothing in this
     # module could address it and the entire compositing subsystem was outside the typed path.
-    if name == SCENE_COMPOSITOR:
-        return _scene_tree()
+    owned = _owned_tree(name)
+    if owned is not None:
+        return owned
     t = bpy.data.node_groups.get(name)
     if t is None:
         raise MifOpError("no node group named '%s'. create_node_group makes one; the groups in "
@@ -84,11 +85,13 @@ def op_create_node_group(params):
     """Create a geometry node group, with Group Input/Output wired to a Geometry socket pair."""
     reject_unknown(params, _CREATE_KEYS, "create_node_group")
     name = str(take(params, "name", default="MifNodes", kind=str))
-    if name == SCENE_COMPOSITOR:
-        raise MifOpError("'%s' is reserved: it addresses the SCENE's compositing tree from the ops "
-                         "in this module, and a node group by that name would make which one you "
-                         "meant depend on what happened to exist. Pick another name. NOTHING was "
-                         "created." % SCENE_COMPOSITOR)
+    if name in (SCENE_COMPOSITOR, SCENE_WORLD) or name.startswith(RESERVED_PREFIXES):
+        raise MifOpError("'%s' is reserved: names like %s, %s, '%s<name>' and '%s<name>' address "
+                         "trees that are OWNED by a scene, material or world rather than living in "
+                         "bpy.data.node_groups, and a group by such a name would make which one "
+                         "you meant depend on what happened to exist. Pick another name. NOTHING "
+                         "was created."
+                         % (name, SCENE_COMPOSITOR, SCENE_WORLD, MATERIAL_PREFIX, WORLD_PREFIX))
     kind = str(take(params, "type", default="GeometryNodeTree", kind=str))
     if kind not in ("GeometryNodeTree", "ShaderNodeTree", "CompositorNodeTree"):
         raise MifOpError("type must be GeometryNodeTree, ShaderNodeTree or CompositorNodeTree, "
@@ -376,6 +379,25 @@ _COMPINFO_KEYS = {"viewLayer"}
 # ever being ambiguous. A precedence rule - "a real group of that name wins" - would have been the
 # other option, and it makes the reachable set depend on what somebody happened to call something.
 SCENE_COMPOSITOR = "scene:compositor"
+SCENE_WORLD = "scene:world"
+MATERIAL_PREFIX = "material:"
+WORLD_PREFIX = "world:"
+
+# EVERY TREE THAT IS NOT IN bpy.data.node_groups. A node group is a datablock in its own right; a
+# material's tree, a world's tree and the compositor are OWNED by the thing they shade, so none of
+# them could be addressed by the five authoring ops here at all.
+#
+# WHAT THAT COST, measured rather than guessed: describe_material reads a material's node tree in
+# full - every node, every link, every image texture - and set_material_properties could write only
+# the Principled BSDF's own socket values. So the addon could DESCRIBE a shader graph in detail and
+# not add a single node to one. No mix shaders, no procedural noise, no bump or normal map wired,
+# no UV mapping node, no emission blend. The read half was thorough and the write half was one node
+# deep.
+#
+# The fix is a resolver rather than a second set of add/link/list ops, for the same reason the
+# compositor got one: add_group_node is already tree-agnostic - it calls tree.nodes.new(ntype) and
+# names tree.bl_idname in its own error - so the only thing missing was a way to hand it the tree.
+RESERVED_PREFIXES = (MATERIAL_PREFIX, WORLD_PREFIX)
 
 # THE TERMINAL NODE IS NOT THE SAME IN EVERY TREE TYPE, and getting this wrong produces a WRONG
 # answer rather than a missing one. list_group_nodes looked only for NodeGroupOutput, which a
@@ -402,6 +424,54 @@ def _terminals(tree):
     return _TERMINALS.get(kind, _TERMINALS["GeometryNodeTree"]), (
         "nothing is connected to the Group Output, so this tree passes geometry through "
         "UNCHANGED. Blender treats that as valid and reports no error.")
+
+
+def _owned_tree(name):
+    """Resolve one of the reserved targets to the tree it names, or None if `name` is not one.
+
+    Refuses rather than enabling. Turning use_nodes on for a material or a world as a side effect of
+    ADDRESSING it would mean a call that says "put a node here" silently converted a flat-colour
+    material into a node-based one - a different thing to render, decided by a lookup.
+    """
+    if name == SCENE_COMPOSITOR:
+        return _scene_tree()
+    if name == SCENE_WORLD:
+        world = bpy.context.scene.world
+        if world is None:
+            raise MifOpError("scene '%s' has no world, so there is no world shader tree to "
+                             "address. Make one with set_world. NOTHING was changed."
+                             % bpy.context.scene.name)
+        return _shader_tree(world, "world", world.name)
+    for prefix, store, label in ((MATERIAL_PREFIX, "materials", "material"),
+                                 (WORLD_PREFIX, "worlds", "world")):
+        if not name.startswith(prefix):
+            continue
+        key = name[len(prefix):]
+        if not key:
+            raise MifOpError("'%s' names no %s - use '%s<name>'. NOTHING was changed."
+                             % (name, label, prefix))
+        holder = getattr(bpy.data, store).get(key)
+        if holder is None:
+            known = sorted(x.name for x in getattr(bpy.data, store))[:25]
+            raise MifOpError("no %s named '%s'. Present: %s. NOTHING was changed."
+                             % (label, key, ", ".join(known) if known else "<none>"))
+        return _shader_tree(holder, label, key)
+    return None
+
+
+def _shader_tree(holder, label, key):
+    """A material's or world's own node tree, refusing when use_nodes is off.
+
+    A datablock with use_nodes FALSE ignores its tree completely and renders its flat colour, so
+    adding nodes to it would be authoring something nothing looks at - every node reading back
+    perfectly and changing no pixel. Named rather than silently enabled.
+    """
+    if not holder.use_nodes or holder.node_tree is None:
+        raise MifOpError("%s '%s' has use_nodes OFF, so its node tree is ignored entirely and its "
+                         "flat colour is what renders - adding nodes would author something "
+                         "nothing looks at. Turn it on first. NOTHING was changed."
+                         % (label, key))
+    return holder.node_tree
 
 
 def _scene_tree():

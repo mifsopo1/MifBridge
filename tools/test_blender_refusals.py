@@ -1462,6 +1462,84 @@ def main():
           "create_collection", ok, msg)
 
     print("")
+    print("=== B120: material and world shader graphs - trees that no op could address ===")
+    # THE READ HALF WAS THOROUGH AND THE WRITE HALF WAS ONE NODE DEEP. describe_material reports a
+    # material's whole node tree - every node, every link, every image texture and its path - while
+    # set_material_properties could write only the Principled BSDF's own socket values. So the addon
+    # could DESCRIBE a shader graph in detail and not add a single node to one: no mix shaders, no
+    # procedural noise, no bump or normal map wired, no UV mapping node.
+    #
+    # A material's tree is owned by the material, a world's by the world - neither is in
+    # bpy.data.node_groups - so the five authoring ops could not reach either. Same shape as the
+    # compositor and the same fix: a resolver, not a second set of add/link/list ops, because
+    # add_group_node is already tree-agnostic.
+    from MifBlender import ops_nodes as ON2
+
+    class _Tree3(object):
+        def __init__(self, kind):
+            self.bl_idname, self.nodes, self.links, self.name = kind, [], [], "Shader Nodetree"
+
+    class _Holder(object):
+        def __init__(self, name, use_nodes=True):
+            self.name, self.use_nodes = name, use_nodes
+            self.node_tree = _Tree3("ShaderNodeTree") if use_nodes else None
+
+    class _Store(dict):
+        def get(self, k, d=None):
+            return dict.get(self, k, d)
+
+        def __iter__(self):
+            return iter(list(self.values()))
+
+    bpy = sys.modules["bpy"]
+    wood = _Holder("Wood")
+    flat = _Holder("Flat", use_nodes=False)
+    bpy.data.materials = _Store({"Wood": wood, "Flat": flat})
+    sky = _Holder("Sky")
+    bpy.data.worlds = _Store({"Sky": sky})
+    bpy.context.scene.world = sky
+
+    check("B120 'material:<name>' resolves to that material's own tree, which is not in "
+          "bpy.data.node_groups and was unreachable by every authoring op",
+          ON2._tree("material:Wood") is wood.node_tree, "did not resolve")
+    check("B120 'world:<name>' resolves the same way",
+          ON2._tree("world:Sky") is sky.node_tree, "did not resolve")
+    check("B120 and 'scene:world' resolves the SCENE's world without naming it",
+          ON2._tree(ON2.SCENE_WORLD) is sky.node_tree, "did not resolve")
+
+    # use_nodes OFF is the inert case again, and the resolver REFUSES rather than enabling it -
+    # turning it on as a side effect of a lookup would convert a flat-colour material into a
+    # node-based one, which is a different thing to render, decided by an address.
+    ok, msg = refuses(lambda _: ON2._tree("material:Flat"), None, "use_nodes OFF",
+                      "nothing looks at")
+    check("B120 a material with use_nodes OFF is refused, not silently switched on - adding nodes "
+          "to it would author something nothing looks at", ok, msg)
+    check("B120 and the refusal left use_nodes alone", flat.use_nodes is False,
+          "use_nodes became %s" % flat.use_nodes)
+
+    ok, msg = refuses(lambda _: ON2._tree("material:NoSuchMat"), None, "no material named")
+    check("B120 an unknown material is refused with the list of ones that exist", ok, msg)
+    ok, msg = refuses(lambda _: ON2._tree("material:"), None, "names no material")
+    check("B120 a bare prefix with no name is refused rather than resolving to something arbitrary",
+          ok, msg)
+
+    bpy.context.scene.world = None
+    ok, msg = refuses(lambda _: ON2._tree(ON2.SCENE_WORLD), None, "has no world", "set_world")
+    check("B120 'scene:world' on a scene with no world is refused and points at set_world", ok, msg)
+    bpy.context.scene.world = sky
+
+    for reserved in ("material:Wood", "world:Sky", ON2.SCENE_WORLD, ON2.SCENE_COMPOSITOR):
+        ok, msg = refuses(ON2.op_create_node_group, {"name": reserved}, "reserved")
+        check("B120 a node group cannot be created as '%s' - it would make which tree you addressed "
+              "depend on what happened to exist" % reserved, ok, msg)
+
+    # A NORMAL GROUP NAME MUST STILL WORK. Without this the reservation could have swallowed
+    # everything and every check above would still pass.
+    ok, msg = refuses(lambda _: ON2._tree("PlainGroupName"), None, "no node group named")
+    check("B120 an ordinary name still goes to bpy.data.node_groups - the negative control, "
+          "without which a resolver that claimed every name would pass every check above", ok, msg)
+
+    print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
     # THE NEGATIVE CONTROL. Every check above proves something is refused; without this, a guard
     # that refused EVERYTHING would score full marks. Retyping to SPOT while setting spotAngle is
