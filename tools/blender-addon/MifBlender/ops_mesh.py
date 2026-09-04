@@ -1564,6 +1564,11 @@ _UV_KEYS = {
 }
 
 
+# Blender's hard maximum UV layers per mesh. MEASURED on 3.6.23, 4.2.17, 4.4.0 and 5.0.1 -
+# all four accept 8 and return None from new() on the ninth, silently.
+_UV_LAYER_CAP = 8
+
+
 def op_uv_unwrap(params):
     """Generate a UV layer. The addon has REPORTED uvLayers in three places from the
     beginning -- object_info, gen_status, and a quality warning that says in as many
@@ -1636,11 +1641,15 @@ def op_uv_unwrap(params):
             "different uvLayer name to add a channel beside it. Overwriting somebody's UVs is "
             "not something to do by default. Existing layers: %s"
             % (obj.name, layer_name, before))
-    if len(before) >= 8 and (not layer_name or layer_name not in before):
+    # THE CAP WAS ALREADY GUARDED HERE and this check is unchanged in substance - only the literal
+    # 8 has moved into _UV_LAYER_CAP, which is measured rather than remembered (3.6.23, 4.2.17,
+    # 4.4.0 and 5.0.1 all accept 8). Two spellings of the same number in one file is how one of
+    # them goes stale.
+    if len(before) >= _UV_LAYER_CAP and (not layer_name or layer_name not in before):
         raise MifOpError(
-            "'%s' already has %d UV layers and Blender's limit is 8, so there is no room for "
+            "'%s' already has %d UV layers and Blender's limit is %d, so there is no room for "
             "another. Pass uvLayer with one of the existing names plus replace:true. Layers: %s"
-            % (obj.name, len(before), before))
+            % (obj.name, len(before), _UV_LAYER_CAP, before))
 
     # ---- SEAMS FIRST, and before the ANGLE check below, which is the whole point ----------------
     # That check refuses an ANGLE unwrap on a mesh with no seams, so the endpoint has always offered
@@ -1724,15 +1733,37 @@ def op_uv_unwrap(params):
     # The layer has to exist BEFORE the unwrap, and be the ACTIVE one, or the operator writes
     # into whichever channel happened to be active - which is how a lightmap lands on top of
     # the base UVs and nobody notices until the bake.
+    # A BACKSTOP, NOT THE CAP CHECK - that one is above and pre-dates this, and it is what actually
+    # fires on a full mesh. This guards the DIFFERENT failure: uv_layers.new() signals "no room" by
+    # RETURNING None rather than raising, measured on all four builds, so any path that reaches a
+    # new() the count check did not cover would take .name off None and produce an AttributeError
+    # from the middle of an op that has already entered edit mode.
+    #
+    # Said plainly because it would be easy to write this up as a fix for something that was
+    # already handled: the cap was covered, the None return was not.
+    def _new_layer(name):
+        if len(mesh.uv_layers) >= _UV_LAYER_CAP:
+            raise MifOpError(
+                "'%s' already has %d UV layers, which is Blender's maximum - uv_layers.new() "
+                "returns None past it rather than failing, so there is no room for '%s'. Remove "
+                "one, or pass uvLayer with an existing name plus replace:true. Layers: %s. NOTHING "
+                "was changed." % (obj.name, len(mesh.uv_layers), name, ", ".join(before)))
+        made = mesh.uv_layers.new(name=name)
+        if made is None:
+            raise MifOpError("uv_layers.new() returned None for '%s' on '%s' with %d layer(s) "
+                             "present, which is how Blender reports 'no room' - it does not raise. "
+                             "NOTHING was changed." % (name, obj.name, len(mesh.uv_layers)))
+        return made
+
     created = None
     if layer_name:
         if layer_name in before:
             target = mesh.uv_layers[layer_name]
         else:
-            target = mesh.uv_layers.new(name=layer_name)
+            target = _new_layer(layer_name)
             created = target.name
     elif not before:
-        target = mesh.uv_layers.new(name="UVMap")
+        target = _new_layer("UVMap")
         created = target.name
     else:
         target = mesh.uv_layers.active or mesh.uv_layers[0]
@@ -1753,7 +1784,20 @@ def op_uv_unwrap(params):
         elif method == "LIGHTMAP":
             bpy.ops.uv.lightmap_pack(PREF_MARGIN_DIV=max(0.001, margin * 100.0))
         else:
-            bpy.ops.uv.unwrap(method="ANGLE_BASED", margin=margin,
+            # fill_holes IS PINNED, and that is not tidiness. Its DEFAULT FLIPPED at 4.4:
+            # True on 3.6.23 and 4.2.17, False on 4.4.0 and 5.0.1 - read off the operator's own
+            # rna_type on each build rather than from release notes. Left unpassed, the identical
+            # call fills holes on the LTS builds and does not on the newer ones, so the same op on
+            # the same mesh produces two different layouts depending on which Blender is running,
+            # with nothing anywhere saying so.
+            #
+            # `method` was already pinned to ANGLE_BASED, which is why THAT flip - ANGLE_BASED to
+            # CONFORMAL, same version - never bit. This is the same lesson, one argument over.
+            #
+            # Pinned to True, the behaviour this op had on the builds it was written and tested
+            # against. Making it a parameter is filed rather than done, so the change here is a
+            # version-independence fix and not a new feature.
+            bpy.ops.uv.unwrap(method="ANGLE_BASED", margin=margin, fill_holes=True,
                               correct_aspect=correct_aspect)
 
         # PACK AFTER THE UNWRAP, never before - packing first packs the OLD layout, which looks
