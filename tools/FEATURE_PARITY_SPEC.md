@@ -14525,3 +14525,63 @@ out-of-process the way ops_gen already does with gen_status.
       and the third reports a reparent that WAS applied and left the blueprint uncompilable. All
       three are on responses that succeeded; none is a refusal claiming a side effect it did not
       have.
+
+- [x] **both audits reported findings and nothing about how much they covered** DONE 2026-09-04
+      The matrix has refused to print a finding count alone for months - it reports how many ops
+      reached their bpy calls precisely so a clean run cannot be read as a clean codebase. These two
+      had no equivalent, and the Blender one GATES AT ZERO, which is where a bare zero misleads most.
+
+      Measured: 103 Blender ops and 171 C++ handlers make a promise about state, and a write was
+      visible in 74 and 91 of them. So 29 and 80 were UNJUDGED - not clean, invisible.
+
+      RAISED TO 87 AND 107 by closing holes, each a different shape and each found by asking what
+      the unjudged ops had in common:
+
+        a write inside a callee          both sides; the original set_light defect's shape
+        a REMOVAL that is the product    .remove() was read only as the undo signal, so every
+                                         delete_/remove_/unlink_ op was unjudged. Removing something
+                                         bound from a .new() above is an undo; removing something
+                                         from a LOOKUP is the job.
+        setattr()                        how an availability table writes. set_light_shadow and
+                                         set_material_settings never name an attribute in source.
+        ->SetX() in C++                  minus the five that build the JSON reply.
+
+      THE SETTER RULE IS THE ONE TO REMEMBER, because the obvious version was badly wrong. The five
+      most common "setters" in the plugin are SetStringField (2048), SetNumberField (1019),
+      SetBoolField (828), SetArrayField (358) and SetObjectField (158) - `Out->Set...Field(...)`, a
+      handler building its REPLY. Counting them would have taken reach from 91 to 170 of 171 and
+      measured nothing: every handler would have read as a mutator for answering its caller. The
+      audit would have looked far more thorough while checking the JSON.
+
+      TWO FALSE POSITIVES THE REMOVAL RULE SURFACED, both read, both teaching a rule the C++ side
+      already had. delete_keyframe removes in a loop and refuses `if removed == 0` - the Python
+      spelling of `if (!bDidMutate)`, with an integer. render_animation writes a probe file and
+      os.remove()s it, which is housekeeping on its own temp file rather than a change to the scene.
+
+      Blender self-test 11 -> 19 cases, C++ 12, both directions for every rule, zero failures. The
+      Blender audit still reports zero findings; the C++ baseline went 38 -> 50 keys, which are the
+      same known sites now anchored at the actual property write instead of the Modify() above it.
+
+      WHAT IS LEFT is a different shape on each side and is stated rather than hidden: Blender's 16
+      write through bpy.ops, through a subscript on a datablock, or in a subprocess; the C++ 64 go
+      through IAssetTools and the asset-level managers. Each would need its own rule, and a rule per
+      op is how an audit becomes a list of special cases.
+
+- [x] **an untracked .exr in the repo root, written by the version matrix** DONE 2026-09-04
+      Noticed as a stray untracked file during a commit, not by any check. A 32x32 OpenEXR called
+      ".exr" - the extension alone, no name - sitting in the working directory.
+
+      TWO DEFECTS BEHIND IT, both in render_still's handling of a filePath it cannot use. The
+      corrupted-payload pass hands it a sentinel containing a NUL; that survives every guard, the
+      render RUNS, and then the save fails with a bare RuntimeError - a RAW EXCEPTION escaping the
+      op's contract, in a codebase where every other refusal is a sentence. And when the scene
+      format is one Blender can write to a relative path it does not fail at all: it silently
+      writes a file named after the extension into the process's working directory, which is the
+      definition of an artifact nobody can attribute.
+
+      filePath is now rejected for control characters, and for naming a directory rather than a
+      file. Verified both ways: the probe that produced the raw RuntimeError now gets a sentence,
+      and a full four-build matrix run leaves no stray file where it left one every time before.
+
+      NOT GITIGNORED, deliberately. Adding ".exr" to .gitignore would have hidden the symptom and
+      left the op still writing into whatever directory it was launched from.

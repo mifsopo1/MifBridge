@@ -244,6 +244,23 @@ def op_render_still(params):
         raise MifOpError("no output path is set - pass filePath, or set one with "
                          "set_render_settings. NOTHING was rendered.")
 
+    # THE PATH HAS TO BE USABLE, and Blender will not say so until it has finished rendering. A
+    # filePath containing a NUL or a control character collapses on the way to the filesystem: the
+    # render runs, then the save fails with a bare RuntimeError - a RAW EXCEPTION escaping this
+    # op's contract, where every other refusal here is a sentence. Worse, when the scene format is
+    # one Blender can write to a relative path it does NOT fail: it silently produced a file called
+    # ".exr" in the process's working directory. That was found as an untracked file in this repo,
+    # written by the version matrix, which is the definition of an artifact nobody can attribute.
+    if any(ord(ch) < 32 for ch in target):
+        raise MifOpError("filePath contains a control character, which collapses to nothing on the "
+                         "way to the filesystem - Blender renders first and then fails to save, or "
+                         "silently writes a file named after the extension alone in the working "
+                         "directory. Got %r. NOTHING was rendered." % (out_path or target))
+    if not os.path.basename(target.rstrip("/\\")):
+        raise MifOpError("filePath '%s' names a directory, not a file - Blender would write a file "
+                         "called after the format's extension alone. Pass a full path including a "
+                         "file name. NOTHING was rendered." % (out_path or target))
+
     # The directory too: it needs the target and the filesystem, nothing from the scene, and below
     # the settings write it was refusing "NOTHING was rendered" with the render settings and the
     # current frame already moved.
