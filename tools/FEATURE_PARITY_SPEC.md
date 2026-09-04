@@ -11944,7 +11944,38 @@ out-of-process the way ops_gen already does with gen_status.
                                        missing answer - a WRONG one, from an op whose purpose is
                                        verification.
 
-- [ ] **Tier 3 - motion worth rendering** (11 ops)
+- [ ] **Tier 3 - motion worth rendering** (4 of 11 left)
+      DONE 2026-09-03: evaluate_at_frame, edit_fcurve, add_fcurve_modifier, create_action /
+      assign_action / list_actions, set_bone_pose, set_shape_key.
+
+      evaluate_at_frame was built FIRST as the review advised, and it earned that immediately:
+      set_bone_pose's read-back and add_fcurve_modifier's "is the loop live" answer both depend on
+      reading through the depsgraph, because a constraint does not touch obj.matrix_world and a
+      curve modifier does not touch the keyframes. Every one of those would otherwise have been
+      verified by reading back what was written, which cannot fail.
+
+      What each closed, since the op names do not say it:
+        edit_fcurve          3 of Blender's 13 interpolations were reachable, at insert time only,
+                             and easing - which is most of the craft - not at all.
+        add_fcurve_modifier  there was NO WAY TO LOOP ANYTHING. Every turntable and idle was keyed
+                             out by hand. Refuses CYCLES on a curve with under two keyframes,
+                             because Blender adds it and does nothing, which looks like success.
+        the action ops       an object held ONE action forever, named whatever Blender auto-named
+                             it - and that string is the CLIP NAME glTF and FBX write into the
+                             engine. An unlinked action with no fake user is DELETED on save.
+        set_bone_pose        character animation had zero coverage. Reports written and evaluated
+                             separately, because a bone under IK does not end up where you put it.
+        set_shape_key        Blender clamps to the slider range silently; the clamp is reported.
+
+      STILL OPEN: bake_to_keyframes, markers with camera binding, the set_frame_range extension
+      (fps_base, frame_step, preview range), and a generic server-level batch.
+
+      bake_to_keyframes is the one with a trap already written down: bake_physics bakes POINT
+      CACHES, WHICH NO EXPORTER READS, so a rigid-body sim authored here can be rendered here and
+      handed to nothing. Its postcondition must sample the evaluated world matrix at K frames
+      before baking, then again with the sources muted, and report max position/rotation error -
+      producing the right NUMBER of keys while losing the motion is the normal failure when visual
+      keying is off. evaluate_at_frame now exists to do exactly that sampling.
       Build evaluate_at_frame FIRST, before anything fun, because it is how everything after it gets
       proven: every read in the addon reads the RAW property, which is not the evaluated value
       whenever a constraint, driver, NLA stack, parent or cache is involved. Take a frame LIST, save
