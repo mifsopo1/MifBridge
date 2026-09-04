@@ -299,9 +299,50 @@ def main():
             print("  %-28s %s" % (op, "  ".join("%s=%s" % (v, s)
                                                 for v, s in sorted(statuses.items()))))
             print("      %s" % EXPECTED_DIVERGENCE[op][:150])
+    # ------------------------------------------------------------------ REACH
+    # "ZERO RAW EXCEPTIONS" IS WEAKER THAN IT SOUNDS IF HALF THE TABLE REFUSED. A refusal is the op
+    # working, but it is NOT coverage: an op that declines for a missing parameter never reached its
+    # bpy calls, so this run says nothing about whether those calls are valid on this build. The
+    # compositor bug lived past the first guard, and an op refused at the door would have hidden it.
+    #
+    # So the reach is reported beside the findings. An op that refuses on EVERY build is untested
+    # here, whatever the headline says, and is listed by name rather than counted - a number invites
+    # rounding it off, a list of names invites fixing it.
+    reached, refused_everywhere = {}, []
+    for op in ops:
+        row = {r["version"]: r["results"].get(op, {}).get("status") for r in reports}
+        real = [s for s in row.values() if s and s != "skipped"]
+        if not real:
+            continue
+        for v, s in row.items():
+            if s == "ok":
+                reached.setdefault(v, []).append(op)
+        if real and all(s == "refused" for s in real):
+            refused_everywhere.append(op)
+    skipped = sorted({op for r in reports for op, e in r.get("results", {}).items()
+                      if e.get("status") == "skipped"})
+    print("")
+    print("REACH - how far the calls actually got, which is not the same as the findings above:")
+    for r in reports:
+        v = r.get("version", "?")
+        got = len(reached.get(v, []))
+        print("  %-12s %3d op(s) reached their bpy calls and returned ok" % (v, got))
+    if refused_everywhere:
+        print("")
+        print("  REFUSED ON EVERY BUILD - %d op(s). These were exercised as far as their guards and"
+              % len(refused_everywhere))
+        print("  NO FURTHER, so this run says nothing about whether their bpy calls are valid.")
+        print("  Give them a payload in PAYLOADS to close the gap:")
+        for i in range(0, len(refused_everywhere), 4):
+            print("    " + "  ".join("%-26s" % o for o in refused_everywhere[i:i + 4]))
+    if skipped:
+        print("")
+        print("  DELIBERATELY NOT RUN - %d op(s), each with a reason in SKIP: %s"
+              % (len(skipped), ", ".join(skipped)))
     print("")
     print("A refusal is NOT a finding - an op declining because the default scene has no armature")
-    print("is the op working. Raw exceptions and divergences are the findings.")
+    print("is the op working. Raw exceptions and divergences are the findings; REACH is how much of")
+    print("the table those findings actually cover.")
     return 1 if (raised or fatal) else 0
 
 

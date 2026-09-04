@@ -12527,13 +12527,36 @@ out-of-process the way ops_gen already does with gen_status.
       judgement at all: the same call on the same fixture should not change its mind between
       versions.
 
-- [ ] **gate the version matrix, once its runtime is known** (30 min)
-      It belongs in the ratcheted tuple by the same argument as every other check there - a drift
-      audit nobody runs is a drift audit that finds nothing. What decides it is COST: the tuple's
-      own header says audit_prose_dependence is excluded for being 58s, and this launches four
-      Blenders. If a full run is minutes rather than seconds it wants either a fast subset in the
-      gate and the full sweep on demand, or a place in a slow tier - not a quiet addition that
-      triples what somebody will run casually.
+- [x] **gate the version matrix** DONE 2026-09-03
+      MEASURED, and the answer was not what I expected: the full sweep - 132 ops across 3.6, 4.2,
+      4.4 and 5.0, 528 calls - is 2.0 SECONDS. A bare headless Blender launch is 0.37s on this
+      machine, so four of them plus the op table is cheaper than audit_factory_init, which has been
+      in the tuple all along at 15.9s. The cost objection I filed the item over did not survive
+      being measured.
+
+      A 2.0s figure for four process launches looked wrong enough to check rather than write down,
+      which is the only reason the number is trustworthy: timed per version (0.5s each) and against
+      a bare launch (0.37s) before believing it.
+
+      Exit code exercised BOTH WAYS before gating, because gating depends on it and "returns 1 by
+      construction" is not evidence: 1 with a planted AttributeError, 0 clean.
+
+- [ ] **40 of 132 ops refuse on every build, so the matrix says nothing about their bpy calls** (2 hours)
+      The reach report added the same day makes this visible instead of leaving "zero raw
+      exceptions" to sound stronger than it is. 72 ops reach their bpy calls and return ok, 20 are
+      deliberately skipped with a reason, and 40 refuse on every version - exercised as far as their
+      guards and no further.
+
+      That is not a failure of those ops; it is a gap in the PAYLOADS table, which only carries
+      enough to get past the required-parameter refusals for the ops somebody has bothered to fill
+      in. The 40 include the whole animation-editing family (add_driver, edit_fcurve, add_nla_strip,
+      bake_to_keyframes, evaluate_at_frame, delete_keyframe), the node-group authoring ops beyond
+      the first, and several mesh edits (boolean_op, join_objects, extrude_skirt, apply_modifier).
+
+      Worth doing because the compositor bug lived PAST the first guard: an op refused at the door
+      would have hidden it just as effectively as no test at all. Each needs a fixture built in the
+      default scene first - a second object for boolean_op, an action for the fcurve ops - so it is
+      payload work plus a small amount of scene setup, not a redesign.
 
 - [ ] **Tier 5 - craft depth** (1 of 5 left)
       DONE 2026-09-03: set_camera_panorama, move_keyframes, set_light_ies, set_light_linking.

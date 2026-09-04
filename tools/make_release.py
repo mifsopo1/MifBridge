@@ -546,6 +546,32 @@ def check_static_audits():
                        # purge count unverified, and the suite prints that in its own footer so a
                        # passing run cannot be misread as more than it is.
                        ("test_blender_refusals.py", []),
+                       # THE ONE CHECK IN THIS TUPLE THAT RUNS AGAINST A REAL BLENDER, and the
+                       # answer to the day test_blender_refusals could not have caught: the whole
+                       # compositor family shipped DEAD on 5.0 - scene.node_tree does not exist
+                       # there - with thirteen of its offline checks passing and every gate green.
+                       # It was found by luck, because the live addon happened to come up and a read
+                       # op returned an AttributeError.
+                       #
+                       # The offline suite is structurally incapable of that finding. It runs against
+                       # a stub written from the same assumptions as the code, so it agrees with
+                       # whatever the author believed including the wrong parts. A stub is a mirror.
+                       #
+                       # SAFE TO GATE because each install is launched --background --factory-startup:
+                       # a throwaway process with a fresh default scene, touching no file, no running
+                       # Blender and nobody's session. That is what lets the MUTATING ops be run too.
+                       #
+                       # AND IT IS CHEAP, which is the objection this tuple's own header raises about
+                       # audit_prose_dependence at 58s. MEASURED rather than assumed: a bare headless
+                       # Blender launch is 0.37s on this machine, and the full sweep - 132 ops across
+                       # 3.6, 4.2, 4.4 and 5.0, 528 calls - is 2.0s. Cheaper than audit_factory_init,
+                       # which is already here at 15.9s.
+                       #
+                       # A refusal is NOT a failure here, so this does not go red because the default
+                       # scene has no armature. It goes red on a RAW exception or an unexpected
+                       # divergence between builds. Exit code exercised both ways before gating: 1
+                       # with a planted AttributeError, 0 clean.
+                       ("blender_version_matrix.py", []),
                        # PARITY_CHECK, which was not in this tuple and is not run anywhere else in
                        # this file - checked 2026-09-03 by listing every script make_release
                        # actually executes: audit_value_discovery, harvest_param_table, and whatever
