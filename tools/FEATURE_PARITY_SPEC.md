@@ -14433,3 +14433,30 @@ out-of-process the way ops_gen already does with gen_status.
       that builds the world. Hoisted; the refusals now leave the scene worldless and the happy path
       still creates a world and applies colour and strength. The probe fails on the pre-fix file and
       passes on the fixed one, which is the only reason to believe it.
+
+- [x] **the ops that told the truth and still left a mess** DONE 2026-09-04
+      bake_texture and render_still say "NOTHING was baked" and "NOTHING was rendered", which is why
+      the audit lists them apart from the false ones - and an orphaned image, a material generated
+      for the occasion, a switched active UV layer and a moved current frame are not nothing.
+
+      bake_texture tested colour-space availability by ASSIGNING to a live image, so the check could
+      only run after all of that existed. The enum is on ColorManagedInputColorspaceSettings itself
+      - 25 entries on 5.0.1, "Non-Color" among them - so it is answerable before anything is built.
+      That path is unreachable on a stock OCIO config, so no test would ever have reached it, which
+      is the argument for reading the code rather than waiting for a failure.
+
+      render_still assigned sc.render.filepath and THEN asked whether a path was set. Target
+      resolved first, directory created first, scene touched last.
+
+      Both lists now read zero.
+
+- [x] **the gated audit proves its own rules, now that it reports zero** DONE 2026-09-04
+      Zero findings is the right answer and the exact point where a working rule and a dead one look
+      identical - and this is the half that gates the release. --selftest runs eleven synthetic ops
+      through the same code path as the real scan, each rule with a case it must catch AND a case it
+      must not, because a rule that only ever suppresses is indistinguishable from one that
+      suppresses everything.
+
+      Gated as its own entry. The gate summary now labels entries by what was RUN rather than by
+      script name: two lines both reading "audit_mutate_then_deny" looked like a bug in the list
+      rather than two different checks.
