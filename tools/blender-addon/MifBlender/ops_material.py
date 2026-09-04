@@ -1003,101 +1003,131 @@ def op_set_material_texture(params):
                          "can read. It was removed again. NOTHING was changed."
                          % (path or image_name))
 
-    tree = mat.node_tree
-    tex = tree.nodes.new("ShaderNodeTexImage")
-    tex.image = img
-    tex.location = (node.location[0] - 600, node.location[1])
-    interp = take(params, "interpolation", default=None, kind=str)
-    if interp:
-        _enum_or_refuse(tex, "interpolation", interp, "interpolation")
-    ext = take(params, "extension", default=None, kind=str)
-    if ext:
-        _enum_or_refuse(tex, "extension", ext, "extension")
-
-    # COLOUR SPACE IS SET ON THE IMAGE, NOT THE NODE, so it applies everywhere that image is used -
-    # which is why an override is reported rather than assumed.
-    want_cs = take(params, "colorspace", "colorSpace", default=None, kind=str)
-    default_cs = "sRGB" if which in _COLOR_INPUTS else "Non-Color"
-    chosen = str(want_cs) if want_cs else default_cs
-    cs_before = img.colorspace_settings.name
+    # EVERYTHING THIS BUILDS IS UNDONE IF ANY OF IT REFUSES, and this op shipped without that
+    # for a few hours on 2026-09-04 - written the same day, in the same session, as the fix for
+    # exactly this shape in ops_lightcam's _vec3. Finding it in my own new code an hour later is
+    # the reason the rule is a rule rather than a habit.
+    #
+    # The image is loaded from disk BEFORE the node exists, because a file that turns out not to
+    # be an image must be caught before anything is wired to it. That left three refusal paths -
+    # interpolation, extension and the colour space - each ending "NOTHING was changed" while a
+    # freshly loaded image datablock sat in the file; two of them left a TEX_IMAGE node behind as
+    # well. The colour-space path DID remove its node and still leaked the image, which is what
+    # per-site cleanup looks like once there are three sites.
+    #
+    # So the undo is structural. Nodes are tracked as they are made and the image is removed only
+    # if THIS call loaded it - an image that was already in the file is not ours to delete.
+    _made_nodes = []
     try:
-        img.colorspace_settings.name = chosen
-    except TypeError:
-        valid = [i.identifier for i in
-                 img.colorspace_settings.bl_rna.properties["name"].enum_items]
-        tree.nodes.remove(tex)
-        raise MifOpError("'%s' is not a colour space on this Blender. Available: %s. NOTHING was "
-                         "changed." % (chosen, ", ".join(valid)))
+        tree = mat.node_tree
+        tex = tree.nodes.new("ShaderNodeTexImage")
+        _made_nodes.append(tex)
+        tex.image = img
+        tex.location = (node.location[0] - 600, node.location[1])
+        interp = take(params, "interpolation", default=None, kind=str)
+        if interp:
+            _enum_or_refuse(tex, "interpolation", interp, "interpolation")
+        ext = take(params, "extension", default=None, kind=str)
+        if ext:
+            _enum_or_refuse(tex, "extension", ext, "extension")
 
-    uv_node = None
-    uv_map = take(params, "uvMap", default=None, kind=str)
-    if uv_map:
-        uv_node = tree.nodes.new("ShaderNodeUVMap")
-        uv_node.uv_map = str(uv_map)
-        uv_node.location = (tex.location[0] - 300, tex.location[1])
-        tree.links.new(uv_node.outputs["UV"], tex.inputs["Vector"])
+        # COLOUR SPACE IS SET ON THE IMAGE, NOT THE NODE, so it applies everywhere that image is used -
+        # which is why an override is reported rather than assumed.
+        want_cs = take(params, "colorspace", "colorSpace", default=None, kind=str)
+        default_cs = "sRGB" if which in _COLOR_INPUTS else "Non-Color"
+        chosen = str(want_cs) if want_cs else default_cs
+        cs_before = img.colorspace_settings.name
+        try:
+            img.colorspace_settings.name = chosen
+        except TypeError:
+            valid = [i.identifier for i in
+                     img.colorspace_settings.bl_rna.properties["name"].enum_items]
+            raise MifOpError("'%s' is not a colour space on this Blender. Available: %s. NOTHING was "
+                             "changed." % (chosen, ", ".join(valid)))
 
-    # THE OLD LINK GOES FIRST. links.new on a single-input socket replaces silently, but the node
-    # that fed it is left floating in the tree where describe_material will keep reporting it.
-    replaced = None
-    for link in list(target.links):
-        replaced = link.from_node.name
-        tree.links.remove(link)
-
-    normal_node = None
-    if which == _NORMAL_INPUT:
-        normal_node = tree.nodes.new("ShaderNodeNormalMap")
-        normal_node.location = (node.location[0] - 300, node.location[1] - 300)
-        strength = take_float(params, "strength", default=None)
-        if strength is not None:
-            normal_node.inputs["Strength"].default_value = strength
+        uv_node = None
+        uv_map = take(params, "uvMap", default=None, kind=str)
         if uv_map:
-            normal_node.uv_map = str(uv_map)
-        tree.links.new(tex.outputs["Color"], normal_node.inputs["Color"])
-        tree.links.new(normal_node.outputs["Normal"], target)
-    elif which == "alpha":
-        # ALPHA COMES FROM THE ALPHA OUTPUT. Wiring Color into Alpha uses the red channel and looks
-        # almost right on a greyscale mask, which is how it survives review.
-        tree.links.new(tex.outputs["Alpha"], target)
-    else:
-        tree.links.new(tex.outputs["Color"], target)
+            uv_node = tree.nodes.new("ShaderNodeUVMap")
+            _made_nodes.append(uv_node)
+            uv_node.uv_map = str(uv_map)
+            uv_node.location = (tex.location[0] - 300, tex.location[1])
+            tree.links.new(uv_node.outputs["UV"], tex.inputs["Vector"])
 
-    # READ BACK OFF THE TREE. links.new returns a link object whether or not Blender kept it, and a
-    # rejected link leaves the socket exactly as unlinked as it was.
-    linked = target.is_linked and any(
-        l.from_node.name in (tex.name, getattr(normal_node, "name", None)) for l in target.links)
-    if not linked:
-        tree.nodes.remove(tex)
-        if normal_node is not None:
-            tree.nodes.remove(normal_node)
-        if uv_node is not None:
-            tree.nodes.remove(uv_node)
-        raise MifOpError("the link to '%s' was not accepted by Blender and the nodes were removed "
-                         "again - nothing is wired. NOTHING was changed." % which)
+        # THE OLD LINK GOES FIRST. links.new on a single-input socket replaces silently, but the node
+        # that fed it is left floating in the tree where describe_material will keep reporting it.
+        replaced = None
+        for link in list(target.links):
+            replaced = link.from_node.name
+            tree.links.remove(link)
 
-    return {
-        "ok": True,
-        "material": mat.name,
-        "input": which,
-        "imageNode": tex.name,
-        "image": img.name,
-        "imageFile": bpy.path.abspath(img.filepath) if img.filepath else None,
-        "imageSize": list(img.size),
-        "hasAlphaChannel": bool(img.depth in (32, 64)),
-        # MEASURED OFF THE SOCKET, not assumed from the call. This is the field that says the
-        # texture will actually be read.
-        "linked": True,
-        "colorSpace": img.colorspace_settings.name,
-        "colorSpaceWasChanged": cs_before != img.colorspace_settings.name,
-        "colorSpaceNote": (None if which in _COLOR_INPUTS else _DATA_NOTE),
-        "normalMapNode": getattr(normal_node, "name", None),
-        "uvMapNode": getattr(uv_node, "name", None),
-        "replacedLinkFrom": replaced,
-        "loadedFromDisk": loaded_now,
-        "note": ("wired through a Normal Map node, which converts tangent-space RGB into the vector "
-                 "the Normal input takes. Linking the image straight in is the usual mistake and "
-                 "reads as correct in every field.") if normal_node is not None else None,
-    }
+        normal_node = None
+        if which == _NORMAL_INPUT:
+            normal_node = tree.nodes.new("ShaderNodeNormalMap")
+            _made_nodes.append(normal_node)
+            normal_node.location = (node.location[0] - 300, node.location[1] - 300)
+            strength = take_float(params, "strength", default=None)
+            if strength is not None:
+                normal_node.inputs["Strength"].default_value = strength
+            if uv_map:
+                normal_node.uv_map = str(uv_map)
+            tree.links.new(tex.outputs["Color"], normal_node.inputs["Color"])
+            tree.links.new(normal_node.outputs["Normal"], target)
+        elif which == "alpha":
+            # ALPHA COMES FROM THE ALPHA OUTPUT. Wiring Color into Alpha uses the red channel and looks
+            # almost right on a greyscale mask, which is how it survives review.
+            tree.links.new(tex.outputs["Alpha"], target)
+        else:
+            tree.links.new(tex.outputs["Color"], target)
+
+        # READ BACK OFF THE TREE. links.new returns a link object whether or not Blender kept it, and a
+        # rejected link leaves the socket exactly as unlinked as it was.
+        linked = target.is_linked and any(
+            l.from_node.name in (tex.name, getattr(normal_node, "name", None)) for l in target.links)
+        if not linked:
+            tree.nodes.remove(tex)
+            if normal_node is not None:
+                tree.nodes.remove(normal_node)
+            if uv_node is not None:
+                tree.nodes.remove(uv_node)
+            raise MifOpError("the link to '%s' was not accepted by Blender and the nodes were removed "
+                             "again - nothing is wired. NOTHING was changed." % which)
+
+        return {
+            "ok": True,
+            "material": mat.name,
+            "input": which,
+            "imageNode": tex.name,
+            "image": img.name,
+            "imageFile": bpy.path.abspath(img.filepath) if img.filepath else None,
+            "imageSize": list(img.size),
+            "hasAlphaChannel": bool(img.depth in (32, 64)),
+            # MEASURED OFF THE SOCKET, not assumed from the call. This is the field that says the
+            # texture will actually be read.
+            "linked": True,
+            "colorSpace": img.colorspace_settings.name,
+            "colorSpaceWasChanged": cs_before != img.colorspace_settings.name,
+            "colorSpaceNote": (None if which in _COLOR_INPUTS else _DATA_NOTE),
+            "normalMapNode": getattr(normal_node, "name", None),
+            "uvMapNode": getattr(uv_node, "name", None),
+            "replacedLinkFrom": replaced,
+            "loadedFromDisk": loaded_now,
+            "note": ("wired through a Normal Map node, which converts tangent-space RGB into the vector "
+                     "the Normal input takes. Linking the image straight in is the usual mistake and "
+                     "reads as correct in every field.") if normal_node is not None else None,
+        }
+    except MifOpError:
+        for _n in _made_nodes:
+            try:
+                mat.node_tree.nodes.remove(_n)
+            except Exception:  # noqa: BLE001 - cleanup must not mask the real refusal
+                pass
+        if loaded_now:
+            try:
+                bpy.data.images.remove(img)
+            except Exception:  # noqa: BLE001
+                pass
+        raise
 
 
 def _enum_or_refuse(holder, attr, value, label):

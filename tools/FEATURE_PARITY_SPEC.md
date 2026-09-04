@@ -13992,3 +13992,30 @@ out-of-process the way ops_gen already does with gen_status.
       SETTINGS - and maintaining that list is the manual audit with extra steps, so it earns nothing.
       The twelve-family sweep is done and its findings are fixed; the next one should be done the
       same way, by reading, when a family gains ops.
+
+- [x] **I shipped the mutate-then-deny defect myself, hours after fixing it elsewhere** DONE 2026-09-04
+      Every open item is genuinely blocked, so I turned the day's own lenses on the day's own code -
+      the twelve ops written today are the least-reviewed lines in the repo. The first lens found
+      something, and it was mine.
+
+      set_material_texture loads the image from disk BEFORE creating the node, deliberately: a file
+      that turns out not to be an image has to be caught before anything is wired to it. That left
+      THREE refusal paths - interpolation, extension and the colour space - each ending "NOTHING was
+      changed" while a freshly loaded image datablock sat in the file. Two of them left a TEX_IMAGE
+      node in the material as well.
+
+      This is the same shape as ops_lightcam's _vec3, fixed earlier the same session, and the
+      colour-space path is the tell: it DID remove its own node and still leaked the image. That is
+      what per-site cleanup looks like once there are three sites, so the undo is structural now -
+      nodes tracked as they are made, the image removed only if THIS call loaded it, and a
+      try/except around the whole build that a fourth refusal cannot be added outside of.
+
+      Verified on 3.6.23 and 5.0.1 by measuring the LEAK rather than the message: all three refusals
+      leave the image and node counts unchanged, and the happy path still wires three nodes and
+      reports sRGB.
+
+      THE PATCH SCRIPT REFUSED TO WRITE A BROKEN FILE, which is the part worth keeping. Wrapping a
+      95-line body means re-indenting it, and my first attempt inserted the node-tracking calls at a
+      fixed indent - wrong for the two that sit inside an `if`. The script ast.parse()s its own
+      output before writing, so it raised IndentationError and changed nothing. A refactor that
+      cannot half-apply is worth the extra three lines.
