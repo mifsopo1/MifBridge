@@ -15408,3 +15408,24 @@ out-of-process the way ops_gen already does with gen_status.
 
       The REACH line should land first and on its own: it is the honest number, it is cheap, and
       it stops "all 7" from reading as complete while the widening is still being written.
+
+- [ ] **the repro line printed under a new report is not that report's**
+      Seen live during the #4 loop self-test on 2026-09-04. report_repro.py replays everything in the
+      queue, not just the report that woke the watcher, so the lines logged directly beneath
+      "NEW REPORT #4" read:
+
+        repro ok
+          ok=False in 0.33s
+          error: blueprint not found: /Game/_MifReport/WBP_RetypeTest
+
+      That path belongs to #2, which is still queued and unresolved. Anyone reading the log - or an
+      agent reading it, which the spawned prompt tells it to do - would take that failure as #4's.
+      The header says "repro ok" and the body says ok=False about a different report entirely.
+
+      Replaying the whole queue is defensible: an unresolved report is worth re-checking when the
+      editor comes back. What is not defensible is printing the results under one report's heading
+      without saying which report each line is about. Wants the per-result lines labelled with their
+      issue number, and the summary to say "replayed N of M" rather than reading as a verdict on the
+      one that just arrived.
+
+      Not touched while the #4 agent was still running, since it reads report_queue.json.
