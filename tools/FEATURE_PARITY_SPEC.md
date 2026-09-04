@@ -12095,7 +12095,18 @@ out-of-process the way ops_gen already does with gen_status.
       with the sources muted, and report max position/rotation error - because producing the right
       NUMBER of keys while losing the motion is the normal failure when visual keying is off.
 
-- [ ] **Tier 5 - craft depth** (3 of 5 left)
+- [ ] **Tier 5 - craft depth** (1 of 5 left)
+      DONE 2026-09-03: set_camera_panorama, move_keyframes, set_light_ies, set_light_linking.
+
+      THAT COMPLETES THE LIGHTING SURFACE. This morning it was create_light and nothing else; it is
+      now create, modify, read, aim, ray visibility, IES photometric profiles and light linking.
+      IES needed a NODE TREE rather than a property - Blender wires an IES Texture into an Emission
+      shaders Strength - which is why it was absent: the addon had never touched a lights node tree
+      on either half of ops_lightcam.
+
+      STILL OPEN: set_light_shadow, the engine-specific half only. The general half - hide_render,
+      per-ray visibility, holdout, shadow catcher - landed as set_object_visibility in Tier 2,
+      because those live on the OBJECT and apply to every type rather than to lights.
       DONE 2026-09-03: set_camera_panorama and move_keyframes.
 
       set_camera_panorama closed a DECLARED-AND-UNREACHABLE, which is the class this project keeps
