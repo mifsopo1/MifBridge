@@ -70,6 +70,13 @@ MUTATORS = sorted(set([
 ] + [name for name, _why in SILENT_APIS]))
 MUTATOR_RE = re.compile(r"\b(%s)\s*\(" % "|".join(re.escape(m) for m in MUTATORS))
 
+# A setter on a pointer is a write - except the five that build the RESPONSE. See the note above
+# _is_json_builder: counting Out->SetStringField would have made every handler in the plugin look
+# like a mutator because it answers its caller.
+SETTER_RE = re.compile(r"->\s*(Set[A-Z][A-Za-z0-9_]*)\s*\(")
+JSON_FIELD_SETTERS = ("SetStringField", "SetNumberField", "SetBoolField", "SetArrayField",
+                      "SetObjectField", "SetField")
+
 # How a handler refuses. ANY Fail*/Refuse* name, not the four that happened to exist when this was
 # written: RefuseIfCookedGraph, RefuseIfSavingOrCollecting, RefuseIfGated and RefuseIfEditLayers are
 # 15 call sites that `Refuse\s*\(` could never match, and the next wrapper would have been invisible
@@ -336,6 +343,8 @@ def scan_body(fname, endpoint, body, base, findings, scoped, delegating):
     scrubbed = H.blank_comments_and_strings(body)
     blks = blocks(scrubbed)
     muts = [(m.start(), m.group(1)) for m in MUTATOR_RE.finditer(scrubbed)]
+    muts += [(m.start(), m.group(1)) for m in SETTER_RE.finditer(scrubbed)
+             if m.group(1) not in JSON_FIELD_SETTERS]
     # ...and calls to a helper IN THIS FILE that mutates. IKRig wraps every one of its writes in
     # IKMarkDirty, so eleven endpoints there had no direct mutator at all and the audit could not
     # see them. Handlers are skipped: H_ functions contain mutators by definition and a handler
@@ -399,7 +408,9 @@ def reach():
             continue
         promising += 1
         writers = failing_writers_in(fname)
-        if MUTATOR_RE.search(scrubbed) or any(w + "(" in scrubbed for w in writers):
+        setter = any(m.group(1) not in JSON_FIELD_SETTERS
+                     for m in SETTER_RE.finditer(scrubbed))
+        if MUTATOR_RE.search(scrubbed) or setter or any(w + "(" in scrubbed for w in writers):
             judged += 1
         else:
             blind.append((fname, endpoint))
