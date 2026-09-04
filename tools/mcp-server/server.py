@@ -3684,7 +3684,7 @@ def list_game_feature_plugins(name_contains: str = None, active_only: bool = Fal
 
 @mcp.tool()
 def describe_game_feature_plugin(name: str) -> dict:
-    "Describe one Game Feature plugin by NAME (like 'DDS2Casino'), not by asset path: its derived state, descriptor fields, and modules."
+    "Describe one Game Feature plugin by NAME (like 'MyGameFeature'), not by asset path: its derived state, descriptor fields, and modules."
     return _post("describe_game_feature_plugin", name=name)
 
 
