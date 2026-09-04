@@ -5020,6 +5020,16 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_move_keyframes(object: str, data_path: str = None, index: int = None,
+                      offset: float = None, scale: float = None, pivot: float = None,
+                      frame_start: float = None, frame_end: float = None) -> dict:
+    "Retime Blender keyframes - shift them by an offset, or scale the timing about a pivot. Retiming is a core animation operation and nothing here could do it: bl_delete_keyframe and bl_set_keyframe together can only rebuild an animation from scratch, losing every handle, interpolation and easing on the way, so 'make this 20% slower' meant re-authoring it. THE HANDLES MOVE WITH THE KEYS - a bezier handle is stored in ABSOLUTE frame coordinates, so moving only the key leaves its handles behind and silently reshapes the curve while the interpolation still reads BEZIER. Keys are moved in the direction of travel (later-first when shifting forwards) because Blender keeps them sorted and a key crossing one that has not moved yet makes the walk skip or revisit it. offset and scale are refused together as an ambiguous order. framesChanged reports whether the frame list actually differs, since an offset of 0 or a scale of 1 does nothing whatever the call said. Call mif_help(\"bl_move_keyframes\") first."
+    return _blender("move_keyframes", object=object, dataPath=data_path, index=index,
+                    offset=offset, scale=scale, pivot=pivot, frameStart=frame_start,
+                    frameEnd=frame_end)
+
+
+@mcp.tool()
 def bl_set_camera_panorama(object: str, panorama_type: str = None, fisheye_fov: float = None,
                            fisheye_lens: float = None, latitude_min: float = None,
                            latitude_max: float = None, longitude_min: float = None,

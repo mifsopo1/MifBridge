@@ -322,6 +322,17 @@ def main():
              {"name": "NoSuchMarkerZz"}, ["frame' is required"]),
             ("bake_to_keyframes with end before start", ops_anim.op_bake_to_keyframes,
              {"object": "Cube", "frameStart": 50, "frameEnd": 10}, ["before", "NOTHING was baked"]),
+            ("move_keyframes with neither offset nor scale", ops_anim.op_move_keyframes,
+             {"object": "Cube"}, ["offset", "scale"]),
+            ("move_keyframes with BOTH offset and scale", ops_anim.op_move_keyframes,
+             {"object": "Cube", "offset": 5, "scale": 2}, ["not both", "ambiguous"]),
+            ("move_keyframes with a zero scale", ops_anim.op_move_keyframes,
+             {"object": "Cube", "scale": 0}, ["must be positive", "collapses"]),
+            ("move_keyframes with a negative scale", ops_anim.op_move_keyframes,
+             {"object": "Cube", "scale": -1}, ["must be positive"]),
+            ("move_keyframes with an inverted range", ops_anim.op_move_keyframes,
+             {"object": "Cube", "offset": 5, "frameStart": 50, "frameEnd": 10},
+             ["before", "NOTHING was moved"]),
     ):
         ok, detail = refuses(fn, params, *words)
         check("B108 %s" % label, ok, detail)

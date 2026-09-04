@@ -1636,7 +1636,128 @@ def op_add_nla_strip(params):
     }
 
 
+def op_move_keyframes(params):
+    """Retime keyframes - shift them, or scale the timing about a pivot.
+
+    Retiming is a core animation operation and nothing here could do it. delete_keyframe and
+    set_keyframe together can only rebuild an animation from scratch, which loses every handle,
+    interpolation and easing on the way - so "make this 20% slower" or "push everything after
+    frame 50 back ten frames" meant re-authoring it.
+
+    params:
+      object (str, required)
+      dataPath (alias path)     limit to one channel; omitted moves EVERY curve on the object
+      index (int)               limit to one array element
+      offset (float)            frames to shift by. Negative moves earlier.
+      scale (float)             multiply the timing about `pivot`. 2.0 is half speed.
+      pivot (float)             the frame that stays put under scale, default the first key
+      frameStart / frameEnd     only touch keys inside this range
+
+    offset and scale are refused TOGETHER: applying both leaves the order ambiguous, and a caller
+    who wants each can ask twice and see each result.
+
+    THE HANDLES MOVE WITH THE KEYS. A bezier handle is stored in absolute frame coordinates, so
+    moving only co leaves the handles behind and silently reshapes every curve it touches.
+    """
+    reject_unknown(params, {"object", "name", "dataPath", "path", "index", "offset", "scale",
+                            "pivot", "frameStart", "frameEnd"}, "move_keyframes")
+    obj = get_object(take(params, "object", "name", required=True))
+    path = take(params, "dataPath", "path", default=None, kind=str)
+    index = params.get("index")
+
+    offset = take_float(params, "offset", default=None)
+    scale = take_float(params, "scale", default=None)
+    if offset is not None and scale is not None:
+        raise MifOpError("pass offset OR scale, not both - applying both leaves the order "
+                         "ambiguous. Call twice if you want each. NOTHING was moved.")
+    if offset is None and scale is None:
+        raise MifOpError("pass offset (frames to shift) or scale (a timing multiplier). NOTHING "
+                         "was moved.")
+    if scale is not None and scale <= 0:
+        raise MifOpError("scale must be positive, got %g - a zero or negative multiplier collapses "
+                         "or reverses the timing and is never what is meant. NOTHING was moved."
+                         % scale)
+
+    lo = take_float(params, "frameStart", default=None)
+    hi = take_float(params, "frameEnd", default=None)
+    if lo is not None and hi is not None and hi < lo:
+        raise MifOpError("frameEnd (%g) is before frameStart (%g). NOTHING was moved." % (hi, lo))
+
+    curves = _curves_for(obj, path, index) if path else [
+        fc for holder in (obj, obj.data if obj.data is not None else None) if holder is not None
+        for fc in _fcurves(holder)
+        if index is None or fc.array_index == int(index)]
+    if not curves:
+        raise MifOpError("no fcurve on '%s'%s - nothing to retime. List them with list_keyframes. "
+                         "NOTHING was moved."
+                         % (obj.name, " for dataPath '%s'" % path if path else ""))
+
+    selected = []
+    for fc in curves:
+        for kp in fc.keyframe_points:
+            f = kp.co[0]
+            if lo is not None and f < lo:
+                continue
+            if hi is not None and f > hi:
+                continue
+            selected.append((fc, kp))
+    if not selected:
+        raise MifOpError("no keyframe on '%s' falls inside %s. NOTHING was moved."
+                         % (obj.name,
+                            "frames %s..%s" % (lo if lo is not None else "-inf",
+                                               hi if hi is not None else "+inf")))
+
+    pivot = take_float(params, "pivot", default=None)
+    if pivot is None:
+        pivot = min(kp.co[0] for _fc, kp in selected)
+
+    before = sorted({round(float(kp.co[0]), 4) for _fc, kp in selected})
+
+    def new_frame(f):
+        return f + offset if offset is not None else pivot + (f - pivot) * scale
+
+    # MOVED IN THE DIRECTION OF TRAVEL. Blender keeps keyframe_points sorted by frame, and shifting
+    # a key past its neighbour while iterating forwards makes the walk skip or revisit keys. Moving
+    # later-first when going forwards, and earlier-first when going backwards, means a key never
+    # crosses one that has not moved yet.
+    forwards = (offset is not None and offset > 0) or (scale is not None and scale > 1.0)
+    ordered = sorted(selected, key=lambda pair: pair[1].co[0], reverse=forwards)
+    for fc, kp in ordered:
+        f0 = kp.co[0]
+        f1 = new_frame(f0)
+        delta = f1 - f0
+        kp.co[0] = f1
+        # HANDLES ARE ABSOLUTE FRAME COORDINATES. Moving only co leaves them behind and reshapes
+        # the curve silently - the interpolation still reads BEZIER and the motion is different.
+        try:
+            kp.handle_left[0] += delta
+            kp.handle_right[0] += delta
+        except (AttributeError, TypeError):
+            pass
+    for fc in curves:
+        fc.update()
+
+    after = sorted({round(float(kp.co[0]), 4) for _fc, kp in selected})
+    return {
+        "object": obj.name,
+        "dataPath": path,
+        "curves": len(curves),
+        "keyframesMoved": len(selected),
+        "offset": offset,
+        "scale": scale,
+        "pivot": round(float(pivot), 4),
+        "framesBefore": before[:40],
+        "framesAfter": after[:40],
+        # MEASURED. A retime that produced the same frame list did nothing, whatever the parameters
+        # said - which is what an offset of 0 or a scale of 1 looks like, and what a range that
+        # matched nothing would look like if it were not refused above.
+        "framesChanged": before != after,
+        "handlesMoved": True,
+    }
+
+
 OPS = {
+    "move_keyframes": op_move_keyframes,
     "add_nla_strip": op_add_nla_strip,
     "add_driver": op_add_driver,
     "remove_driver": op_remove_driver,
