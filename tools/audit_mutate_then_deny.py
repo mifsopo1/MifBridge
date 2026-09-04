@@ -44,10 +44,18 @@ the raise is lexically after the write and can never follow it. Every node is ta
 branch path it sits under, and a mutation/raise pair that diverges at any `if`, `try` or `for` is
 skipped. Without this the audit reported dozens of pairs that cannot co-occur.
 
-WHAT IT CANNOT SEE. A mutation inside a callee - `_place(obj, params)` hid exactly this defect until
-the parse was split out - because that needs whole-program flow this does not attempt. Cross-function
-reach is the known hole; ops that delegate their writes are listed by --show-delegating so the gap is
-visible rather than silent.
+WHAT IT CANNOT SEE, and the number is printed on every run rather than buried here. 103 ops promise
+something about state and a write is visible in 74 of them. The other 29 are UNJUDGED, which is not
+the same as clean, and a gate at zero over an unmeasured surface is the exact failure this project
+keeps naming - the matrix prints REACH beside its findings for the same reason.
+
+Most of the 29 are ops whose PRODUCT is a removal: delete_keyframe, remove_driver,
+remove_constraint, unlink_objects. `.remove()` is deliberately read as the UNDO signal by
+_undone_before, so an op that removes for a living has no write this design can see. That is a real
+limit rather than an oversight, and --reach lists every one of them.
+
+A write inside a callee used to be the other hole - `_place(obj, params)` hid exactly this defect
+until the parse was split out - and is now covered: a call to a helper that writes counts as a write.
 """
 import argparse
 import ast
@@ -851,12 +859,47 @@ def op_probe(params):
     return bad
 
 
+def reach():
+    """(promising, judged, unjudged rows) - the surface this audit can actually speak about.
+
+    An op with no recognised write is not clean. It is invisible, and a gate at zero over an
+    unmeasured surface is the failure this project keeps naming: green that means nothing.
+    """
+    promising, judged, blind = 0, 0, []
+    for fname in sorted(f for f in os.listdir(ADDON)
+                        if f.startswith("ops_") and f.endswith(".py")):
+        tree = ast.parse(io.open(os.path.join(ADDON, fname), "rb").read().decode("utf-8"))
+        helpers = _refusing_helpers(tree)
+        writers = set()
+        for helper in ast.walk(tree):
+            if isinstance(helper, ast.FunctionDef) and not helper.name.startswith("op_"):
+                inner, a, b, c, d = [], {}, {}, {}, {}
+                _walk_body(helper.body, [], inner, a, b, c, d)
+                if any(_is_mutation(s) for s, _p in inner):
+                    writers.add(helper.name)
+        for fn in tree.body:
+            if not isinstance(fn, ast.FunctionDef) or not fn.name.startswith("op_"):
+                continue
+            stmts, t2, o2, f2, r2 = [], {}, {}, {}, {}
+            _walk_body(fn.body, [], stmts, t2, o2, f2, r2)
+            if not any(_claim_text(s) or _refusing_calls(s, helpers, set()) for s, _p in stmts):
+                continue
+            promising += 1
+            if any(_is_mutation(s) or _mutating_call(s, writers) for s, _p in stmts):
+                judged += 1
+            else:
+                blind.append((fname, fn.name))
+    return promising, judged, blind
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--check", action="store_true",
                     help="exit 1 on any finding (for the release gate)")
     ap.add_argument("--show-delegating", action="store_true",
                     help="list ops whose writes happen in a helper, which this cannot follow")
+    ap.add_argument("--reach", action="store_true",
+                    help="list the ops this audit cannot judge")
     ap.add_argument("--selftest", action="store_true",
                     help="prove each precision rule can both fire and stay quiet")
     args = ap.parse_args()
@@ -883,6 +926,17 @@ def main():
     dead = sorted(k for k in ALLOWED if k not in reachable)
     print("audit_mutate_then_deny: %d op files, %d allow-listed, %d findings"
           % (len(files), len(ALLOWED), len(findings)))
+    promising, judged, blind = reach()
+    print("REACH - %d op(s) promise something about state; a write is visible in %d."
+          % (promising, judged))
+    print("        %d are UNJUDGED, not clean - mostly ops whose PRODUCT is a removal, because"
+          % len(blind))
+    print("        .remove() is read as the undo signal. A gate at zero needs this line beside it.")
+    if args.reach:
+        print("")
+        print("UNJUDGED OPS (%d):" % len(blind))
+        for fname, op in blind:
+            print("  %-22s %s" % (fname, op))
     for key in dead:
         print("  DEAD ALLOW-LIST ENTRY: %s :: %s excuses nothing - delete it or fix the name"
               % key)

@@ -385,6 +385,27 @@ def scan():
     return findings, scoped, delegating
 
 
+def reach():
+    """(promising, judged, unjudged rows) - how much of the surface this audit can speak about.
+
+    A handler with no recognised write is not clean. It is invisible, and saying so is the
+    difference between a finding count and a claim about the codebase.
+    """
+    promising, judged, blind = 0, 0, []
+    for fname, endpoint, body in handler_bodies():
+        scrubbed = H.blank_comments_and_strings(body)
+        if not any(claim_at(body, scrubbed, m.start())
+                   for m in REFUSE_RE.finditer(scrubbed)):
+            continue
+        promising += 1
+        writers = failing_writers_in(fname)
+        if MUTATOR_RE.search(scrubbed) or any(w + "(" in scrubbed for w in writers):
+            judged += 1
+        else:
+            blind.append((fname, endpoint))
+    return promising, judged, blind
+
+
 # Each case is (name, should_fire, C++ body). The pairs matter more than the cases: a rule that only
 # ever suppresses is indistinguishable from a rule that suppresses everything.
 SELFTEST = [
@@ -494,6 +515,8 @@ def main():
     ap.add_argument("--show-delegating", action="store_true",
                     help="handlers that promise but write through a helper this cannot follow")
     ap.add_argument("--by-endpoint", action="store_true", help="one line per endpoint")
+    ap.add_argument("--reach", action="store_true",
+                    help="how many promising handlers this audit can actually judge")
     ap.add_argument("--selftest", action="store_true",
                     help="prove each precision rule can both fire and stay quiet")
     args = ap.parse_args()
@@ -531,6 +554,19 @@ def main():
         print("has not written. Listed because that is a property of the helper today, not a rule.")
         for fname, ep, helper in sorted(set(delegating))[:40]:
             print("  %-34s %-28s -> %s" % (fname, ep, helper))
+
+    promising, judged, blind = reach()
+    print("REACH - %d handler(s) make a promise about state; a write is visible in %d of them."
+          % (promising, judged))
+    print("        The other %d are UNJUDGED, not clean: they mutate through APIs MUTATORS does not"
+          % len(blind))
+    print("        name. A finding count without this line reads as a verdict on all %d."
+          % promising)
+    if args.reach:
+        print("")
+        print("UNJUDGED HANDLERS (%d):" % len(blind))
+        for fname, endpoint in blind:
+            print("  %-34s %s" % (fname, endpoint))
 
     if findings:
         contradicted = [r for r in findings if r.get("verb") in ("changed", "created", "added")]
