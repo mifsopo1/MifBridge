@@ -83,6 +83,11 @@ GLOBAL_CLAIM = re.compile(
 # counter in blender_version_matrix is where that gets judged. Silence here would lose it.
 OPERATION_VERBS = ("baked", "rendered", "written", "exported", "imported", "saved")
 
+# THE MIRROR CLAIM. "The node WAS added as '%s'." is an instruction to go and clean something up, so
+# it has to be true on every path that can reach it. A refusal saying this with nothing created
+# sends the caller after an object that does not exist, under a name that belongs to nothing.
+POSITIVE_CLAIM = re.compile(r"\b(?:The [a-z ]+|It|A [a-z ]+) WAS ([a-z]+)")
+
 # Calls that reach real state. See the module docstring for why this is short.
 BPY_NEW_ROOTS = ("bpy.data", "bpy.context")
 
@@ -359,6 +364,43 @@ def _removed_names(fn):
     return names
 
 
+_CREATE_HINTS = ("new", "create", "add", "append", "load", "copy", "duplicate")
+
+
+def _looks_like_creation(stmt):
+    """Any sign at all that this statement built something. Deliberately generous - see the module
+    comment on _positive_claim: this test only suppresses mirror findings, so erring wide costs a
+    missed lie and erring narrow costs a false accusation."""
+    # _own_nodes, NOT ast.walk. The same compound-statement mistake the main pass had: walking an
+    # `if` descends into its body, so the statement `if ok: node = nodes.new(...)` looked like a
+    # creation at the OUTER level and backed a claim made in the `else` arm. Caught by the
+    # self-test's third mirror case, which is the whole reason it has one.
+    for sub in _own_nodes(stmt):
+        if isinstance(sub, ast.Call):
+            attr = getattr(sub.func, "attr", None) or getattr(sub.func, "id", "") or ""
+            # CONTAINED, not prefixed. op_add_group_interface builds its socket with
+            # `_iface_new(...)`, and a leading underscore is enough to defeat startswith - both of
+            # that op's honest "The socket WAS created." messages were reported as lies by it.
+            if any(h in attr.lower() for h in _CREATE_HINTS):
+                return True
+        if isinstance(sub, (ast.Attribute, ast.Subscript)) and isinstance(sub.ctx, ast.Store):
+            return True
+    return False
+
+
+def _positive_claim(node):
+    """If this raise asserts something WAS created/added, return the sentence."""
+    if not isinstance(node, ast.Raise) or node.exc is None:
+        return None
+    exc = node.exc
+    if not (isinstance(exc, ast.Call) and getattr(exc.func, "id", "") == "MifOpError"):
+        return None
+    joined = " ".join(sub.value for sub in ast.walk(exc)
+                      if isinstance(sub, ast.Constant) and isinstance(sub.value, str))
+    hit = POSITIVE_CLAIM.search(joined)
+    return " ".join(joined.split()) if hit else None
+
+
 def _ends_terminal(body):
     """Does this branch always leave the function - so nothing after it can run?"""
     return bool(body) and isinstance(body[-1], (ast.Return, ast.Raise, ast.Continue, ast.Break))
@@ -572,7 +614,7 @@ def scan_source(name, src):
         _walk_body(helper.body, [], inner, iterm, iowner, ifin, iroll)
         if any(_is_mutation(s) for s, _p in inner):
             writers.add(helper.name)
-    findings, scoped, delegating, reachable = [], [], [], []
+    findings, scoped, delegating, reachable, unbacked = [], [], [], [], []
     for fn in tree.body:
         if not isinstance(fn, ast.FunctionDef):
             continue
@@ -618,6 +660,26 @@ def scan_source(name, src):
             if mutations and raises:
                 reachable.append((name, fn.name))
             continue
+        # THE MIRROR PASS. A raise claiming something WAS created needs a creation above it that
+        # can actually have run. Judged against the SAME mutation list, so a helper that writes
+        # counts here too - otherwise every op that delegates its creation would report falsely.
+        for rstmt, rpath in stmts:
+            # OPS ONLY. _write_node_property says "The node WAS added." fourteen times and is
+            # telling the truth every time - its CALLER added the node. A helper cannot see what
+            # its caller built, so judging one against its own body reports every honest handoff
+            # as a lie. Fourteen of the first eighteen findings were that.
+            if not fn.name.startswith("op_"):
+                continue
+            claim = _positive_claim(rstmt)
+            if not claim:
+                continue
+            backed = any(s.lineno < rstmt.lineno and not _exclusive(p, rpath, terminal)
+                         and _looks_like_creation(s)
+                         for s, p in stmts)
+            if not backed:
+                unbacked.append({"file": name, "func": fn.name, "line": rstmt.lineno,
+                                 "claim": claim[:110]})
+
         for mstmt, mpath, label in mutations:
             for rstmt, rpath, claim, helper in raises:
                 # ONE CALL IS NOT A PAIR. _apply_common both writes and refuses, so the single
@@ -635,7 +697,7 @@ def scan_source(name, src):
                     "claim": claim[:90],
                 })
                 break  # one finding per write is enough to send someone to the function
-    return findings, scoped, delegating, reachable
+    return findings, scoped, delegating, reachable, unbacked
 
 
 # Each case is (name, should_fire, source). The PAIRS are the point: a rule that only ever suppresses
@@ -723,11 +785,42 @@ def op_probe(params):
 ]
 
 
+# The mirror pass, both directions. It reads zero on the real addon, so nothing else shows it works.
+MIRROR_SELFTEST = [
+    ("claims a node was added, and added one", False, """
+def op_probe(params):
+    node = tree.nodes.new("ShaderNodeMath")
+    if bad:
+        raise MifOpError("bad. The node WAS added as 'x'.")
+"""),
+    ("claims a node was added, having added none", True, """
+def op_probe(params):
+    node = tree.nodes.get("x")
+    if bad:
+        raise MifOpError("bad. The node WAS added as 'x'.")
+"""),
+    ("creation in the other arm does not count", True, """
+def op_probe(params):
+    if ok:
+        node = tree.nodes.new("ShaderNodeMath")
+    else:
+        raise MifOpError("bad. The node WAS added as 'x'.")
+"""),
+]
+
+
 def selftest():
     """Run each case through scan_source and report both directions."""
     bad = 0
+    for name, should_fire, src in MIRROR_SELFTEST:
+        _f, _s, _d, _r, unbacked = scan_source("selftest.py", src)
+        fired = bool(unbacked)
+        ok = fired == should_fire
+        bad += 0 if ok else 1
+        print("  %-4s %-38s expected %-5s got %s"
+              % ("ok" if ok else "FAIL", name, should_fire, fired))
     for name, should_fire, src in SELFTEST:
-        findings, scoped, _d, _r = scan_source("selftest.py", src)
+        findings, scoped, _d, _r, _u = scan_source("selftest.py", src)
         fired = bool(findings)
         ok = fired == should_fire
         bad += 0 if ok else 1
@@ -735,7 +828,7 @@ def selftest():
               % ("ok" if ok else "FAIL", name, should_fire, fired))
 
     # The operation-verb split, which the two lists above cannot exercise now that both read zero.
-    _f, scoped, _d, _r = scan_source("selftest.py", """
+    _f, scoped, _d, _r, _u = scan_source("selftest.py", """
 def op_probe(params):
     image.generated_color = (1, 0, 1, 1)
     if bad:
@@ -747,7 +840,8 @@ def op_probe(params):
           % ("ok" if ok else "FAIL", "operation verb lands in scoped", True, ok))
 
     print("")
-    print("selftest: %d case(s), %d failure(s)" % (len(SELFTEST) + 1, bad))
+    print("selftest: %d case(s), %d failure(s)"
+          % (len(SELFTEST) + len(MIRROR_SELFTEST) + 1, bad))
     return bad
 
 
@@ -768,12 +862,13 @@ def main():
         print("addon not found at %s" % ADDON)
         return 2
 
-    findings, scoped, delegating, reachable = [], [], [], []
+    findings, scoped, delegating, reachable, unbacked = [], [], [], [], []
     files = sorted(f for f in os.listdir(ADDON) if f.startswith("ops_") and f.endswith(".py"))
     for f in files:
-        fo, sc_, de, re_ = scan_file(os.path.join(ADDON, f))
+        fo, sc_, de, re_, un = scan_file(os.path.join(ADDON, f))
         findings.extend(fo)
         scoped.extend(sc_)
+        unbacked.extend(un)
         delegating.extend(de)
         reachable.extend(re_)
 
@@ -813,7 +908,14 @@ def main():
         for row in scoped:
             print("  %-24s line %-5d %s" % (row["func"], row["writeLine"], row["wrote"]))
 
-    if args.check and (findings or dead):
+    if unbacked:
+        print("")
+        print("CLAIMS SOMETHING WAS CREATED, WITH NOTHING CREATED ABOVE IT - %d:" % len(unbacked))
+        print("These send a caller to clean up an object that does not exist.")
+        for row in unbacked:
+            print("  %-24s line %-5d %s" % (row["func"], row["line"], row["claim"][:70]))
+
+    if args.check and (findings or dead or unbacked):
         return 1
     return 0
 
