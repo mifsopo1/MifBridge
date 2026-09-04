@@ -27,7 +27,7 @@ import os
 
 import bpy
 
-from .ops_common import MifOpError, reject_unknown, take, take_bool
+from .ops_common import check_output_path, MifOpError, reject_unknown, take, take_bool
 
 # The ID collections a save can purge. Not every bpy.data collection - only the ones that carry
 # authored work somebody would miss, which is the same judgement clear_scene's purge list makes.
@@ -114,10 +114,15 @@ def op_save_file(params):
     """
     reject_unknown(params, {"filepath", "path", "overwrite", "repointSession", "compress"},
                    "save_file")
-    path = take(params, "filepath", "path", default=None, kind=str)
-    if not path:
+    raw_path = take(params, "filepath", "path", default=None, kind=str)
+    if not raw_path:
         raise MifOpError("'filepath' is required - where to write the .blend. NOTHING was saved.")
-    path = os.path.abspath(os.path.expanduser(str(path)))
+    path = os.path.abspath(os.path.expanduser(str(raw_path)))
+    # SAME CHECK THE FOUR OTHER WRITERS USE. This one already refused with a sentence rather than a
+    # raw exception, because save_as_mainfile fails immediately and there is no expensive work to
+    # waste - but a caller gets a clearer answer from the shared message than from Blender's, and an
+    # op that writes a file and skips the shared check is exactly what audit_output_paths is for.
+    check_output_path(raw_path, path, "saved")
     if not path.lower().endswith(".blend"):
         path += ".blend"
 

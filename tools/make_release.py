@@ -508,6 +508,14 @@ def check_static_audits():
                        # known sites are accepted as KNOWN, not as correct, and a new one fails.
                        ("audit_mutate_then_deny_ue.py", ["--check"]),
                        ("audit_mutate_then_deny_ue.py", ["--selftest"]),
+                       # EVERY OP THAT WRITES A FILE CHECKS ITS PATH FIRST, gated 2026-09-04 at
+                       # zero. Four of the five did the expensive work - a render, a bake, an FBX
+                       # export - and only then discovered they could not save, coming back with a
+                       # bare RuntimeError; render_still on some formats did not fail at all and
+                       # silently wrote a file named after the extension into the working directory.
+                       # That was found as an untracked ".exr" in this repo, by a stray line in
+                       # `git status` rather than by any check. This is the check.
+                       ("audit_output_paths.py", ["--check"]),
                        # TWO SUITES THAT NEED NO EDITOR, joined 2026-09-03. Both were found by
                        # asking which suites have NO record in suite_results.json at all - five did,
                        # and these two turned out to be static, so they had never been run for no
