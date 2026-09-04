@@ -77,7 +77,13 @@ CONSEQUENCE = re.compile(
     r"[Ff]ailed|[Ff]ailure|[Dd]ropped|[Ss]kipped|[Rr]everted|[Dd]iscarded|[Dd]isplaced|"
     r"[Oo]rphaned|[Ll]eftBehind|[Ll]ost|[Uu]nresolved|[Uu]nchanged|[Rr]ejected|[Rr]emoved|"
     r"[Tt]runcated|[Cc]lamped|[Ss]ilentl|[Pp]artial|[Ss]tale|[Bb]roken|[Mm]issing|[Ii]nvalid|"
-    r"[Ii]ncomplete|[Rr]emaining|StillPresent|Changed|[Ii]gnored"
+    r"[Ii]ncomplete|[Rr]emaining|StillPresent|Changed|[Ii]gnored|"
+    # "HAPPENED TO SOMETHING ELSE" - this file's own definition names it and the list had no word
+    # for it. Found 2026-09-04 on the Blender twin, where meshSharedWith walked past the audit
+    # built to catch exactly that, and asked of this one immediately after: renaming an asset
+    # UPDATES every asset that referenced it, and reconstructing a node updates its siblings.
+    # Neither referencersUpdated nor siblingResultNodesUpdated matched a single word above.
+    r"[Ss]ibling|[Rr]eferencersUpdated|[Aa]lsoAffected|[Aa]lsoChanged"
     r")")
 
 # WIDENED 2026-08-31 to include REMAINS as well as WENT WRONG. "Something is still there that you

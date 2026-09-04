@@ -15118,3 +15118,34 @@ out-of-process the way ops_gen already does with gen_status.
 
       C111 in test_blender_consequence covers it, with a single-user negative control so a note that
       was always present could not pass.
+
+- [x] **the same classifier gap on the UE side, asked immediately after** DONE 2026-09-04
+      audit_consequence_fields defines a consequence field as one that "says something did not
+      happen, happened to SOMETHING ELSE, or happened and was undone" and its word list had no word
+      for the middle case - the same gap found on the Blender twin minutes earlier, and worth asking
+      about the moment one classifier turns out to disagree with its own prose.
+
+      Two real fields were invisible to it, both "we changed OTHER things":
+
+        referencersUpdated          consolidate_assets - renaming an asset UPDATES every asset that
+                                    referenced it, which the caller did not ask for
+        siblingResultNodesUpdated   remove_pin - reconstructing a node updates its siblings
+
+      Neither matched a single word in a list of twenty-six. Added Sibling, ReferencersUpdated,
+      AlsoAffected and AlsoChanged; nothing else was newly caught, so this shape was the gap rather
+      than the list being generally thin.
+
+      BASELINE 0 -> 2, AND THAT IS A REAL COST, said plainly rather than buried. This gate was at
+      zero and is not any more. Writing the two suite checks needs the editor, so the choice was
+      between a gate at zero that cannot see these fields and a gate at two that names them - and a
+      recorded gap beats an invisible one. The checks are filed below.
+
+- [ ] **two UE consequence fields have no suite check** (needs the editor)
+      referencersUpdated (consolidate_assets) and siblingResultNodesUpdated (remove_pin), newly
+      visible after the classifier fix above and accepted into the baseline at 2.
+
+      Both need a live editor: consolidate_assets needs two assets and a third referencing one of
+      them, remove_pin needs a Blueprint with a multi-result node. Neither can be arranged offline.
+
+      When they are written the baseline goes back to 0, and that is the point of filing them rather
+      than leaving the number to look permanent.
