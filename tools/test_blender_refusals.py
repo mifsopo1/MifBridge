@@ -221,6 +221,12 @@ def refuses(fn, params, *must_contain):
 
 def main():
     install_stub()
+    # IMPORTED ONCE, AT THE TOP. A name imported ANYWHERE inside a function is local to the WHOLE
+    # function, so a `from ... import MifOpError` further down made every earlier reference an
+    # UnboundLocalError - which surfaced as the suite dying mid-run rather than as a failed check.
+    # It also silently invalidated a ground-truth probe: the run exited 1 because of this, not
+    # because the planted defect was caught, and the exit code alone looked like proof.
+    from MifBlender.ops_common import MifOpError
     try:
         from MifBlender import ops_anim, ops_lightcam, ops_constraint, ops_file
     except Exception as exc:                       # noqa: BLE001
@@ -432,11 +438,36 @@ def main():
           swept >= 100, "swept %d ops" % swept)
 
     print("")
+    print("=== B111: no op CRASHES on an object that does not exist ===")
+    # THE SECOND SYSTEMATIC PROPERTY, and the one that decides what a caller sees on a typo. A
+    # missing object is the single most common mistake anybody makes against this addon, and the
+    # difference between a MifOpError naming what exists and an AttributeError from somewhere
+    # inside bpy is the difference between a message and a traceback.
+    #
+    # THE ASSERTION IS ZERO CRASHES rather than a count of good messages, deliberately. Measured
+    # 2026-09-03: 58 ops refuse and NAME the object, and 4 more refuse for a DIFFERENT required key
+    # first - create_action wants a name, export_mesh a file, transfer_weights a source - which is
+    # correct behaviour, not a gap. A count would go stale the moment an op gained a parameter;
+    # "nothing throws a raw exception" stays true and stays meaningful.
+    crashed = []
+    checked = 0
+    for name, fn in sorted(table.items()):
+        checked += 1
+        try:
+            fn({"object": "NoSuchZzz"})
+        except MifOpError:
+            pass
+        except Exception as exc:                   # noqa: BLE001
+            crashed.append("%s (%s)" % (name, type(exc).__name__))
+    check("B111 no op raises a raw exception on a missing object - %d checked" % checked,
+          not crashed, "crashed: %s" % ", ".join(crashed[:10]))
+    check("B111 and this swept the whole table too", checked >= 100, "checked %d" % checked)
+
+    print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
     # THE NEGATIVE CONTROL. Every check above proves something is refused; without this, a guard
     # that refused EVERYTHING would score full marks. Retyping to SPOT while setting spotAngle is
     # the case the per-type rule exists to ALLOW, and it must reach the bpy stub rather than raise.
-    from MifBlender.ops_common import MifOpError
     try:
         ops_lightcam.op_set_light({"object": "Lamp", "type": "SPOT", "spotAngle": 0.5})
         outcome = "reached the write path"

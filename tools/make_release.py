@@ -520,6 +520,32 @@ def check_static_audits():
                        # would start working BY ACCIDENT - until somebody needed to send a
                        # deliberate false, which mifaudit.AUTHORISING_ONLY depends on being able to.
                        ("test_payload_contract.py", []),
+                       # THE BLENDER HALF OF THAT SAME IDEA, added 2026-09-03 the day it was
+                       # written. test_payload_contract proves the UE transport contract with no
+                       # editor; this proves the addon's REFUSAL contracts with no Blender, by
+                       # stubbing bpy hard enough to import the ops modules and reach the guards -
+                       # which is possible only because every op here is written so a refusal fires
+                       # BEFORE anything touches bpy.
+                       #
+                       # It exists because the addon went 68 -> 103 ops in one session while Blender
+                       # sat on the machine with its addon not listening, so 35 new ops shipped with
+                       # "the static gates are green" as the strongest claim available. 56 checks,
+                       # 0.17s, and two of them - B110 and B111 - sweep the WHOLE op table rather
+                       # than a hand-listed subset, so a new op is covered the moment it registers
+                       # instead of when somebody remembers to add a case.
+                       #
+                       # Ground-truthed before gating, twice, because the first attempt proved
+                       # nothing: an UnboundLocalError killed the run and the rc=1 looked like the
+                       # planted defect being caught. The real probe disabled op_set_light's
+                       # missing-object guard and B111 named it exactly - "set_light
+                       # (AttributeError)" - with B103 catching the lost message alongside.
+                       #
+                       # WHAT GATING THIS DOES NOT BUY: any postcondition. Nothing in it proves an
+                       # op DOES what it says once Blender is real. Green here plus green in the
+                       # rest of this tuple still leaves every evaluated matrix, colour space and
+                       # purge count unverified, and the suite prints that in its own footer so a
+                       # passing run cannot be misread as more than it is.
+                       ("test_blender_refusals.py", []),
                        # PARITY_CHECK, which was not in this tuple and is not run anywhere else in
                        # this file - checked 2026-09-03 by listing every script make_release
                        # actually executes: audit_value_discovery, harvest_param_table, and whatever
