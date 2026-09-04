@@ -29,7 +29,8 @@ object really is left holding the last value written. That is stated rather than
 import bpy
 
 from .ops_common import (MifOpError, get_object, reject_unknown, rnd, select_only,
-                         selection_restore, selection_snapshot, take, take_bool, take_float)
+                         selection_restore, selection_snapshot, take, take_bool, take_float,
+                         take_int)
 
 _KEY_KEYS = {
     "object", "name", "frame", "location", "rotation", "scale",
@@ -189,7 +190,7 @@ def op_set_keyframe(params):
                              "CURRENT value, so there is nothing to record without one. NOTHING "
                              "was keyed.")
         value = params.get("value")
-        index = params.get("index")
+        index = take_int(params, "index", default=None)  # take_int, NOT int(): a bad value must REFUSE, not raise ValueError out of the op.
         # A DOTTED PATH NEEDS WALKING. keyframe_insert takes "rigid_body.kinematic" happily, but
         # setattr does not - it would look for an attribute literally named that and fail with
         # "'Object' object has no attribute 'kinematic'", which names the leaf and hides that the
@@ -527,8 +528,8 @@ def op_delete_keyframe(params):
     path = take(params, "dataPath", "path", default=None, kind=str)
     if not path:
         raise MifOpError("'dataPath' is required - which channel to clear. NOTHING was deleted.")
-    frame = params.get("frame")
-    index = params.get("index")
+    frame = take_float(params, "frame", default=None)  # take_float, NOT float(): same contract - see the note on index above.
+    index = take_int(params, "index", default=None)  # take_int, NOT int(): a bad value must REFUSE, not raise ValueError out of the op.
 
     def matching():
         found = []
@@ -734,8 +735,8 @@ def op_edit_fcurve(params):
     path = take(params, "dataPath", "path", default=None, kind=str)
     if not path:
         raise MifOpError("'dataPath' is required. NOTHING was changed.")
-    index = params.get("index")
-    frame = params.get("frame")
+    index = take_int(params, "index", default=None)  # take_int, NOT int(): a bad value must REFUSE, not raise ValueError out of the op.
+    frame = take_float(params, "frame", default=None)  # take_float, NOT float(): same contract - see the note on index above.
 
     wants = {}
     for key, prop, rna in (("interpolation", "interpolation", bpy.types.Keyframe),
@@ -823,7 +824,7 @@ def op_add_fcurve_modifier(params):
     path = take(params, "dataPath", "path", default=None, kind=str)
     if not path:
         raise MifOpError("'dataPath' is required. NOTHING was added.")
-    index = params.get("index")
+    index = take_int(params, "index", default=None)  # take_int, NOT int(): a bad value must REFUSE, not raise ValueError out of the op.
 
     kind = str(take(params, "type", default="CYCLES", kind=str)).upper()
     valid = _enum_ids(bpy.types.FModifier, "type")
@@ -1392,7 +1393,7 @@ def op_add_driver(params):
     path = take(params, "dataPath", "path", default=None, kind=str)
     if not path:
         raise MifOpError("'dataPath' is required - the property to drive. NOTHING was added.")
-    index = params.get("index")
+    index = take_int(params, "index", default=None)  # take_int, NOT int(): a bad value must REFUSE, not raise ValueError out of the op.
 
     # THE PROPERTY MUST EXIST BEFORE IT CAN BE DRIVEN. Blender will happily create a driver on a
     # path that resolves to nothing and leave it permanently invalid, which is the silent failure
@@ -1517,7 +1518,7 @@ def op_remove_driver(params):
     path = take(params, "dataPath", "path", default=None, kind=str)
     if not path:
         raise MifOpError("'dataPath' is required. NOTHING was removed.")
-    index = params.get("index")
+    index = take_int(params, "index", default=None)  # take_int, NOT int(): a bad value must REFUSE, not raise ValueError out of the op.
     if _driver_target(obj, path, index) is None:
         raise MifOpError("no driver on '%s' for '%s'%s - list them with list_animation_data. "
                          "NOTHING was removed."
@@ -1694,7 +1695,7 @@ def op_move_keyframes(params):
                             "pivot", "frameStart", "frameEnd"}, "move_keyframes")
     obj = get_object(take(params, "object", "name", required=True))
     path = take(params, "dataPath", "path", default=None, kind=str)
-    index = params.get("index")
+    index = take_int(params, "index", default=None)  # take_int, NOT int(): a bad value must REFUSE, not raise ValueError out of the op.
 
     offset = take_float(params, "offset", default=None)
     scale = take_float(params, "scale", default=None)

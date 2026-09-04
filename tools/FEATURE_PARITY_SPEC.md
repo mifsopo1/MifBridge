@@ -14083,3 +14083,31 @@ out-of-process the way ops_gen already does with gen_status.
       would have stopped at "the system is gone", because that is the part you think to look at.
       set_particles deliberately does NOT clean up this way: it edits a system that already existed,
       so removing one on a refusal would destroy something the caller made earlier.
+
+- [x] **the leak pass was throwing away its best findings** DONE 2026-09-04
+      It corrupts one payload value at a time and judges the refusal. Cases that RAISED instead of
+      refusing were skipped, under a comment saying a bad-payload raw exception was "a separate
+      question this pass does not answer". That was wrong, and the proof was already in the tree: I
+      had fixed set_physics_world by hand hours earlier for exactly this - {"gravity":["a","b","c"]}
+      reaching float() and raising ValueError out of the op. A handler's contract is MifOpError.
+
+      COVERAGE MEASURED BEFORE TRUSTING IT: 249 cases across 117 ops, of which 216 genuinely refuse
+      and are judged, 28 accept the sentinel and are skipped, 5 raised. 216 judged refusals per
+      build, four builds, for about 0.2s.
+
+      THE FIVE RAISES WERE FIVE REAL DEFECTS, all one shape: a bare int() or float() on caller input
+      where take_int/take_float belong.
+
+        add_driver / remove_driver / edit_fcurve / add_fcurve_modifier    bad index
+        delete_keyframe                                                  bad frame
+
+      All in ops_anim, all comparing inside loops - fc.array_index != int(index) - which is why a
+      per-use guard would have been repeated and missed. Parsed at the READ site instead, nine of
+      them, so the value is already an int by the time any loop sees it.
+
+      THE FIX FAILED FIRST AND TWO CHECKS CAUGHT IT INDEPENDENTLY: take_int was not imported in
+      ops_anim, so audit_undefined_names reported seven unresolved names and the bad-value pass
+      turned five raises into fifty-six. Both pointed at the same missing import.
+
+      bad_raises now FAILS the run. It is the only pass in this file that sends a corrupted payload,
+      so nothing else can catch the next one - and it found five on the first run it reported them.

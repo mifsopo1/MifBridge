@@ -657,28 +657,42 @@ def _leak_counts():
 
 
 out["leaks"] = []
+out["badValueRaises"] = []
+out["leakStats"] = {"cases": 0, "refused": 0, "accepted": 0, "raised": 0, "opsCovered": 0}
 for name in sorted(table):
     if (only and name not in only) or name in skip:
         continue
     base = payloads.get(name)
     if not base:
         continue
+    out["leakStats"]["opsCovered"] += 1
     for key in sorted(base):
         variant = dict(base)
         variant[key] = _LEAK_SENTINEL
         before = _leak_counts()
+        out["leakStats"]["cases"] += 1
         try:
             table[name](variant)
+            out["leakStats"]["accepted"] += 1
             continue                      # sentinel accepted - nothing to judge
         except MifOpError as exc:
+            out["leakStats"]["refused"] += 1
             after = _leak_counts()
             if after != before:
                 grew = dict((k, [before[k], after[k]]) for k in after if before[k] != after[k])
                 out["leaks"].append({"op": name, "key": key, "left": grew,
                                      "detail": str(exc)[:150]})
-        except Exception:
-            # A RAW exception here is already reported by the sweep above for the good payload, and
-            # a bad-payload raw exception is a separate question this pass does not answer.
+        except Exception as exc:
+            # A RAW EXCEPTION FROM A BAD VALUE IS ALSO A DEFECT, and this pass used to skip
+            # them with a comment saying it was a separate question. It is not: a handler's
+            # contract is MifOpError, and set_physics_world was fixed hours earlier for
+            # exactly this - {"gravity": ["a","b","c"]} reached float() and raised
+            # ValueError straight out of the op. The sweep cannot see these because it only
+            # ever sends GOOD payloads, so this is the only pass that reaches them.
+            out["leakStats"]["raised"] += 1
+            out["badValueRaises"].append(
+                {"op": name, "key": key,
+                 "detail": "%%s: %%s" %% (type(exc).__name__, str(exc)[:120])})
             continue
 
 # TEARDOWN, after every op has been swept. Recorded in results like anything else, so a delete that
@@ -969,6 +983,24 @@ def main():
         print("  told to trust it. Move the parse above the first write - see set_light_influence")
         print("  or set_physics_world for the shape.")
 
+    bad_raises = []
+    for r in reports:
+        for row in r.get("badValueRaises", []) or []:
+            bad_raises.append((r.get("version", "?"), row))
+    if bad_raises:
+        print("")
+        print("A BAD VALUE PRODUCED A RAW EXCEPTION, not a refusal - %d. Every handler's contract"
+              % len(bad_raises))
+        print("is MifOpError, and the normal sweep cannot see these because it only sends GOOD")
+        print("payloads:")
+        seen_pairs = set()
+        for v, row in bad_raises:
+            pair = (row["op"], row["key"])
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+            print("  %-24s bad %-18s %s" % (row["op"], row["key"], row["detail"][:70]))
+
     print("")
     print("REACH - how far the calls actually got, which is not the same as the findings above:")
     for r in reports:
@@ -1002,7 +1034,12 @@ def main():
     print("A refusal is NOT a finding - an op declining because the default scene has no armature")
     print("is the op working. Raw exceptions and divergences are the findings; REACH is how much of")
     print("the table those findings actually cover.")
-    return 1 if (raised or fatal or suspect or new_diffs or leaked or leaks) else 0
+    # bad_raises FAILS THE RUN, deliberately. It found five real defects on the first run it
+    # reported them - add_driver, add_fcurve_modifier, delete_keyframe, edit_fcurve and
+    # remove_driver all reached a bare int()/float() on caller input - and it is the only
+    # pass in this file that sends a corrupted payload, so nothing else can catch the next one.
+    return 1 if (raised or fatal or suspect or new_diffs or leaked or leaks
+                 or bad_raises) else 0
 
 
 if __name__ == "__main__":
