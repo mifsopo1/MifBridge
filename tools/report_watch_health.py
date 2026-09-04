@@ -226,12 +226,27 @@ def check_backlog():
         problem("issue #%s is OPEN and has never been seen by the watcher - it should have been "
                 "picked up" % i["number"],
                 "check the watcher is running; it polls every 45s")
+    # OUR OWN REPLIES ARE NOT A BACKLOG, and this cried wolf the first time it ran for real. The
+    # watcher deliberately ignores comments written by the account it posts as - otherwise replying
+    # would wake an agent that replies, forever - so those comments never enter seenComments and
+    # would look unseen to this check for the rest of time. The maintainer is also ON the trust list,
+    # which is what made "trusted and unseen" the wrong test. A false failure here is worse than no
+    # check: it teaches the reader to ignore the one tool that says whether the loop is working.
+    me = ""
+    ok_me, out_me = sh(["gh", "api", "user", "--jq", ".login"], timeout=60)
+    if ok_me:
+        me = out_me.strip().lower()
+    else:
+        NOTES.append("could not read the posting identity - our own replies may look unseen below")
+
     stale_comments = []
     for i in issues:
         if i["number"] not in seen:
             continue
         for c in (i.get("comments") or []):
             who = ((c.get("author") or {}).get("login") or "").lower()
+            if who and who == me:
+                continue
             if str(c.get("id")) not in seen_comments and who in trusted:
                 stale_comments.append((i["number"], who))
     for num, who in stale_comments:
