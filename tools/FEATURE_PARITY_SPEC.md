@@ -14227,3 +14227,23 @@ out-of-process the way ops_gen already does with gen_status.
       today the same template has bitten.
 
       522 cases per build now, 490 judged refusals, 6.4s for four builds.
+
+- [x] **INNER was a %-format template, and it cost three mistakes in one day** DONE 2026-09-04
+      Every literal % inside the script had to be doubled, and forgetting one failed at
+      TEMPLATE-FILL time - before Blender started, with "not enough arguments for format string" and
+      no line number. It hit the particle writer, the leak pass's label, and the nested label, all
+      on 2026-09-04. Three instances of one trap is a class, not carelessness.
+
+      Filled by @@NAME@@ replacement now. A placeholder that cannot appear in Python by accident
+      needs no escaping at all, so the rule stops existing rather than being remembered - which is
+      the same argument as putting the coordinate fingerprint inside _evaluated_counts rather than
+      at each call site.
+
+      BEHAVIOUR-PRESERVING, AND CHECKED THAT WAY rather than assumed: the whole matrix was run
+      before and after, and the output is identical once the elapsed-time line is normalised. Six
+      placeholders converted, every %% un-doubled, zero left in the file.
+
+      AND THE COMMENT THAT TAUGHT THE OLD RULE WAS REMOVED WITH IT. One `%%` survived the sweep, in
+      a comment I had written hours earlier explaining that doubling was required. Correct when
+      written, false the moment the template changed, and sitting three lines above the code it
+      described - exactly the shape audit_stale_counts exists for, one level down.

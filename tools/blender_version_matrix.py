@@ -516,7 +516,7 @@ EXPECTED_DIVERGENCE = {
 # written per version, so what runs is readable here.
 INNER = r'''
 import json, re, sys, traceback
-sys.path.insert(0, r"%(addon_parent)s")
+sys.path.insert(0, r"@@ADDON_PARENT@@")
 import bpy
 
 out = {"version": bpy.app.version_string, "results": {}, "tmp": None}
@@ -565,7 +565,7 @@ def _digest(value, prefix="", into=None):
         return into
     if isinstance(value, dict):
         for k, v in value.items():
-            _digest(v, ("%%s.%%s" %% (prefix, k)) if prefix else str(k), into)
+            _digest(v, ("%s.%s" % (prefix, k)) if prefix else str(k), into)
     elif isinstance(value, (list, tuple)):
         into[prefix + "[]"] = len(value)
     elif isinstance(value, float):
@@ -590,10 +590,10 @@ def _digest(value, prefix="", into=None):
         into[prefix] = type(value).__name__
     return into
 
-payloads = _sub(json.loads(r"""%(payloads)s"""))
-skip = json.loads(r"""%(skip)s""")
-only = json.loads(r"""%(only)s""")
-fixtures = _sub(json.loads(r"""%(fixtures)s"""))
+payloads = _sub(json.loads(r"""@@PAYLOADS@@"""))
+skip = json.loads(r"""@@SKIP@@""")
+only = json.loads(r"""@@ONLY@@""")
+fixtures = _sub(json.loads(r"""@@FIXTURES@@"""))
 
 # FIXTURES FIRST, IN ORDER. The sweep below is alphabetical, which builds no state - add_group_node
 # runs before create_node_group ever makes a group. A failure here is recorded and does NOT stop the
@@ -611,7 +611,7 @@ for fname, fparams in fixtures:
         out["fixtures"].append({"op": fname, "status": "refused", "detail": str(exc)[:200]})
     except Exception as exc:
         out["fixtures"].append({"op": fname, "status": "RAISED",
-                                "detail": "%%s: %%s" %% (type(exc).__name__, str(exc)[:200])})
+                                "detail": "%s: %s" % (type(exc).__name__, str(exc)[:200])})
 
 for name in sorted(table):
     if only and name not in only:
@@ -626,7 +626,7 @@ for name in sorted(table):
         out["results"][name] = {"status": "refused", "detail": str(exc)[:220]}
     except Exception as exc:
         out["results"][name] = {"status": "RAISED",
-                                "detail": "%%s: %%s" %% (type(exc).__name__, str(exc)[:220])}
+                                "detail": "%s: %s" % (type(exc).__name__, str(exc)[:220])}
 # LEAK PASS. Does a refusal leave anything behind?
 #
 # THE RULE IS "a refusal fires before a mutation", and this measures it instead of trusting it.
@@ -721,11 +721,14 @@ for name in sorted(table):
         # SECOND sentinel look up base["inputs.Object"] and die with KeyError. The first
         # sentinel always passed, so a single-sentinel run would have hidden it.
         #
-        # %%s AND %%%% ARE DOUBLED: INNER is a %%-format template, and that is the third time
-        # today it has bitten - a single %%s dies at template-fill time, before Blender starts.
+        # THE %s HERE NEEDS NO ESCAPING ANY MORE. This comment used to explain that INNER was
+        # a %-format template and every literal % had to be doubled - which cost three
+        # separate mistakes on 2026-09-04, this line among them. INNER is filled by
+        # @@NAME@@ replacement now, so the rule this comment taught is gone and the comment
+        # would have outlived it.
         label = (key if subkey is None else
-                 ("%%s%%s.%%s" %% (key, subkey[0], subkey[1])
-                  if isinstance(subkey, tuple) else "%%s.%%s" %% (key, subkey)))
+                 ("%s%s.%s" % (key, subkey[0], subkey[1])
+                  if isinstance(subkey, tuple) else "%s.%s" % (key, subkey)))
         before = _leak_counts()
         out["leakStats"]["cases"] += 1
         try:
@@ -756,12 +759,12 @@ for name in sorted(table):
             out["leakStats"]["raised"] += 1
             out["badValueRaises"].append(
                 {"op": name, "key": label,
-                 "detail": "%%s: %%s" %% (type(exc).__name__, str(exc)[:120])})
+                 "detail": "%s: %s" % (type(exc).__name__, str(exc)[:120])})
             continue
 
 # TEARDOWN, after every op has been swept. Recorded in results like anything else, so a delete that
 # raises is a finding rather than a quiet end to the run.
-teardown = _sub(json.loads(r"""%(teardown)s"""))
+teardown = _sub(json.loads(r"""@@TEARDOWN@@"""))
 for tname, tparams in teardown:
     if tname not in table or (only and tname not in only):
         continue
@@ -774,7 +777,7 @@ for tname, tparams in teardown:
         out["results"][tname] = {"status": "refused", "detail": str(exc)[:220]}
     except Exception as exc:
         out["results"][tname] = {"status": "RAISED",
-                                 "detail": "%%s: %%s" %% (type(exc).__name__, str(exc)[:220])}
+                                 "detail": "%s: %s" % (type(exc).__name__, str(exc)[:220])}
 
 print("MIFMATRIX" + json.dumps(out))
 '''
@@ -809,14 +812,19 @@ def installs(wanted=None):
 
 def run_one(label, exe, only, scratch):
     script = os.path.join(scratch, "mif_matrix_%s.py" % label.replace(".", "_"))
-    io.open(script, "w", encoding="utf-8").write(INNER % {
-        "addon_parent": ADDON_PARENT,
-        "payloads": json.dumps(PAYLOADS),
-        "skip": json.dumps(SKIP),
-        "only": json.dumps(sorted(only or [])),
-        "fixtures": json.dumps(FIXTURES),
-        "teardown": json.dumps(TEARDOWN),
-    })
+    # FILLED BY REPLACEMENT, NOT BY %-FORMATTING. INNER used to be a %-format template,
+    # which meant every literal % inside the script had to be doubled - and forgetting
+    # one failed at fill time, before Blender started, with a message naming no line.
+    # That cost three separate mistakes on 2026-09-04 alone. @@NAME@@ cannot appear in
+    # Python by accident, so the trap is gone rather than remembered.
+    _filled = INNER
+    _filled = _filled.replace("@@ADDON_PARENT@@", ADDON_PARENT)
+    _filled = _filled.replace("@@PAYLOADS@@", json.dumps(PAYLOADS))
+    _filled = _filled.replace("@@SKIP@@", json.dumps(SKIP))
+    _filled = _filled.replace("@@ONLY@@", json.dumps(sorted(only or [])))
+    _filled = _filled.replace("@@FIXTURES@@", json.dumps(FIXTURES))
+    _filled = _filled.replace("@@TEARDOWN@@", json.dumps(TEARDOWN))
+    io.open(script, "w", encoding="utf-8").write(_filled)
     try:
         proc = subprocess.run([exe, "--background", "--factory-startup", "--python", script],
                               capture_output=True, text=True, timeout=900)
