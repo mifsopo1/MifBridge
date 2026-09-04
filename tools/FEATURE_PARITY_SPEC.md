@@ -14839,3 +14839,43 @@ out-of-process the way ops_gen already does with gen_status.
 
       The ops_common import lists were also put back in alphabetical order across 14 files after a
       day of prepending to them.
+
+- [x] **out-of-range integers came back as raw ValueErrors** DONE 2026-09-04
+      take_int was `int(value)` with no bounds check - the same shape take_float had before the
+      finiteness guard. Blender's integer RNA is 32-bit, so set_frame_range{start: 2**40},
+      set_render_settings{resolutionX: 2**40} and create_primitive{segments: 2**40} all came back as
+      a raw ValueError from deep inside the assignment, escaping the refusal contract. take_int now
+      range-checks and catches OverflowError, which the old clause did not - int(float("inf")) was a
+      raw exception too. finite_int covers the conversion sites that never see take_int.
+
+      THREE THINGS IT TURNED UP, all introduced by me, all caught by tools rather than by care:
+
+        A SHARED READER MUST NOT PROMISE ABOUT STATE. take_float and take_int briefly ended their
+        messages "NOTHING was changed", and audit_mutate_then_deny went 0 -> 103 - every op that
+        reads a parameter after a write. A parameter reader cannot know what its caller has done,
+        which is the same conclusion _socket_value reached the same morning.
+
+        THE AUDIT COULD NOT SEE ops_common. It scanned each file's own functions, so a refusal from
+        an IMPORTED helper was invisible. Demonstrated rather than theorised: _apply_common got
+        finite_int inside its commit block, wrote resolution_x, refused on resolution_y, and the
+        audit reported zero. Measured - the width moved 1920 -> 123 under "NOTHING was changed".
+        Extending it immediately found a second one, in bake_texture, also mine.
+
+        AN INTERPOLATED VERB now lands in the STATE list rather than the operation-scoped one.
+        check_output_path says "NOTHING was %s." and takes the verb from its caller, so the word is
+        only knowable at the call site. The strict side is the safe default for a gate: a scoped
+        promise wrongly reported gets read and dismissed, a state promise wrongly scoped is never
+        read at all.
+
+- [x] **the matrix passed while an entire Blender build ran nothing** DONE 2026-09-04
+      Observed, not imagined. A Blender 5.0 subprocess failed to start behind another Blender still
+      exiting, and the run printed "5.0  0 op(s) reached their bpy calls" and "0 known difference(s)
+      accepted in blender_version_matrix_values.json" - then exited 0.
+
+      Every check in that file is a COMPARISON between builds. A version contributing nothing did
+      not agree with the others; it was absent, and its absence quietly emptied the difference
+      baseline in the same breath. Silence from a whole version has to be louder than agreement.
+
+      Now a failure, with a message that names the likely cause - running another Blender in the
+      same breath is enough to do it. Mutation-tested: forcing one build silent exits 1, restoring
+      it exits 0.
