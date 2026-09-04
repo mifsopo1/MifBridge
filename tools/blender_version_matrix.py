@@ -62,6 +62,12 @@ INSTALL_GLOBS = (
 # Anything absent from here is still called with {} - the refusal is recorded and is not a finding.
 PAYLOADS = {
     "object_info": {"object": "Cube"},
+    # THE ROUND TRIP. Written to a throwaway temp dir; {TMP} is substituted inside Blender.
+    "export_mesh": {"object": "MifCutter", "file": "{TMP}/mif_rt.fbx"},
+    "export_scene": {"objects": ["MifCutter"], "file": "{TMP}/mif_rt.obj"},
+    "import_mesh": {"file": "{TMP}/mif_rt.fbx"},
+    "import_scene": {"file": "{TMP}/mif_rt.obj"},
+    "save_file": {"filepath": "{TMP}/mif_rt.blend"},
     "face_info": {"object": "Cube"},
     "select_faces": {"object": "Cube", "axis": "Z"},
     "ray_cast": {"origin": [0, 0, 5], "direction": [0, 0, -1]},
@@ -224,6 +230,22 @@ PAYLOADS = {
 # Order matters here and nowhere else in this file. A failure is recorded and does not stop the run:
 # a fixture that cannot be built on one version is itself worth seeing, and stopping would turn one
 # missing prerequisite into a blank report.
+# RUN AFTER THE SWEEP, on throwaways of their own. The DESTRUCTIVE ops were skipped because they
+# delete what later ops need - true while they ran inside an alphabetical sweep, and not a reason to
+# leave them untested. They have real postconditions (did the thing actually go, and what did it
+# take with it) and had never been exercised on any build.
+#
+# clear_scene runs LAST of all, because it is the one that empties everything.
+TEARDOWN = [
+    ("create_primitive", {"kind": "cube", "name": "MifDoomed", "location": [28, 0, 0]}),
+    ("create_collection", {"name": "MifDoomedColl"}),
+    ("create_view_layer", {"name": "MifDoomedVL"}),
+    ("delete_object", {"object": "MifDoomed"}),
+    ("delete_collection", {"collection": "MifDoomedColl"}),
+    ("delete_view_layer", {"name": "MifDoomedVL"}),
+    ("clear_scene", {}),
+]
+
 FIXTURES = [
     ("create_node_group", {"name": "MifMatrixGroup"}),
     ("add_group_node", {"group": "MifMatrixGroup", "type": "GeometryNodeSetPosition",
@@ -279,16 +301,26 @@ FIXTURES = [
 
 # Ops deliberately NOT run, with the reason. Each would leave the throwaway process doing something
 # slow or pointless rather than testing an API.
+# {TMP} IN A PAYLOAD is replaced inside Blender with a per-run temp directory. That is what lets
+# the export/import ROUND TRIP be tested at all - and it is the actual Unreal path, so leaving it
+# untested because "it writes a file" was a weaker reason than it looked once this became a
+# throwaway --factory-startup process that touches nothing.
+#
+# ALPHABETICAL ORDER MAKES THE ROUND TRIP WORK: export_mesh and export_scene run at 'e', before
+# import_mesh and import_scene at 'i', so the files exist by the time they are read.
 SKIP = {
     "run_python": "executes arbitrary code - nothing to learn and everything to go wrong",
     "render_still": "renders a frame; minutes per version for no API information",
     "render_animation": "spawns a SECOND Blender per version",
-    "save_file": "writes a .blend",
     "open_file": "replaces the scene mid-run and invalidates every later op",
-    "export_mesh": "writes a file",
-    "export_scene": "writes a file",
-    "import_mesh": "needs a fixture file",
-    "import_scene": "needs a fixture file",
+    # THESE FOUR STAY IN SKIP so the ALPHABETICAL sweep does not run them - clear_scene sits at
+    # 'c' and emptied the scene before almost every other op, which took reach from 124 to 70 the
+    # moment they were merely un-skipped. They are run by TEARDOWN instead, after the sweep, on
+    # throwaways of their own, and the teardown overwrites this 'skipped' status with the real one.
+    "delete_object": "destructive - run by TEARDOWN after the sweep instead",
+    "delete_collection": "destructive - run by TEARDOWN after the sweep instead",
+    "delete_view_layer": "destructive - run by TEARDOWN after the sweep instead",
+    "clear_scene": "empties everything - run LAST by TEARDOWN",
     "bake_texture": "slow, and writes an image",
     "bake_physics": "slow",
     "gen_asset": "reaches an external generator over the network",
@@ -296,10 +328,6 @@ SKIP = {
     "gen_mesh": "reaches an external generator over the network",
     "gen_texture": "reaches an external generator over the network",
     "gen_status": "reaches an external generator over the network",
-    "clear_scene": "deletes the fixture every later op depends on",
-    "delete_object": "deletes the fixture every later op depends on",
-    "delete_collection": "runs before its fixture exists in table order",
-    "delete_view_layer": "runs before its fixture exists in table order",
 }
 
 # DIVERGENCES THAT ARE THE ADDON WORKING, with the reason. An op that correctly refuses a feature
@@ -334,10 +362,22 @@ except Exception:
     print("MIFMATRIX" + json.dumps(out))
     raise SystemExit(0)
 
-payloads = json.loads(r"""%(payloads)s""")
+import tempfile
+_TMP = tempfile.mkdtemp(prefix="mifmatrix_").replace("\\", "/")
+
+def _sub(value):
+    if isinstance(value, str):
+        return value.replace("{TMP}", _TMP)
+    if isinstance(value, list):
+        return [_sub(v) for v in value]
+    if isinstance(value, dict):
+        return dict((k, _sub(v)) for k, v in value.items())
+    return value
+
+payloads = _sub(json.loads(r"""%(payloads)s"""))
 skip = json.loads(r"""%(skip)s""")
 only = json.loads(r"""%(only)s""")
-fixtures = json.loads(r"""%(fixtures)s""")
+fixtures = _sub(json.loads(r"""%(fixtures)s"""))
 
 # FIXTURES FIRST, IN ORDER. The sweep below is alphabetical, which builds no state - add_group_node
 # runs before create_node_group ever makes a group. A failure here is recorded and does NOT stop the
@@ -371,6 +411,23 @@ for name in sorted(table):
     except Exception as exc:
         out["results"][name] = {"status": "RAISED",
                                 "detail": "%%s: %%s" %% (type(exc).__name__, str(exc)[:220])}
+# TEARDOWN, after every op has been swept. Recorded in results like anything else, so a delete that
+# raises is a finding rather than a quiet end to the run.
+teardown = _sub(json.loads(r"""%(teardown)s"""))
+for tname, tparams in teardown:
+    if tname not in table or (only and tname not in only):
+        continue
+    try:
+        table[tname](dict(tparams))
+        out["results"].setdefault(tname, {"status": "ok"})
+        if out["results"][tname].get("status") == "skipped":
+            out["results"][tname] = {"status": "ok"}
+    except MifOpError as exc:
+        out["results"][tname] = {"status": "refused", "detail": str(exc)[:220]}
+    except Exception as exc:
+        out["results"][tname] = {"status": "RAISED",
+                                 "detail": "%%s: %%s" %% (type(exc).__name__, str(exc)[:220])}
+
 print("MIFMATRIX" + json.dumps(out))
 '''
 
@@ -410,6 +467,7 @@ def run_one(label, exe, only, scratch):
         "skip": json.dumps(SKIP),
         "only": json.dumps(sorted(only or [])),
         "fixtures": json.dumps(FIXTURES),
+        "teardown": json.dumps(TEARDOWN),
     })
     try:
         proc = subprocess.run([exe, "--background", "--factory-startup", "--python", script],
