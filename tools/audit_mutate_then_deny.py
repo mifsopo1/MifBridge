@@ -49,22 +49,24 @@ the raise is lexically after the write and can never follow it. Every node is ta
 branch path it sits under, and a mutation/raise pair that diverges at any `if`, `try` or `for` is
 skipped. Without this the audit reported dozens of pairs that cannot co-occur.
 
-WHAT IT CANNOT SEE, printed on every run rather than buried here, because a gate at zero over an
-unmeasured surface is the exact failure this project keeps naming. 103 ops promise something about
-state and a write is visible in 87. The other 16 are UNJUDGED, which is not the same as clean, and
---reach names them.
+WHAT IT CANNOT SEE IS COUNTED ON EVERY RUN, in the REACH line, and deliberately NOT quoted here.
+This paragraph has carried a hard number three times today and been wrong within the hour each time,
+which is the same rot the state memory warns about. `--reach` names the ops.
 
-THREE HOLES HAVE BEEN CLOSED AND THE REMAINDER IS A DIFFERENT SHAPE. A write inside a callee
-(`_place(obj, params)` hid the original defect); a REMOVAL that is the op's product rather than an
-undo, which had left every delete_/remove_/unlink_ op unjudged while .remove() was read only as the
-undo signal; and setattr(), which is how an availability table writes - set_light_shadow and
-set_material_settings never name their attributes in source, so ops whose whole job is writing
-properties were invisible.
+An op with no recognised write is UNJUDGED, which is not the same as clean, and a gate at zero over
+an unmeasured surface is the exact failure this project keeps naming - the matrix prints its own
+reach beside its findings for the same reason.
 
-What is left mutates through bpy.ops (apply_transform, clean_mesh, bisect_plane), through a
-subscript on a datablock (set_custom_property's `obj[key] = value`), or in a subprocess
-(render_animation). Each would need a different rule, and a rule per op is how an audit becomes a
-list of special cases.
+FOUR HOLES HAVE BEEN CLOSED, each a different shape and each found by asking what the unjudged ops
+had in common rather than by adding rules at random: a write inside a callee (`_place(obj, params)`
+hid the original defect); a REMOVAL that is the op's product rather than an undo, which had left
+every delete_/remove_/unlink_ op invisible; setattr(), which is how an availability table writes,
+since set_light_shadow and set_material_settings never name an attribute in source; and a bpy.ops
+operator, which is how transform_apply, modifier_apply and the exporters change the file.
+
+What remains writes through a subscript on a datablock (set_custom_property's `obj[key] = value`)
+or in a subprocess (render_animation). Each needs its own rule, and a rule per op is how an audit
+becomes a list of special cases.
 """
 import argparse
 import ast
@@ -181,6 +183,13 @@ def _is_mutation(node, made=()):
         # from a {param: (attr, types, builds)} map and never name the attribute in source, so a
         # rule that only saw `x.y = z` was blind to every op built that way - and those are exactly
         # the ops whose whole job is writing lots of properties.
+        # A bpy.ops OPERATOR IS A WRITE. transform_apply, modifier_apply, save_as_mainfile,
+        # open_mainfile and the exporters all change the file, and an op that drives one has no
+        # attribute assignment for a rule about `x.y = z` to find. Five of the sixteen unjudged ops
+        # were invisible for exactly this reason.
+        dotted_call = _dotted(call.func) or ""
+        if dotted_call.startswith("bpy.ops.") and dotted_call.count(".") >= 3:
+            return "%s()" % dotted_call
         if isinstance(call.func, ast.Name) and call.func.id == "setattr" and len(call.args) >= 2:
             return "setattr(%s, ...)" % (_dotted(call.args[0])
                                          or getattr(call.args[0], "id", "<expr>"))
@@ -1055,9 +1064,9 @@ def main():
     promising, judged, blind = reach()
     print("REACH - %d op(s) promise something about state; a write is visible in %d."
           % (promising, judged))
-    print("        %d are UNJUDGED, not clean - they write through bpy.ops, a subscript on a"
+    print("        %d are UNJUDGED, not clean - they write through a subscript on a datablock or"
           % len(blind))
-    print("        datablock, or a subprocess. A gate at zero needs this line beside it.")
+    print("        in a subprocess. A gate at zero needs this line beside it. --reach names them.")
     if args.reach:
         print("")
         print("UNJUDGED OPS (%d):" % len(blind))
