@@ -14490,3 +14490,38 @@ out-of-process the way ops_gen already does with gen_status.
       Gated as its own entry. The gate summary now labels entries by what was RUN rather than by
       script name: two lines both reading "audit_mutate_then_deny" looked like a bug in the list
       rather than two different checks.
+
+- [x] **the mirror question: a refusal claiming something WAS created** DONE 2026-09-04
+      The audit catches a refusal promising nothing happened when something did. The opposite is
+      just as wrong and nothing looked for it. "The node WAS added as 'x'." is an INSTRUCTION to go
+      and clean something up; on a path where no node was made, the caller is sent after an object
+      that does not exist, under a name that belongs to nothing. 29 messages in the addon make a
+      claim of that shape and none had ever been checked.
+
+      ALL 29 ARE BACKED. Getting to that answer took three corrections, each from reading:
+
+        OPS ONLY               _write_node_property says "The node WAS added." fourteen times and is
+                               right every time - its CALLER added the node. A helper cannot see
+                               what its caller built. Fourteen of the first eighteen findings.
+        OPPOSITE ERROR BIASES  The main pass fires when it FINDS a write, so its test is strict and
+                               excludes bmesh and subscripts deliberately. The mirror pass fires
+                               when it finds NO creation, so that strictness turns every
+                               unrecognised creation into a false accusation - color_attributes
+                               .new(), interface.new_socket() and `obj[key] = value` were all
+                               reported as lies. A loose test can only SUPPRESS a mirror finding,
+                               which is the safe direction when the evidence is an absence.
+        CONTAINED, NOT PREFIX  op_add_group_interface builds its socket with _iface_new(), and a
+                               leading underscore defeats startswith.
+
+      THE SELF-TEST PAID FOR ITSELF THE SAME HOUR. Its third mirror case - a creation in the `if`
+      arm and the claim in the `else` - failed, and the bug was mine: _looks_like_creation used
+      ast.walk, so an `if` inherited the creation inside its own body and backed a claim made in the
+      arm that excludes it. The same compound-statement mistake the main pass had, caught this time
+      by a test instead of by reading a finding. 14/14 now.
+
+      THE C++ SIDE HAS NO EXPOSURE, checked by hand because there were only three messages to check
+      and building a pass for three would have cost more than reading them. Two are success-path
+      notes (create_material_instance's unknown-parameter shortfall, the MVVM FieldNotify warning)
+      and the third reports a reparent that WAS applied and left the blueprint uncompilable. All
+      three are on responses that succeeded; none is a refusal claiming a side effect it did not
+      have.
