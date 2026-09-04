@@ -5924,6 +5924,24 @@ def bl_list_materials(name_contains: str = "", used_only: bool = False) -> dict:
 
 
 @mcp.tool()
+def bl_set_material_settings(material: str, blend_method: str = None,
+                             shadow_method: str = None, backface_culling: bool = None,
+                             alpha_threshold: float = None, screen_refraction: bool = None,
+                             displacement_method: str = None,
+                             surface_render_method: str = None,
+                             transparent_shadow: bool = None,
+                             raytrace_refraction: bool = None) -> dict:
+    "The Blender material settings that are NOT Principled inputs - transparency, shadows, culling, refraction. bl_describe_material and bl_create_material have ALWAYS reported blendMethod and nothing anywhere could write it, which is a read/write asymmetry sitting in the middle of the most-used material op. It is also the property that decides whether a transparent material is actually transparent: an alpha of 0.2 on an OPAQUE material renders SOLID, and every field in every response still reads correctly. WHAT MOVES, read off bl_rna on 3.6.23, 4.2.17, 4.4.0 and 5.0.1 rather than from release notes: blend_method is on every build with the same four values; shadow_method is 3.6 and 4.2 ONLY, since EEVEE Next dropped it at 4.4; displacement_method, surface_render_method, use_transparent_shadow and use_raytrace_refraction are 4.2 and later and absent on 3.6. Anything this build lacks is REFUSED naming which builds have it, and every key is checked before any is written so a half-supported request does not leave half of it applied. THESE ARE EEVEE'S SETTINGS - Cycles decides transparency from the shader and ignores blend_method, so the active engine is reported and the keys it will not read are named."
+    return _blender("set_material_settings", material=material, blendMethod=blend_method,
+                    shadowMethod=shadow_method, backfaceCulling=backface_culling,
+                    alphaThreshold=alpha_threshold, screenRefraction=screen_refraction,
+                    displacementMethod=displacement_method,
+                    surfaceRenderMethod=surface_render_method,
+                    transparentShadow=transparent_shadow,
+                    raytraceRefraction=raytrace_refraction)
+
+
+@mcp.tool()
 def bl_describe_material(material: str, links: bool = False) -> dict:
     "Read one Blender material in full: its Principled BSDF values, the node tree shape, and every image texture with its FILE PATH."
     return _blender("describe_material", material=material, links=links)

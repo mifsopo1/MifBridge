@@ -228,6 +228,10 @@
   "principled.ior"
  ],
  [
+  "set_material_settings",
+  "engine"
+ ],
+ [
   "set_render_settings",
   "after.engine"
  ],

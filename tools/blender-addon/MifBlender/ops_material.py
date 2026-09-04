@@ -1076,6 +1076,156 @@ def _enum_or_refuse(holder, attr, value, label):
     setattr(holder, attr, match[0])
 
 
+
+_MATSET_KEYS = {"material", "name", "blendMethod", "shadowMethod", "backfaceCulling",
+                "alphaThreshold", "screenRefraction", "displacementMethod", "surfaceRenderMethod",
+                "transparentShadow", "raytraceRefraction"}
+
+# param -> (real property name, which builds have it)
+#
+# EVERY ROW READ OFF bl_rna ON ALL FOUR INSTALLS, not from release notes, and the drift is the
+# reason this is a separate op rather than more parameters on set_material_properties:
+#
+#   blend_method              every build, same four values
+#   shadow_method             3.6 and 4.2 ONLY - EEVEE Next dropped it at 4.4
+#   displacement_method       4.2 and later - absent on 3.6
+#   surface_render_method     4.2 and later
+#   use_transparent_shadow    4.2 and later
+#   use_raytrace_refraction   4.2 and later
+#
+# So a caller asking for a shadow method on 4.4 is asking for something that build cannot do, and
+# the house rule is that this is REFUSED naming what happened to it rather than accepted and
+# dropped. Same shape as set_light_shadow, for the same reason.
+_MATSET_MAP = {
+    "blendMethod":          ("blend_method", "every build"),
+    "shadowMethod":         ("shadow_method", "3.6 and 4.2 only - EEVEE Next dropped it at 4.4"),
+    "backfaceCulling":      ("use_backface_culling", "every build"),
+    "alphaThreshold":       ("alpha_threshold", "every build"),
+    "screenRefraction":     ("use_screen_refraction", "every build"),
+    "displacementMethod":   ("displacement_method", "4.2 and later"),
+    "surfaceRenderMethod":  ("surface_render_method", "4.2 and later"),
+    "transparentShadow":    ("use_transparent_shadow", "4.2 and later"),
+    "raytraceRefraction":   ("use_raytrace_refraction", "4.2 and later"),
+}
+_MATSET_BOOL = {"backfaceCulling", "screenRefraction", "transparentShadow", "raytraceRefraction"}
+_MATSET_FLOAT = {"alphaThreshold"}
+
+
+def op_set_material_settings(params):
+    """The material settings that are NOT Principled inputs - transparency, shadows, culling.
+
+    THE READ SIDE HAS ALWAYS REPORTED blend_method. describe_material and create_material both
+    return blendMethod, and NOTHING anywhere could write it - a read/write asymmetry this repo
+    treats as a defect class, sitting in the middle of the most-used material op. It is also the
+    property that decides whether a transparent material is actually transparent: an alpha of 0.2
+    on an OPAQUE material renders solid, and every field in every response still reads correctly.
+
+    WHAT MOVES, read off bl_rna on 3.6.23, 4.2.17, 4.4.0 and 5.0.1:
+
+      blend_method              every build. OPAQUE | CLIP | HASHED | BLEND, same four everywhere.
+      shadow_method             3.6 and 4.2 ONLY. EEVEE Next dropped it at 4.4, so asking for one
+                                on a newer build is asking for a feature the renderer no longer has.
+      displacement_method       4.2 and later. Absent on 3.6.
+      surface_render_method     4.2 and later.
+      use_transparent_shadow    4.2 and later.
+      use_raytrace_refraction   4.2 and later.
+
+    ANYTHING THIS BUILD LACKS IS REFUSED, NAMING WHICH BUILDS HAVE IT, and every key is checked
+    BEFORE any of them is written so a half-supported request does not leave half of it applied.
+
+    THESE ARE EEVEE'S SETTINGS. Cycles decides transparency from the shader itself and ignores
+    blend_method entirely, so the active engine is reported and the keys it will not read are named.
+
+    params:
+      material / name (str)      required
+      blendMethod (str)          OPAQUE | CLIP | HASHED | BLEND
+      shadowMethod (str)         NONE | OPAQUE | CLIP | HASHED - 3.6 and 4.2 only
+      backfaceCulling (bool)
+      alphaThreshold (float)     the cutoff for CLIP
+      screenRefraction (bool)
+      displacementMethod (str)   BUMP | DISPLACEMENT | BOTH - 4.2 and later
+      surfaceRenderMethod (str)  DITHERED | BLENDED - 4.2 and later
+      transparentShadow (bool)   4.2 and later
+      raytraceRefraction (bool)  4.2 and later
+    """
+    reject_unknown(params, _MATSET_KEYS, "set_material_settings")
+    want = take(params, "material", "name", required=True, kind=str)
+    mat = bpy.data.materials.get(str(want))
+    if mat is None:
+        have = sorted(m.name for m in bpy.data.materials)[:25]
+        raise MifOpError("no material named '%s'. This file has: %s. NOTHING was changed."
+                         % (want, ", ".join(have) if have else "(none)"))
+
+    asked = [k for k in _MATSET_MAP if params.get(k) is not None]
+    if not asked:
+        raise MifOpError("nothing to do - pass at least one of %s. NOTHING was changed."
+                         % ", ".join(sorted(_MATSET_MAP)))
+
+    # EVERY KEY CHECKED AGAINST THIS BUILD BEFORE ANY OF THEM IS WRITTEN.
+    missing = [(k, _MATSET_MAP[k][0], _MATSET_MAP[k][1]) for k in asked
+               if _MATSET_MAP[k][0] not in mat.bl_rna.properties]
+    if missing:
+        raise MifOpError(
+            "this Blender (%s) has no %s. Available on %s. Accepting the key and writing it only "
+            "where it exists is how a caller asks for a shadow mode, does not get one, and is told "
+            "nothing - so it is refused. NOTHING was changed."
+            % (bpy.app.version_string,
+               "; ".join("%s (material.%s)" % (k, a) for k, a, _ in missing),
+               "; ".join(v for _, _, v in missing)))
+
+    applied = {}
+    for key in asked:
+        attr = _MATSET_MAP[key][0]
+        raw = params[key]
+        if key in _MATSET_BOOL:
+            value = take_bool(params, key, default=True)
+        elif key in _MATSET_FLOAT:
+            value = take_float(params, key)
+        else:
+            # AN ENUM, VALIDATED AGAINST ITS OWN ITEMS so the refusal names what this build offers
+            # rather than letting RNA raise a TypeError about types.
+            valid = [i.identifier for i in mat.bl_rna.properties[attr].enum_items]
+            match = [v for v in valid if v.upper() == str(raw).upper()]
+            if not match:
+                raise MifOpError("'%s' is not a valid %s on Blender %s. Available: %s. NOTHING was "
+                                 "changed." % (raw, key, bpy.app.version_string, ", ".join(valid)))
+            value = match[0]
+        setattr(mat, attr, value)
+        applied[key] = value
+
+    # READ BACK PER KEY. alpha_threshold clamps rather than refusing, so echoing the request would
+    # report a value the material does not have.
+    after, wrong = {}, {}
+    for key in asked:
+        stored = getattr(mat, _MATSET_MAP[key][0])
+        after[key] = round(float(stored), 6) if isinstance(stored, float) else stored
+        wanted = applied[key]
+        if isinstance(wanted, float) and abs(float(stored) - wanted) > 1e-4:
+            wrong[key] = {"requested": wanted, "stored": after[key]}
+
+    engine = bpy.context.scene.render.engine
+    is_cycles = "CYCLES" in engine
+    # CYCLES DECIDES TRANSPARENCY FROM THE SHADER and ignores blend_method entirely, so these are
+    # written and inert under it. Still written, because a scene is often set up under one renderer
+    # and rendered with another.
+    inert = sorted(asked) if is_cycles else []
+    return {
+        "ok": True,
+        "material": mat.name,
+        "engine": engine,
+        "applied": after,
+        "clamped": wrong or None,
+        "inertUnderThisEngine": inert or None,
+        "note": ("%s written and this scene renders with %s, which decides transparency from the "
+                 "SHADER and does not read them. They are stored and will apply if the engine "
+                 "changes." % (", ".join(inert), engine)) if inert else
+                ("blendMethod is what decides whether a transparent material is actually "
+                 "transparent - an alpha of 0.2 on an OPAQUE material renders solid, and every "
+                 "field in every response still reads correctly."
+                 if "blendMethod" in applied else None),
+        "blenderVersion": bpy.app.version_string,
+    }
+
 OPS = {
     "create_material": op_create_material,
     "set_material_properties": op_set_material_properties,
@@ -1084,4 +1234,5 @@ OPS = {
     "bake_texture": op_bake_texture,
     "assign_material_to_faces": op_assign_material_to_faces,
     "set_material_texture": op_set_material_texture,
+    "set_material_settings": op_set_material_settings,
 }

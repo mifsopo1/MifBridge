@@ -13481,3 +13481,31 @@ out-of-process the way ops_gen already does with gen_status.
       "slot" a few hours earlier, so it was removed rather than exposed. audit_blender_dead_params
       found `scale` accepted and never read, which matters more on a lattice than anywhere else in
       that file, so it was wired rather than dropped.
+
+- [x] **blendMethod was reported by two ops and writable by none** DONE 2026-09-04
+      describe_material and create_material have ALWAYS returned blendMethod, and nothing anywhere
+      could set it - a read/write asymmetry sitting in the middle of the most-used material op, and
+      this repo already treats that as a defect class. It is also the property that decides whether
+      a transparent material is actually transparent: an alpha of 0.2 on an OPAQUE material renders
+      SOLID, and every field in every response still reads correctly.
+
+      A separate op rather than more keys on set_material_properties, for set_light_shadow's reason:
+      these settings differ by BUILD and by ENGINE, and that needs an availability table. Read off
+      bl_rna on all four installs rather than from release notes:
+
+        blend_method              every build, OPAQUE | CLIP | HASHED | BLEND
+        shadow_method             3.6 and 4.2 ONLY - EEVEE Next dropped it at 4.4
+        displacement_method       4.2 and later, absent on 3.6
+        surface_render_method     4.2 and later
+        use_transparent_shadow    4.2 and later
+        use_raytrace_refraction   4.2 and later
+
+      Anything the build lacks is refused naming which builds have it, every key is checked before
+      any is written so a half-supported request cannot leave half applied, and the active engine is
+      reported because Cycles decides transparency from the SHADER and ignores blend_method
+      entirely.
+
+      Verified across the version split: on 3.6 shadowMethod applies and transparentShadow is
+      refused; on 4.4 the reverse, each naming the builds that have it. blendMethod BLEND applies on
+      both with a readback. The matrix payload uses blendMethod only - the one key present
+      everywhere - so it exercises the op on all four builds instead of refusing on half of them.

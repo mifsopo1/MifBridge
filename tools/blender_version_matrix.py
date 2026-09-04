@@ -210,6 +210,11 @@ PAYLOADS = {
     # around. The file is the one render_still wrote at 'r', which is before 's' in the
     # alphabetical sweep, so no new fixture is needed and the dependency is real rather
     # than arranged.
+    # blendMethod ONLY, deliberately: it is the one key present on all four builds, so this
+    # payload exercises the op everywhere instead of refusing on half the matrix. The
+    # version-split keys are covered by the direct probes, which is where a refusal is the
+    # expected answer rather than a gap.
+    "set_material_settings": {"material": "MifMatrixMat", "blendMethod": "BLEND"},
     "set_material_texture": {"material": "MifMatrixMat", "input": "normal",
                              "file": "{TMP}/mif_still.png"},
     "set_material_properties": {"material": "MifMatrixMat", "baseColor": [1, 0, 0]},
