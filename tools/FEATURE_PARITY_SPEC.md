@@ -14879,3 +14879,24 @@ out-of-process the way ops_gen already does with gen_status.
       Now a failure, with a message that names the likely cause - running another Blender in the
       same breath is enough to do it. Mutation-tested: forcing one build silent exits 1, restoring
       it exits 0.
+
+- [x] **a third sentinel type for the corrupted-payload pass: a LIST** DONE 2026-09-04
+      Two existed, a string and a dict, and the type diversity is what earned them - one string was
+      accepted by 28 of 249 cases, and accepting a MAPPING where a value belongs became its own
+      finding class. A list was the obvious third and was not covered.
+
+      IT HAS TO BE A LIST NOTHING CAN LEGITIMATELY TAKE, because location, color, points and
+      edgeIndices all accept one. ["mif", "not-a-value"] is wrong in two independent ways at once:
+      the wrong LENGTH for every vector this addon reads, and the wrong ELEMENT TYPE for every
+      numeric list.
+
+      Found immediately: _socket_value's list branch was a bare [float(v) for v in val], so
+      add_group_interface{default: ["mif", "not-a-value"]} came back as a raw ValueError past the
+      refusal contract. It shares finite_floats now.
+
+      The other two hits were READ and are correct code - evaluate_at_frame's dataPaths is a list of
+      property paths, set_material_slots' slots is a list of material names in order. Accepting the
+      sentinel is those two working, so they are allow-listed with that reason rather than the
+      sentinel being weakened to avoid them.
+
+      Mutation-tested: removing one allow-list entry makes the run name it and exit 1.
