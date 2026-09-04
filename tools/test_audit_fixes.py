@@ -230,6 +230,20 @@ def main():
         ({"confirm": False}, {}, "confirm:false is stripped, unlike the others"),
         ({"confirm": True}, {}, "confirm:true is stripped"),
         ({"path": "/Game/X", "save": True}, {"path": "/Game/X"}, "ordinary keys are untouched"),
+        # THE NESTED CASE. batch carries other endpoints as DATA, so a confirm one level down
+        # walked past this guard entirely until 2026-09-03 - the strip stopped at the top level.
+        # Latent (no suite builds that shape) but batch is the sharpest destructive endpoint there
+        # is: it commits every prior op before reporting the failure.
+        ({"ops": [{"endpoint": "delete_asset", "payload": {"path": "/Game/X", "confirm": True}}]},
+         {"ops": [{"endpoint": "delete_asset", "payload": {"path": "/Game/X"}}]},
+         "a confirm NESTED inside batch's ops[] is stripped, not just a top-level one"),
+        ({"ops": [{"force": True, "keep": 9}]}, {"ops": [{"keep": 9}]},
+         "the walk goes through LISTS as well as dicts"),
+        # AND THE RECURSION MUST NOT EAT ORDINARY DATA. A payload that merely contains nested
+        # structure has to come back identical - without this, a strip that returned {} for
+        # everything would pass every check above.
+        ({"a": {"b": [1, {"c": 2}]}}, {"a": {"b": [1, {"c": 2}]}},
+         "ordinary nested data is returned unchanged - the negative control for the recursion"),
     ]:
         got = M.guarded_payload(payload)
         check("T48 %s" % why, got == want,

@@ -859,16 +859,47 @@ def _authorises(value):
 
 
 def guarded_payload(payload):
-    out = {}
-    for k, v in (payload or {}).items():
-        low = k.lower()
-        if low in AUTHORISING_ONLY and not _authorises(v):
-            out[k] = v          # a false is a REFUSAL to authorise, and must reach the handler
-            continue
-        if low in FORBIDDEN_KEYS:
-            continue
-        out[k] = v
-    return out
+    """Strip authorising keys from a payload, at EVERY level.
+
+    IT STOPPED AT THE TOP LEVEL UNTIL 2026-09-03, and `batch` is the one endpoint that carries
+    other endpoints as DATA: {"ops": [{"endpoint": "delete_asset", "payload": {..., "confirm":
+    true}}]}. A nested confirm survived the strip untouched, so the guard standing between a sweep
+    and a confirm-gated destructive endpoint could be walked past by putting the call one level
+    down. Verified by running it before the fix.
+
+    Latent rather than live - no suite builds that shape today - but the bridge manual already
+    calls batch the sharpest destructive case, because it returns ok:false on the first failing op
+    with EVERY PRIOR OP ALREADY COMMITTED. A strip that stops at the top level is exactly the wrong
+    shape for it.
+
+    RECURSION WAS CHOSEN OVER DENYING BATCH, and the spec item asked for that to be settled by a
+    measurement rather than a preference, because the objection was that this runs on every suite
+    call. Measured: recursion costs 1.3x on a typical payload - 0.74us against 0.59us - and this
+    runs once per bridge request, which is an HTTP round trip to the editor costing MILLISECONDS.
+    0.15 microseconds against that is not a cost. Denying batch would have removed a legitimate
+    endpoint from every suite to avoid a fifth of a microsecond.
+    """
+    def walk(value):
+        if isinstance(value, dict):
+            out = {}
+            for k, v in value.items():
+                low = k.lower() if isinstance(k, str) else k
+                if low in AUTHORISING_ONLY and not _authorises(v):
+                    # A false is a REFUSAL to authorise and must reach the handler - kept as-is,
+                    # not walked, because it is a scalar by definition.
+                    out[k] = v
+                    continue
+                if low in FORBIDDEN_KEYS:
+                    continue
+                out[k] = walk(v)
+            return out
+        if isinstance(value, list):
+            return [walk(v) for v in value]
+        if isinstance(value, tuple):
+            return tuple(walk(v) for v in value)
+        return value
+
+    return walk(payload or {})
 
 
 def call(endpoint, payload=None, timeout=60):

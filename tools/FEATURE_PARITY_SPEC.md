@@ -11800,7 +11800,27 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       THE C++ ONES NEED A REBUILD, which needs the editor closed, so they are blocked the same way
       the accepted-summaries item is. The two Blender ones are not blocked.
 
-- [ ] **guarded_payload strips only the TOP level, and `batch` nests a whole payload** (2 hours)
+- [x] **guarded_payload strips only the TOP level, and `batch` nests a whole payload** (2 hours)
+      DONE 2026-09-03 by recursion, and the choice was settled by the measurement this item asked
+      for rather than by preference.
+
+      THE OBJECTION WAS THAT IT RUNS ON EVERY SUITE CALL. Measured: 4 call sites in the whole tree,
+      and the recursive walk costs 1.3x on a typical payload - 0.74us against 0.59us. It runs once
+      per bridge request, which is an HTTP round trip to the editor costing MILLISECONDS. A fifth
+      of a microsecond against that is not a cost, and denying `batch` would have removed a
+      legitimate endpoint from every suite to avoid it. The objection I wrote into this item was
+      simply wrong, and measuring it took two minutes.
+
+      The walk goes through dicts, lists and tuples. Every existing behaviour is preserved and
+      checked: a top-level confirm stripped, confirm:false STILL stripped (it is excluded from
+      AUTHORISING_ONLY on purpose), an explicit force:false passing through, the aliases stripped
+      case-insensitively, a string "false" passing through.
+
+      THREE NEW ASSERTIONS IN T48, one of them a negative control. The nested confirm is stripped;
+      the walk goes through lists; and ordinary nested data comes back UNCHANGED - without that
+      last one, a strip that returned {} for everything would pass every other check in the block.
+
+      Ground truth: with the recursive call removed, the nested confirm survives again.
       VERIFIED 2026-09-03: `guarded_payload({"ops":[{"endpoint":"delete_asset","payload":{"path":
       "/Game/Real/X","confirm":true}}]})` returns the confirm untouched, and `batch` is not in
       mifaudit.DENY. So the audit harness's confirm-strip - the thing standing between a sweep and
