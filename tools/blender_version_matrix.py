@@ -80,7 +80,7 @@ PAYLOADS = {
     "create_collision_hull": {"object": "MifCutter", "index": 3},
     "list_modifiers": {"object": "MifSpare"},
     "list_vertex_groups": {"object": "Cube"},
-    "list_shape_keys": {"object": "Cube"},
+    "list_shape_keys": {"object": "MifKeys"},
     "list_constraints": {"object": "MifSpare"},
     "list_animation_data": {"object": "Cube"},
     "list_keyframes": {"object": "Cube"},
@@ -124,7 +124,9 @@ PAYLOADS = {
     "apply_modifier": {"object": "MifApply", "modifier": "Subsurf"},
     # THE ANIMATION FAMILY, all of which need the f-curve the fixtures lay down first.
     "set_keyframe": {"object": "Cube", "location": [0, 0, 1], "frame": 20},
-    "delete_keyframe": {"object": "Cube", "path": "location", "frame": 10},
+    # FRAME 1, NOT 10. bake_to_keyframes runs earlier alphabetically and rekeys Cube across
+    # 1-5, so the frame-10 key the fixture laid down is gone by the time this runs.
+    "delete_keyframe": {"object": "Cube", "path": "location", "frame": 1},
     "edit_fcurve": {"object": "Cube", "path": "location", "index": 2,
                     "extrapolation": "LINEAR"},
     "move_keyframes": {"object": "Cube", "path": "location", "offset": 2},
@@ -178,7 +180,7 @@ PAYLOADS = {
     "select_edges": {"object": "Cube", "allEdges": True},
     "extrude_skirt": {"object": "MifGrid", "boundaryOnly": True, "depth": 0.1},
     "separate_mesh": {"object": "MifSpare", "mode": "LOOSE"},
-    "boolean_op": {"target": "Cube", "cutter": "MifCutter", "operation": "DIFFERENCE",
+    "boolean_op": {"target": "MifBoolA", "cutter": "MifBoolB", "operation": "DIFFERENCE",
                    "deleteCutter": False},
     # ITS OWN THROWAWAY. Pointed at MifSpare, this MERGED the shared fixture into Cube and every
     # op after it alphabetically that referenced MifSpare - list_modifiers, remove_modifier,
@@ -192,7 +194,7 @@ PAYLOADS = {
     "normalize_weights": {"object": "Cube"},
     "rename_bones": {"object": "MifRig", "map": {"tip": "tip_renamed"}},
     "set_bone_pose": {"object": "MifRig", "bone": "root", "location": [0, 0, 0.1]},
-    "set_shape_key": {"object": "Cube", "shapeKey": "MifDent", "value": 0.5},
+    "set_shape_key": {"object": "MifKeys", "shapeKey": "MifDent", "value": 0.5},
     "set_custom_property": {"object": "Cube", "key": "mif_probe2", "value": 2},
     "list_collections": {},
     "list_view_layers": {},
@@ -257,8 +259,14 @@ FIXTURES = [
     # test the refusal rather than the transfer.
     ("set_vertex_weights", {"object": "MifCutter", "group": "MifWeights",
                             "vertices": [0, 1, 2, 3, 4, 5, 6, 7], "weight": 1.0}),
-    ("add_shape_key", {"object": "Cube", "name": "MifBasis"}),
-    ("add_shape_key", {"object": "Cube", "name": "MifDent"}),
+    # ON THEIR OWN OBJECT. A boolean modifier CANNOT be applied to a mesh with shape keys -
+    # Blender refuses outright - and boolean_op runs after add_shape_key alphabetically, so
+    # keying Cube made boolean_op unreachable. Third fixture collision of the same kind.
+    ("create_primitive", {"kind": "cube", "name": "MifKeys", "location": [20, 0, 0]}),
+    ("add_shape_key", {"object": "MifKeys", "name": "MifBasis"}),
+    ("add_shape_key", {"object": "MifKeys", "name": "MifDent"}),
+    ("create_primitive", {"kind": "cube", "name": "MifBoolA", "location": [24, 0, 0]}),
+    ("create_primitive", {"kind": "cube", "name": "MifBoolB", "location": [24.5, 0, 0]}),
     ("create_action", {"name": "MifMatrixAction"}),
     ("create_primitive", {"kind": "cube", "name": "MifJoinA", "location": [8, 0, 0]}),
     ("create_primitive", {"kind": "cube", "name": "MifJoinB", "location": [8.5, 0, 0]}),
