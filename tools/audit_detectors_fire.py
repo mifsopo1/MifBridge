@@ -934,6 +934,40 @@ def plant_stale_count(text):
         return None
     return text[:m.start(1)] + "998" + text[m.end(1):]
 
+
+# ---------------------------------------------------------------------------
+# audit_mutate_then_deny_ue - the C++ twin, and the last detector without a plant
+# ---------------------------------------------------------------------------
+# It plants into Source/, which this harness skips whenever an editor holds the tree, so it sat
+# under "no plant is defined for these" for as long as one was open. The addon twin had all five
+# of its rules planted the same morning; this is the other half.
+
+_UE_PIE = os.path.join(ROOT, "Source", "MifBridge", "Private", "MifBridgePIE.cpp")
+_UE_ANCHOR = "void H_stop_pie("
+
+
+def plant_ue_mutate_then_deny(text):
+    """A ->Set() call, then a Fail() promising nothing happened.
+
+    The shape the audit exists for, and the one op_set_light had on the Blender side: assign,
+    then refuse, leaving a caller who read the refusal believing the object was untouched.
+    """
+    if _UE_ANCHOR not in text:
+        return None
+    body = "\n".join((
+        'void H_mifplant_ue_deny(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)',
+        '{',
+        '\tUWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;',
+        '\tif (World)',
+        '\t{',
+        '\t\tWorld->SetShouldTick(false);',
+        '\t\tFail(Out, TEXT("refused. NOTHING was changed."));',
+        '\t\treturn;',
+        '\t}',
+        '}',
+    ))
+    return text.replace(_UE_ANCHOR, body + "\n\n" + _UE_ANCHOR, 1)
+
 PLANTS = {
     # THE ADDON AUDITS BUILT ON 2026-09-03/04. They were listed under "no plant is defined for
     # these, so their green means nothing here" - and leaving them there because they are recent
@@ -944,6 +978,17 @@ PLANTS = {
     "audit_stale_counts.py": (os.path.join(ROOT, "README.md"), plant_stale_count,
                               "says 998, actually"),
     "audit_mutate_then_deny.py": (_ADDON_OPS, plant_mutate_then_deny, "op_mifplant_denies"),
+    # THE MARKER IS THE ENDPOINT NAME, NOT THE HANDLER NAME, and the difference is the whole reason
+    # this plant was verified before it was registered. It was first written as "H_mifplant_ue_deny"
+    # - the C++ function the plant inserts - and with that marker the run reported the detector
+    # ASLEEP: the audit went red on the planted defect exactly as it should, and prove() could not
+    # find its marker in the output, because this audit reports findings by ENDPOINT
+    # ("MifBridgePIE.cpp:mifplant_ue_deny:SetShouldTick:changed") and handlers are H_<endpoint>.
+    # A working detector, accused. That is the third plant in this file to accuse a healthy tool on
+    # its first run, and the second to do it for a reason that had nothing to do with the tool.
+    "audit_mutate_then_deny_ue.py": (_UE_PIE, plant_ue_mutate_then_deny,
+                                     "mifplant_ue_deny"),
+
     "audit_created_name_reported.py": (_ADDON_OPS, plant_unreported_created_name,
                                        "op_mifplant_unreported"),
     "audit_output_paths.py": (_ADDON_OPS, plant_unguarded_output_path, "op_mifplant_writes"),
@@ -1119,6 +1164,7 @@ ARGS = {"audit_vacuous_checks.py": ["--all"],
         # tool describe it, see exit 0 and call the tool asleep for doing its job.
         "audit_stale_counts.py": ["--check"],
         "audit_mutate_then_deny.py": ["--check"],
+        "audit_mutate_then_deny_ue.py": ["--check"],
         "audit_created_name_reported.py": ["--check"],
         "audit_output_paths.py": ["--check"],
         "audit_unguarded_numbers.py": ["--check"],
@@ -1180,10 +1226,48 @@ def source_digest():
     return h.hexdigest()
 
 
-def run(tool):
-    argv = [sys.executable, os.path.join(HERE, tool)] + ARGS.get(tool, [])
-    r = subprocess.run(argv, capture_output=True, text=True, cwd=ROOT)
+def run(tool, root=None):
+    """Run a detector. With `root`, run the COPY of it that lives in that tree.
+
+    Both the script path and the cwd move together, and they have to: every Source/ detector finds
+    what it scans with `os.path.join(os.path.dirname(HERE), "Source", ...)`, so it is the location of
+    the SCRIPT that decides which tree gets analysed. Moving only the cwd would run the real
+    detector against the real Source/ and quietly prove nothing.
+    """
+    home = os.path.join(root, "tools") if root else HERE
+    argv = [sys.executable, os.path.join(home, tool)] + ARGS.get(tool, [])
+    r = subprocess.run(argv, capture_output=True, text=True, cwd=root or ROOT)
     return r.returncode, (r.stdout or "") + (r.stderr or "")
+
+
+# A DISPOSABLE COPY OF THE TREE, built at most once per run and only if it is needed.
+#
+# Excludes four directories and nothing else. dist/ is 32MB of release zips, __pycache__ is stale
+# bytecode that would shadow the copies, blender-showcase/ is render output, and .git is both huge
+# and pointless here. Everything else comes across, INCLUDING the whole of tools/, because the
+# detectors import each other (audit_mutate_then_deny_ue alone pulls in harvest_param_table and
+# audit_postconditions) and a mirror missing an import is a mirror that reports ASLEEP.
+_MIRROR_SKIP = ("dist", "__pycache__", "blender-showcase", ".git")
+_MIRROR = [None]
+
+
+def mirror_root():
+    """Path to the copy, building it on first use. None if it could not be built."""
+    if _MIRROR[0] is not None:
+        return _MIRROR[0] or None
+    import shutil
+    import tempfile
+    dest = os.path.join(tempfile.mkdtemp(prefix="mifplant-"), "MifBridge")
+    try:
+        shutil.copytree(ROOT, dest,
+                        ignore=shutil.ignore_patterns(*_MIRROR_SKIP),
+                        symlinks=False)
+    except OSError as exc:
+        print("  could not build the mirror (%s) - Source/ plants stay skipped" % exc)
+        _MIRROR[0] = ""
+        return None
+    _MIRROR[0] = dest
+    return dest
 
 
 def entries_for(tool):
@@ -1200,10 +1284,20 @@ def entries_for(tool):
     return list(v) if isinstance(v, list) else [v]
 
 
-def prove(tool, entry=None):
-    """(status, detail). status is one of proven / ASLEEP / anchor-gone / already-red."""
+def prove(tool, entry=None, root=None):
+    """(status, detail). status is one of proven / ASLEEP / anchor-gone / already-red.
+
+    `root` redirects BOTH halves of the experiment into a copy of the tree - the file the plant is
+    written to and the detector that is run - so a Source/ plant can be proved while somebody has
+    this project open in an editor. The real Source/ is not opened for writing at all in that mode.
+    """
     entry = entry if entry is not None else entries_for(tool)[0]
     target, planter, marker = entry[0], entry[1], entry[2]
+    if root:
+        # The same relative file, inside the copy. Rebuilt from the relative path rather than by
+        # string-replacing ROOT, so a target that somehow sat outside the tree fails loudly on the
+        # isfile check below instead of being silently rewritten into the mirror.
+        target = os.path.join(root, os.path.relpath(target, ROOT))
     gate = entry[3] if len(entry) > 3 else True
     # OPTIONAL 5th slot: a string that must be GONE from the mutated text for the plant to have
     # landed. Optional because most plants ADD something rather than remove it, and "it is there
@@ -1213,7 +1307,7 @@ def prove(tool, entry=None):
     if not os.path.isfile(target):
         return "anchor-gone", "target file missing: %s" % os.path.basename(target)
 
-    before_rc, before_out = run(tool)
+    before_rc, before_out = run(tool, root)
     original = io.open(target, "rb").read()
     # Normalise BEFORE planting. Every needle in this file is written with \n, and every file it
     # targets is CRLF, so planting against the raw decode silently found no anchor and reported
@@ -1246,7 +1340,7 @@ def prove(tool, entry=None):
     nl = "\r\n" if b"\r\n" in original else "\n"
     io.open(target, "w", encoding="utf-8", newline="").write(mutated.replace("\n", nl))
     try:
-        rc, out = run(tool)
+        rc, out = run(tool, root)
     finally:
         io.open(target, "wb").write(original)
         if io.open(target, "rb").read() != original:
@@ -1292,10 +1386,10 @@ def main():
     busy = editor_is_running()
     if busy:
         print("")
-        print("An editor is answering on 127.0.0.1:8791. Plants that write to Source/ are SKIPPED -")
-        print("they restore in about a second, but Live Coding compiles on demand and nobody should")
-        print("risk compiling a planted defect into somebody's open editor. Close it, or read the")
-        print("python-only results below and run the rest later.")
+        print("An editor is answering on 127.0.0.1:8791, so plants that write to Source/ are proved")
+        print("against a COPY of the tree in a temp directory instead. Same detector, same plant,")
+        print("same verdict - and your Source/ is never opened for writing, so Live Coding cannot")
+        print("compile a planted defect into an open editor. Close the editor for the real thing.")
         print("")
 
     before = source_digest()
@@ -1314,12 +1408,22 @@ def main():
                                                          "'could not check', not ASLEEP"))
             continue
         plants = entries_for(tool)
+        # ON A COPY, NOT SKIPPED. The guard below used to end the story: with an editor up, every
+        # Source/ plant was skipped and 15 of the 40 - 37% of this harness - proved nothing. They
+        # are static text analysis, so a copy of the tree answers the same question, and the real
+        # Source/ is never written to in that mode. The row says which tree it used.
+        root = None
         if busy and plants[0][0].startswith(os.path.join(ROOT, "Source")):
-            skipped_editor_up.append(tool)
-            print("  %-26s %-12s %s" % (tool, "skipped", "editor is running - plants into Source/"))
-            continue
+            root = mirror_root()
+            if root is None:
+                skipped_editor_up.append(tool)
+                print("  %-26s %-12s %s" % (tool, "skipped",
+                                            "editor is running and the mirror could not be built"))
+                continue
         for i, entry in enumerate(plants):
-            status, detail = prove(tool, entry)
+            status, detail = prove(tool, entry, root)
+            if root and status == "proven":
+                detail += " [on a COPY of the tree - an editor is open, so Source/ was not touched]"
             # The marker disambiguates which rule was proved. Printing the tool name alone for
             # five rows would read as one result repeated, which is the exact confusion this
             # change exists to end.
