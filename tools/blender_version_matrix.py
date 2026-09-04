@@ -881,8 +881,22 @@ def run_one(label, exe, only, scratch):
             "fatal": "no MIFMATRIX line; last stderr: %s" % (proc.stderr or "")[-400:]}
 
 
+def _cwd_snapshot():
+    """Everything in the directory the matrix was launched from.
+
+    The matrix renders, bakes and exports; every one of those is supposed to write under TMP. A file
+    appearing HERE means an op resolved a path it could not use and fell back to the process's
+    working directory, which is how ".exr" ended up committed-adjacent in this repo.
+    """
+    try:
+        return set(os.listdir("."))
+    except OSError:
+        return set()
+
+
 def main():
     ap = argparse.ArgumentParser()
+    cwd_before = _cwd_snapshot()
     ap.add_argument("--ops", default="", help="comma-separated op names")
     ap.add_argument("--versions", default="", help="comma-separated version labels")
     # WHY THE REFUSAL TEXT IS WORTH A FLAG: the ops that refuse on every build are the
@@ -1168,8 +1182,22 @@ def main():
     # reported them - add_driver, add_fcurve_modifier, delete_keyframe, edit_fcurve and
     # remove_driver all reached a bare int()/float() on caller input - and it is the only
     # pass in this file that sends a corrupted payload, so nothing else can catch the next one.
+    # THE HARNESS'S OWN LEAK. Anything new in the launch directory was written by an op that could
+    # not resolve its path and fell back to the CWD - render_still's ".exr" was exactly that, and it
+    # took an unrelated `git status` to notice. A file left in the caller's directory is the
+    # unattributable diff this project keeps naming, produced by the test tool rather than caught
+    # by it.
+    strays = sorted(_cwd_snapshot() - cwd_before)
+    if strays:
+        print("")
+        print("THE MATRIX LEFT %d FILE(S) IN ITS LAUNCH DIRECTORY:" % len(strays))
+        for name in strays:
+            print("  %s" % name)
+        print("An op resolved a path it could not use and wrote here instead. Find it before")
+        print("adding this to .gitignore - the file is the symptom, the path handling is the bug.")
+
     return 1 if (raised or fatal or suspect or new_diffs or leaked or leaks
-                 or bad_raises) else 0
+                 or bad_raises or strays) else 0
 
 
 if __name__ == "__main__":
