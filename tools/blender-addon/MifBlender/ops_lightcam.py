@@ -434,7 +434,55 @@ def op_list_lights(params):
     }
 
 
-def _write_camera_focus_and_fov(data, params, verb):
+def _camera_focus_and_fov_plan(params, camera_type, verb):
+    """Validate fieldOfView and focusObject BEFORE anything is created or written.
+
+    SPLIT OUT OF THE WRITER ON 2026-09-04, because the writer was called below the commit in both
+    ops and every one of its four refusals said "NOTHING was created"/"NOTHING was changed" after the
+    camera existed and ten properties had been set. create_camera({lens: 50, fieldOfView: 90}) built
+    the camera, linked it, wrote location, rotation, type, lens, sensor, clipping and shift, and then
+    answered "NOTHING was created" - with the camera sitting in the file. set_camera was worse: the
+    line above its call reads "# COMMIT. Nothing below can refuse."
+
+    Both ops had their _vec3 parses hoisted above the commit that same morning for exactly this
+    reason. This helper was ADDED after that, below the commit, and reintroduced the shape the hoist
+    had just removed - which is the argument for auditing the property rather than remembering it.
+    Found by tools/audit_mutate_then_deny.py; see its docstring.
+
+    camera_type is passed in rather than read off the datablock so this can run before one exists:
+    create_camera knows it as `effective_type`, set_camera as the requested type or the current one.
+
+    SPLIT RATHER THAN REORDERED, the same choice as ops_create's _place_values. Moving the call up
+    would work today and be undone by the next person who needs `data`; a function that cannot write
+    cannot be called too early.
+    """
+    fov = take_float(params, "fieldOfView", default=None)
+    if fov is not None:
+        if take_float(params, "lens", "focalLength", default=None) is not None:
+            raise MifOpError(
+                "pass lens/focalLength OR fieldOfView, not both - they are the SAME property in "
+                "two units, and setting angle to 90 degrees moves lens from 50mm to 18mm. "
+                "NOTHING was %s." % verb)
+        if camera_type != "PERSP":
+            raise MifOpError("fieldOfView applies to a PERSP camera and this one is %s - an "
+                             "orthographic camera has no field of view. NOTHING was %s."
+                             % (camera_type, verb))
+        if not (0.0 < fov < 180.0):
+            raise MifOpError("fieldOfView is in DEGREES and must be between 0 and 180, got %g. "
+                             "NOTHING was %s." % (fov, verb))
+
+    focus_name = take(params, "focusObject", default=None, kind=str)
+    target = None
+    if focus_name is not None:
+        target = bpy.data.objects.get(str(focus_name))
+        if target is None:
+            have = sorted(o.name for o in bpy.data.objects)[:25]
+            raise MifOpError("no object named '%s' to focus on. This scene has: %s. NOTHING was %s."
+                             % (focus_name, ", ".join(have) if have else "(none)", verb))
+    return fov, target
+
+
+def _write_camera_focus_and_fov(data, planned):
     """focusObject and fieldOfView - both REPORTED by object_info and, until now, writable by nothing.
 
     THE TWO ASYMMETRIES THIS CLOSES. ops_common reports dofFocusObject and the camera's angle; the
@@ -449,32 +497,15 @@ def _write_camera_focus_and_fov(data, params, verb):
 
     ANGLE AND LENS ARE ONE PROPERTY IN TWO UNITS. Setting angle to 90 degrees moves lens from 50mm
     to 18mm - measured on all four builds - so passing both is contradictory and is refused rather
-    than resolved by declaration order.
+    than resolved by declaration order. That refusal, and every other one this pair makes, lives in
+    _camera_focus_and_fov_plan above. NOTHING HERE CAN REFUSE, which is the point of the split.
     """
-    fov = take_float(params, "fieldOfView", default=None)
+    fov, target = planned
     if fov is not None:
-        if take_float(params, "lens", "focalLength", default=None) is not None:
-            raise MifOpError(
-                "pass lens/focalLength OR fieldOfView, not both - they are the SAME property in "
-                "two units, and setting angle to 90 degrees moves lens from 50mm to 18mm. "
-                "NOTHING was %s." % verb)
-        if data.type != "PERSP":
-            raise MifOpError("fieldOfView applies to a PERSP camera and this one is %s - an "
-                             "orthographic camera has no field of view. NOTHING was %s."
-                             % (data.type, verb))
-        if not (0.0 < fov < 180.0):
-            raise MifOpError("fieldOfView is in DEGREES and must be between 0 and 180, got %g. "
-                             "NOTHING was %s." % (fov, verb))
         data.angle = math.radians(fov)
 
-    focus_name = take(params, "focusObject", default=None, kind=str)
     focus_set = False
-    if focus_name is not None:
-        target = bpy.data.objects.get(str(focus_name))
-        if target is None:
-            have = sorted(o.name for o in bpy.data.objects)[:25]
-            raise MifOpError("no object named '%s' to focus on. This scene has: %s. NOTHING was %s."
-                             % (focus_name, ", ".join(have) if have else "(none)", verb))
+    if target is not None:
         data.dof.focus_object = target
         # A FOCUS OBJECT WITHOUT use_dof IS STORED AND IGNORED, the same shape as a cutoff distance
         # with its toggle off - the field reads back perfectly and the render does not change.
@@ -535,6 +566,7 @@ def op_create_camera(params):
     loc = _vec3(params, "location", (0.0, 0.0, 0.0))
     want_rot = (_look_at_euler(loc, _vec3(params, "lookAt", (0.0, 0.0, 0.0)))
                 if "lookAt" in params else _vec3(params, "rotation", (0.0, 0.0, 0.0)))
+    cam_plan = _camera_focus_and_fov_plan(params, effective_type, "created")
 
     snap = selection_snapshot()
     try:
@@ -581,7 +613,7 @@ def op_create_camera(params):
                 data.dof.aperture_fstop = fstop
             if dofd is not None:
                 data.dof.focus_distance = dofd
-        _fov, _focus_set = _write_camera_focus_and_fov(data, params, "created")
+        _fov, _focus_set = _write_camera_focus_and_fov(data, cam_plan)
 
         make_active = take_bool(params, "makeActive", default=True)
         was = bpy.context.scene.camera.name if bpy.context.scene.camera else None
@@ -706,6 +738,10 @@ def op_set_camera(params):
     elif "rotation" in params:
         set_rot = _vec3(params, "rotation", tuple(obj.rotation_euler), "changed")
 
+    # Validated here, written after the commit. The line below used to be false: the focus/fov
+    # writer sat under it and could refuse with "NOTHING was changed" after eleven writes.
+    cam_plan = _camera_focus_and_fov_plan(params, ctype or cam.type, "changed")
+
     # COMMIT. Nothing below can refuse.
     if ctype:
         cam.type = ctype
@@ -733,7 +769,7 @@ def op_set_camera(params):
     # THE SAME WRITER create_camera USES. Two ops asking the same question needs one answer;
     # a second copy is how allowEditConst got past one guard and not the other in this very
     # file, which its own comment above _LIGHT_TYPE_KEYS records.
-    _write_camera_focus_and_fov(cam, params, "changed")
+    _write_camera_focus_and_fov(cam, cam_plan)
     if take_bool(params, "makeActive", default=False):
         bpy.context.scene.camera = obj
 
