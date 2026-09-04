@@ -147,7 +147,7 @@ def _op_table():
     from . import (ops_scene, ops_mesh, ops_gen, ops_rig, ops_create, ops_material,
                    ops_lightcam, ops_anim, ops_render, ops_world,
                    ops_physics, ops_particles, ops_nodes, ops_viewport, ops_file, ops_constraint,
-                   ops_collection, ops_viewlayer, ops_io)
+                   ops_collection, ops_viewlayer, ops_io, ops_query)
 
     table = {}
     table.update(ops_scene.OPS)
@@ -169,6 +169,7 @@ def _op_table():
     table.update(ops_collection.OPS)
     table.update(ops_viewlayer.OPS)
     table.update(ops_io.OPS)
+    table.update(ops_query.OPS)
     return table
 
 

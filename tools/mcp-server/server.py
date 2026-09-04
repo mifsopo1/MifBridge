@@ -5834,6 +5834,28 @@ def bl_assign_material_to_faces(object: str, slot: int, faces: list = None,
 
 
 @mcp.tool()
+def bl_ray_cast(origin: list, direction: list = None, target: list = None, object: str = None,
+                distance: float = None, evaluated: bool = None) -> dict:
+    "Fire a ray into a Blender scene and report what it hits. Chosen by COUNTING escapes, not from a wishlist: 13 of 21 run_python escapes in one day's real work were ray casts - it is what answers 'what is at this point', 'what is under it', 'is anything across this edge', which every layout, level and hard-surface job is built on. WORLD COORDINATES IN AND OUT: obj.ray_cast is LOCAL on both sides, so handing it world coordinates gives a miss or a plausible WRONG hit with nothing to say so, and a moved or rotated object is the normal case - the conversion happens in the addon. Normals come back through the inverse transpose, not the object matrix, which is only correct under uniform scale. With no object it casts against the whole scene through the depsgraph, so it hits what is actually there - subdivided, displaced, mirrored, geometry-nodes output. With an object it uses that object's BASE mesh unless evaluated:true, and says so when the object has modifiers that make those differ. Pass target instead of direction to cast towards a point."
+    return _blender("ray_cast", origin=origin, direction=direction, target=target, object=object,
+                    distance=distance, evaluated=evaluated)
+
+
+@mcp.tool()
+def bl_closest_point_on_mesh(object: str, point: list, distance: float = None) -> dict:
+    "The nearest point ON a Blender mesh to a point in space - the other half of bl_ray_cast, for when there is no obvious direction to cast in: snapping to a surface, measuring clearance, finding which face something sits over. World in, world out, with the same local-space conversion and the same inverse-transpose normal. Also returns signedOffset - positive means the query point is outside that face, negative behind it - which answers 'is this inside the mesh' without a second cast."
+    return _blender("closest_point_on_mesh", object=object, point=point, distance=distance)
+
+
+@mcp.tool()
+def bl_face_info(object: str, material: str = None, slot: int = None, indices: list = None,
+                 limit: int = None, with_faces: bool = None, evaluated: bool = None) -> dict:
+    "Which faces of a Blender mesh carry which material, how many, and where they are. The second most-escaped-to question - 15 of one day's 21 run_python escapes were reading per-face material - and a pure read/write asymmetry: bl_assign_material_to_faces could WRITE that relation and nothing could read it back, so every 'operate on just the glass faces' job left the typed path. AGGREGATE FIRST: per-slot counts, areas and bounding boxes answer most of it in a fixed-size response, and with_faces asks for rows once you know the slot. The bounding box comes in BOTH spaces, and the world one is built from all EIGHT corners rather than by transforming min and max, which is correct only for an axis-aligned matrix and plausible-but-wrong under any rotation. Empty material slots are reported: a slot holding a material with no faces is what a wrong slot index leaves behind, and it is invisible from the material list. Truncation is never silent."
+    return _blender("face_info", object=object, material=material, slot=slot, indices=indices,
+                    limit=limit, withFaces=with_faces, evaluated=evaluated)
+
+
+@mcp.tool()
 def bl_import_scene(file: str, collection: str = None) -> dict:
     "Read OBJ, USD/USDA/USDC/USDZ, Alembic, STL or PLY - the other half of bl_export_scene, which on its own left the addon able to WRITE six formats and read three. FBX and glTF are read by bl_import_mesh and are refused here by name: two ops reading one format is how they drift apart, and that one knows things this does not - that useCustomNormals is an FBX option with no glTF equivalent, and that an axis conversion applied to glTF is applied twice because the spec already fixes +Y up. THE POSTCONDITION IS WHAT ARRIVED, by set difference, because every import operator returns FINISHED and none returns the objects it made: a file that parses and holds nothing importable - an animation-only USD, a camera-only export - reports success and adds nothing, and that is refused rather than returned as ok:true. A named collection is resolved BEFORE the import, so a bad name cannot leave objects already in the scene."
     return _blender("import_scene", file=file, collection=collection)

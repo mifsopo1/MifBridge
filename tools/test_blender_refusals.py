@@ -1659,6 +1659,58 @@ def main():
           "whatever happens to be selected", ok, msg)
 
     print("")
+    print("=== B122: the query ops - refusals only, and the transform math is NOT covered ===")
+    # CHOSEN BY COUNTING, not from a wishlist: of 21 run_python escapes in one day's real work, 13
+    # were ray casts and 15 were reading per-face material. Those two absences accounted for nearly
+    # every escape from the typed path.
+    #
+    # WHAT THESE DO NOT COVER, said plainly because it is the important half. The correctness story
+    # of ops_query is COORDINATE SPACE - world-to-local on the way in, local-to-world out, and
+    # normals through the INVERSE TRANSPOSE rather than the object matrix. None of that is checked
+    # here: the offline mathutils stub has Vector and no Matrix, so the arithmetic cannot run. It
+    # needs a live Blender, and until then it is unverified exactly like every other postcondition.
+    from MifBlender import ops_query as OQ
+
+    ok, msg = refuses(OQ.op_ray_cast, {"origin": [0, 0, 0]}, "direction", "required")
+    check("B122 a ray with no direction and no target is refused", ok, msg)
+    ok, msg = refuses(OQ.op_ray_cast, {"origin": [0, 0, 0], "direction": [0, 0, -1],
+                                       "target": [1, 1, 1]}, "not both")
+    check("B122 direction AND target together is refused - target IS a direction", ok, msg)
+    ok, msg = refuses(OQ.op_ray_cast, {"origin": [0, 0, 0], "direction": [0, 0, 0]},
+                      "zero length", "hits nothing")
+    check("B122 a zero-length direction is refused rather than cast", ok, msg)
+    ok, msg = refuses(OQ.op_ray_cast, {"origin": [0, 0, 0], "target": [0, 0, 0]},
+                      "zero length", "target is the origin")
+    check("B122 a target equal to the origin is refused, and the message says WHY it is zero "
+          "length - the caller wrote a point, not a direction", ok, msg)
+    ok, msg = refuses(OQ.op_ray_cast, {"origin": [0, 0], "direction": [0, 0, -1]}, "[x,y,z]")
+    check("B122 a two-component origin is refused by shape", ok, msg)
+    ok, msg = refuses(OQ.op_ray_cast, {"origin": [0, 0, 0], "direction": [0, 0, -1],
+                                       "distance": 0}, "greater than 0")
+    check("B122 a zero distance is refused - it can never hit anything", ok, msg)
+    ok, msg = refuses(OQ.op_ray_cast, {"origin": [0, 0, 0], "direction": [0, 0, -1],
+                                       "object": "Lamp"}, "is a LIGHT", "whole scene")
+    check("B122 casting against a non-MESH is refused and points at the scene form", ok, msg)
+
+    ok, msg = refuses(OQ.op_closest_point, {"object": "Lamp", "point": [0, 0, 0]},
+                      "is a LIGHT", "surface")
+    check("B122 closest_point_on_mesh on a non-MESH is refused", ok, msg)
+    ok, msg = refuses(OQ.op_closest_point, {"object": "Cube"}, "'point' is required")
+    check("B122 closest_point_on_mesh with no point is refused", ok, msg)
+
+    ok, msg = refuses(OQ.op_face_info, {"object": "Lamp"}, "has no faces")
+    check("B122 face_info on a non-MESH is refused", ok, msg)
+    ok, msg = refuses(OQ.op_face_info, {"object": "Cube", "material": "Wood", "slot": 0},
+                      "not both", "can occupy more than one slot")
+    check("B122 material AND slot together is refused - a material can occupy several slots, so "
+          "the two can disagree and only one could win", ok, msg)
+    ok, msg = refuses(OQ.op_face_info, {"object": "Cube", "indices": "not a list"},
+                      "must be a list")
+    check("B122 a non-list indices is refused by type", ok, msg)
+    ok, msg = refuses(OQ.op_face_info, {"object": "Cube", "limit": -1}, "cannot be negative")
+    check("B122 a negative limit is refused", ok, msg)
+
+    print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
     # THE NEGATIVE CONTROL. Every check above proves something is refused; without this, a guard
     # that refused EVERYTHING would score full marks. Retyping to SPOT while setting spotAngle is
