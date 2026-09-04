@@ -12590,6 +12590,41 @@ out-of-process the way ops_gen already does with gen_status.
       ['UVMap'] on 4.4 and 5.0 while activeLayer still cheerfully says 'Lightmap', which is the
       whole point in one line.
 
+- [x] **UCX convex hulls for engine collision** DONE 2026-09-03
+      create_collision_hull. Item 7 of the measured gap list, and correctly filed: add_collision is
+      a RIGID-BODY PHYSICS setting evaluated by Blender's own simulation, while this builds a
+      separate MESH that travels in the FBX beside the render mesh and becomes collision in the
+      engine. Same word, unrelated jobs.
+
+      THE RECIPE EVERY TUTORIAL GIVES IS WRONG AND LOOKS RIGHT, which is the whole reason this was
+      worth doing carefully. bm.from_mesh(source) then convex_hull then delete geom_interior, run on
+      Suzanne, produces a mesh with the SAME 66 VERTICES as the correct hull - and 51 non-manifold
+      edges, 4 boundary edges, Euler 16 instead of 2, 22 convexity violations and a volume inflated
+      from 3.5321 to 3.8298. Nothing raises. Verified by running BOTH recipes on 4.4.0 and 5.0.1
+      rather than taking the recon agent's word for it.
+
+      So it builds from POINTS ONLY - a bmesh containing vertex positions and no edges or faces -
+      and then AUDITS the result on seven measurements re-read from the finished mesh datablock:
+      closed, manifold, no loose vertices, Euler 2, positive volume, and GENUINE CONVEXITY tested by
+      checking every vertex against every face plane. A hull failing any of them is DELETED and the
+      call refused, because a broken hull imports, looks like collision, and things fall through it.
+
+      Degenerate input produces silent garbage rather than an exception - collinear points give an
+      empty mesh, coplanar points a zero-volume sheet - which is why the audit refuses instead of
+      warning. Demonstrated accidentally: the first matrix payload pointed at a flat grid and was
+      correctly refused with "4 boundary edge(s)".
+
+      maxVertices simplifies by merging and RE-HULLING, never by decimating: a decimated hull is no
+      longer convex, while the hull of a reduced point set is convex by construction. Measured on
+      three builds - Suzanne to maxVertices 20 gives 13 vertices, still Euler 2 and zero violations.
+
+      A NAME COLLISION IS REFUSED, NOT UNIQUIFIED. bpy.data.objects.new on a taken name returns
+      'UCX_Rock_00.001', and that suffix survives FBX export so the engine parses the base name
+      wrongly and attaches the hull to nothing.
+
+      The UCX_<RenderMesh>_## convention itself is ENGINE-SIDE and is not verified here - everything
+      else in the response was measured on this Blender, and the response says which half is which.
+
 - [ ] **Tier 5 - craft depth** (1 of 5 left)
       DONE 2026-09-03: set_camera_panorama, move_keyframes, set_light_ies, set_light_linking.
 

@@ -70,6 +70,10 @@ PAYLOADS = {
     "bisect_plane": {"object": "Cube", "planeCo": [0, 0, 0], "axis": "Z"},
     "uv_info": {"object": "Cube"},
     "uv_unwrap": {"object": "Cube"},
+    # MifCutter, NOT MifGrid - a grid is COPLANAR and the hull audit correctly refuses it with
+    # "4 boundary edge(s)", which is the audit working and a useless payload. A collision hull
+    # needs a solid.
+    "create_collision_hull": {"object": "MifCutter", "index": 3},
     "list_modifiers": {"object": "MifSpare"},
     "list_vertex_groups": {"object": "Cube"},
     "list_shape_keys": {"object": "Cube"},

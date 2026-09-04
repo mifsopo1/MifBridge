@@ -2640,10 +2640,269 @@ def op_uv_info(params):
     }
 
 
+_UCX_KEYS = {"object", "name", "index", "worldSpace", "maxVertices", "collection", "prefix"}
+
+# Unreal's collision-mesh naming. UCX_<RenderMeshName>_## alongside the render mesh in one FBX, and
+# the importer attaches it as a convex collision primitive.
+#
+# STATED AS THE CONVENTION, NOT AS SOMETHING THIS ADDON VERIFIED. Everything else in this op was
+# measured on four real Blenders; whether a given Unreal build parses a given name is a UE-side
+# behaviour that cannot be checked from here, and this repo's rule is to say so rather than to imply
+# a test that never ran.
+_UCX_PREFIX = "UCX_"
+
+# UE's convex collision limit. Above this the importer rejects or simplifies the hull depending on
+# version, so it is reported rather than silently exceeded.
+_UE_HULL_VERT_LIMIT = 255
+
+
+def _hull_audit(mesh):
+    """The seven measurements that separate a real hull from one that merely looks like one.
+
+    A BROKEN HULL HAS THE RIGHT VERTEX COUNT. Measured on Suzanne, 4.4.0 and 5.0.1: the recipe every
+    tutorial gives - bm.from_mesh(source), convex_hull, delete geom_interior - returns 66 vertices,
+    and so does the correct one. Identical count, and the broken one carries 51 NON-MANIFOLD edges,
+    4 boundary edges, Euler 16 instead of 2, 22 convexity violations and a volume inflated from
+    3.5321 to 3.8298. Nothing raises. Anything that checks "did I get a hull with a sensible number
+    of verts" passes on the wreck.
+
+    So the postcondition is these seven, re-read from the finished MESH DATABLOCK rather than from
+    the bmesh that built it - a bmesh reports what was constructed, the datablock reports what
+    survived being written.
+    """
+    bm = bmesh.new()
+    try:
+        bm.from_mesh(mesh)
+        bm.verts.ensure_lookup_table()
+        bm.faces.ensure_lookup_table()
+        boundary = sum(1 for e in bm.edges if len(e.link_faces) == 1)
+        nonmanifold = sum(1 for e in bm.edges if len(e.link_faces) > 2)
+        loose = sum(1 for v in bm.verts if not v.link_edges)
+        euler = len(bm.verts) - len(bm.edges) + len(bm.faces)
+        volume = bm.calc_volume(signed=True)
+        # CONVEXITY, MEASURED RATHER THAN ASSUMED: every vertex must lie behind every face plane.
+        # O(V*F), which is 8448 dot products for a 66-vertex hull - cheap enough to run every time,
+        # and the only check that catches a hull that is closed and manifold and still concave.
+        span = 1.0
+        if bm.verts:
+            span = max((max(v.co[i] for v in bm.verts) - min(v.co[i] for v in bm.verts))
+                       for i in range(3)) or 1.0
+        eps = max(1e-5 * span, 1e-7)
+        violations = 0
+        for face in bm.faces:
+            normal, point = face.normal, face.verts[0].co
+            for vert in bm.verts:
+                if normal.dot(vert.co - point) > eps:
+                    violations += 1
+        return {
+            "vertices": len(bm.verts), "edges": len(bm.edges), "faces": len(bm.faces),
+            "boundaryEdges": boundary, "nonManifoldEdges": nonmanifold, "looseVertices": loose,
+            "eulerCharacteristic": euler, "volume": round(float(volume), 6),
+            "convexityViolations": violations,
+        }
+    finally:
+        bm.free()
+
+
+def _build_hull(points, merge_dist):
+    """A bmesh holding the convex hull of a POINT SET. Caller frees it.
+
+    POINTS ONLY - never bm.from_mesh(source). That is the whole finding and it is not a nicety:
+    feeding convex_hull a bmesh that already carries the source's edges and faces produces a hull
+    with the source's topology tangled through it, and the result is broken on ANY concave mesh
+    while looking entirely plausible. See _hull_audit.
+
+    THE THREE RESULT KEYS OVERLAP AND NONE IS RELIABLY POPULATED. geom_interior and geom_unused
+    were the same four vertices on a convex test case and 441-and-empty on Suzanne, so all three are
+    collected and DEDUPED BY id() - deleting the same vertex twice is a crash, and trusting one key
+    alone leaves interior geometry behind.
+
+    context='VERTS' is the only delete context that removes anything: measured, EDGES, FACES,
+    EDGES_FACES, FACES_ONLY and FACES_KEEP_BOUNDARY all leave the mesh untouched with no exception
+    and no warning. Five of six spellings silently do nothing.
+    """
+    bm = bmesh.new()
+    for co in points:
+        bm.verts.new(co)
+    bm.verts.ensure_lookup_table()
+    if merge_dist > 0.0:
+        bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=merge_dist)
+        bm.verts.ensure_lookup_table()
+    result = bmesh.ops.convex_hull(bm, input=bm.verts)
+    seen, doomed = set(), []
+    for key in ("geom_interior", "geom_unused", "geom_holes"):
+        for element in result.get(key, []):
+            if id(element) not in seen:
+                seen.add(id(element))
+                doomed.append(element)
+    if doomed:
+        bmesh.ops.delete(bm, geom=doomed, context="VERTS")
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return bm
+
+
+def op_create_collision_hull(params):
+    """A convex hull collision mesh, named for Unreal's UCX_ convention.
+
+    WHY THIS IS NOT add_collision. That op makes an object a RIGID BODY COLLIDER - a physics
+    setting, evaluated by Blender's own simulation. This builds a separate MESH that travels in the
+    FBX beside the render mesh and becomes collision in the engine. Same word, unrelated jobs, and
+    the addon had the physics one and not this one.
+
+    THE TUTORIAL RECIPE IS WRONG AND LOOKS RIGHT. bm.from_mesh(source) then convex_hull then delete
+    geom_interior gives, on Suzanne, a mesh with the SAME 66 vertices as the correct hull and also
+    51 non-manifold edges, 4 boundary edges, Euler 16 instead of 2, 22 convexity violations and a
+    volume inflated by 8%. Nothing raises. Measured on 4.4.0 and 5.0.1. This builds from POINTS ONLY
+    and then AUDITS the result, refusing rather than returning a wreck.
+
+    DEGENERATE INPUT PRODUCES SILENT GARBAGE, never an exception - collinear points give an empty
+    mesh, coplanar points give a zero-volume sheet - which is why the audit is a refusal and not a
+    warning.
+
+    NAME COLLISIONS ARE A UCX KILLER. bpy.data.objects.new on a taken name returns 'UCX_Rock_00.001'
+    and that dot-suffix survives FBX export, so the engine parses the base name as 'Rock_00.001' and
+    attaches the hull to nothing. Refused rather than uniquified.
+
+    params:
+      object / name (str)      the render mesh to hull. Required.
+      index (int)              the ## suffix. Default 0, giving UCX_<object>_00.
+      name (str)               override the whole object name, bypassing the convention
+      prefix (str)             default 'UCX_'
+      worldSpace (bool)        hull the world-space points and leave the object at the origin,
+                               instead of hulling local points and copying the source transform
+      maxVertices (int)        simplify to at most this many by merging and RE-HULLING, which stays
+                               convex by construction. Decimating a hull does not.
+      collection (str)         where to link it. Default the source's own collection.
+    """
+    reject_unknown(params, _UCX_KEYS, "create_collision_hull")
+    # EVERY CHEAP ARGUMENT CHECKED BEFORE THE MESH IS TOUCHED. Reading the source's geometry to
+    # report a negative index is work done on the way to refusing, and it also makes the guards
+    # untestable without a real mesh - which is how three of these went unexercised until an offline
+    # check tried them. Same ordering rule as ray_cast and face_info.
+    src_name = take(params, "object", required=True, kind=str)
+    world = take_bool(params, "worldSpace", default=False)
+    index = take_int(params, "index", default=0)
+    if index < 0:
+        raise MifOpError("index cannot be negative, got %d. NOTHING was created." % index)
+    prefix = take(params, "prefix", default=_UCX_PREFIX, kind=str)
+    override = take(params, "name", kind=str)
+    max_verts_early = take_int(params, "maxVertices", default=None)
+    if max_verts_early is not None and max_verts_early < 4:
+        raise MifOpError("maxVertices must be at least 4 to enclose a volume, got %d. NOTHING was "
+                         "created." % max_verts_early)
+    coll_early = take(params, "collection", kind=str)
+    if coll_early and bpy.data.collections.get(coll_early) is None:
+        known = sorted(c.name for c in bpy.data.collections)[:25]
+        raise MifOpError("no collection named '%s'. Present: %s. NOTHING was created."
+                         % (coll_early, ", ".join(known) if known else "<none>"))
+
+    src = get_object(src_name, want_mesh=True)
+    mesh = src.data
+    if len(mesh.vertices) < 4:
+        raise MifOpError("'%s' has %d vertice(s). A convex hull needs at least 4 non-coplanar "
+                         "points to enclose any volume at all - fewer produces an empty or flat "
+                         "result with no error. NOTHING was created."
+                         % (src.name, len(mesh.vertices)))
+    hull_name = override or ("%s%s_%02d" % (prefix, src.name, index))
+
+    # REFUSED, NOT UNIQUIFIED. See the docstring: Blender's .001 suffix silently breaks the naming
+    # the whole convention rests on, and it survives the export.
+    if hull_name in bpy.data.objects:
+        raise MifOpError("an object named '%s' already exists. Blender would silently rename this "
+                         "to '%s.001', and that suffix survives FBX export - the engine then parses "
+                         "the base name wrongly and attaches the hull to nothing. Pass a different "
+                         "index, or delete the existing one. NOTHING was created."
+                         % (hull_name, hull_name))
+
+    max_verts = max_verts_early
+    coll = bpy.data.collections.get(coll_early) if coll_early else None
+
+    matrix = src.matrix_world
+    points = [(matrix @ v.co) if world else v.co.copy() for v in mesh.vertices]
+    span = max((max(p[i] for p in points) - min(p[i] for p in points)) for i in range(3)) or 1.0
+
+    bm = _build_hull(points, merge_dist=span * 1e-6)
+    simplified = None
+    try:
+        # SIMPLIFY BY MERGING AND RE-HULLING, not by decimating. A decimated hull is no longer
+        # convex - measured: ratio 0.1 gave 24 convexity violations at maxdist 0.017 - whereas the
+        # hull of a reduced POINT SET is convex by construction. Doubling the merge distance is a
+        # crude search and a cheap one, and it terminates because each pass strictly reduces or the
+        # loop gives up.
+        if max_verts is not None and len(bm.verts) > max_verts:
+            dist = span * 1e-4
+            for _ in range(24):
+                keep = [v.co.copy() for v in bm.verts]
+                bm.free()
+                bm = _build_hull(keep, merge_dist=dist)
+                if len(bm.verts) <= max_verts:
+                    break
+                dist *= 2.0
+            simplified = len(bm.verts)
+        hull_mesh = bpy.data.meshes.new(hull_name)
+        bm.to_mesh(hull_mesh)
+    finally:
+        bm.free()
+
+    hull_obj = bpy.data.objects.new(hull_name, hull_mesh)
+    (coll or (src.users_collection[0] if src.users_collection
+              else bpy.context.scene.collection)).objects.link(hull_obj)
+    if not world:
+        hull_obj.matrix_world = src.matrix_world.copy()
+
+    audit = _hull_audit(hull_mesh)
+    # THE REFUSAL IS THE POINT. A hull that fails any of these is worse than no hull: it imports,
+    # it looks like collision, and things fall through it.
+    failures = []
+    if audit["boundaryEdges"]:
+        failures.append("%d boundary edge(s) - the hull is not closed" % audit["boundaryEdges"])
+    if audit["nonManifoldEdges"]:
+        failures.append("%d non-manifold edge(s)" % audit["nonManifoldEdges"])
+    if audit["looseVertices"]:
+        failures.append("%d loose vertice(s)" % audit["looseVertices"])
+    if audit["eulerCharacteristic"] != 2:
+        failures.append("Euler characteristic %d, not 2 - leftover interior geometry"
+                        % audit["eulerCharacteristic"])
+    if audit["volume"] <= 1e-9:
+        failures.append("volume %g - the points are collinear or coplanar, so this encloses nothing"
+                        % audit["volume"])
+    if audit["convexityViolations"]:
+        failures.append("%d convexity violation(s) - vertices lie OUTSIDE the face planes"
+                        % audit["convexityViolations"])
+    if failures:
+        bpy.data.objects.remove(hull_obj, do_unlink=True)
+        bpy.data.meshes.remove(hull_mesh)
+        raise MifOpError("the hull built from '%s' failed its audit and was REMOVED rather than "
+                         "returned: %s. A broken hull imports, looks like collision, and things "
+                         "fall through it. Measurements: %s"
+                         % (src.name, "; ".join(failures), audit))
+
+    over = audit["vertices"] > _UE_HULL_VERT_LIMIT
+    return {
+        "ok": True,
+        "object": hull_obj.name,
+        "source": src.name,
+        "space": "WORLD" if world else "LOCAL (source transform copied)",
+        "collection": next((c.name for c in bpy.data.collections if hull_obj.name in c.objects),
+                           bpy.context.scene.collection.name),
+        "simplifiedTo": simplified,
+        "audit": audit,
+        "sourceVertices": len(mesh.vertices),
+        "withinEngineLimit": not over,
+        "note": ("%d vertices is above the %d a convex collision hull is usually limited to - pass "
+                 "maxVertices to reduce it." % (audit["vertices"], _UE_HULL_VERT_LIMIT))
+        if over else None,
+        "namingNote": ("UCX_<RenderMesh>_## is the engine-side convention this name follows. That "
+                       "half is NOT verified here - everything else in this response was measured "
+                       "on this Blender, but whether a given engine build parses a given name "
+                       "cannot be checked from inside Blender."),
+    }
+
 OPS = {
     "import_mesh": op_import_mesh,
     "decimate_mesh": op_decimate_mesh,
     "uv_unwrap": op_uv_unwrap,
+    "create_collision_hull": op_create_collision_hull,
     "export_mesh": op_export_mesh,
     "select_edges": op_select_edges,
     "bevel_edges": op_bevel_edges,

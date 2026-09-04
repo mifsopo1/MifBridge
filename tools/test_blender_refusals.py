@@ -1875,6 +1875,34 @@ def main():
         sc.use_nodes = _saved_use
 
     print("")
+    print("=== B125: create_collision_hull - refusals, and why the audit is a refusal ===")
+    # THE RECIPE EVERY TUTORIAL GIVES IS WRONG AND LOOKS RIGHT. bm.from_mesh(source) then
+    # convex_hull then delete geom_interior gives, on Suzanne, the SAME 66 vertices as a correct
+    # hull - plus 51 non-manifold edges, 4 boundary edges, Euler 16 instead of 2, 22 convexity
+    # violations and an 8% inflated volume. Verified on 4.4.0 and 5.0.1 by running both recipes.
+    # Nothing raises, and a check that asks "did I get a hull with a sensible vertex count" passes
+    # on the wreck - which is why the op audits and REFUSES rather than warning.
+    #
+    # The audit itself needs real geometry and is exercised by blender_version_matrix on all four
+    # builds. These are the guards that fire before any of it.
+    from MifBlender import ops_mesh as OM
+
+    ok, msg = refuses(OM.op_create_collision_hull, {"object": "Lamp"}, "MESH")
+    check("B125 hulling a non-MESH is refused", ok, msg)
+    ok, msg = refuses(OM.op_create_collision_hull, {}, "'object' is required")
+    check("B125 with no object it is refused", ok, msg)
+    ok, msg = refuses(OM.op_create_collision_hull, {"object": "Cube", "index": -1},
+                      "cannot be negative")
+    check("B125 a negative index is refused - it would name the hull UCX_Cube_-1", ok, msg)
+    ok, msg = refuses(OM.op_create_collision_hull, {"object": "Cube", "maxVertices": 3},
+                      "at least 4", "enclose a volume")
+    check("B125 maxVertices below 4 is refused - fewer than four points enclose nothing, and the "
+          "failure is a silent empty mesh rather than an exception", ok, msg)
+    ok, msg = refuses(OM.op_create_collision_hull, {"object": "Cube", "collection": "NoSuchColl"},
+                      "no collection named")
+    check("B125 an unknown collection is refused before anything is built", ok, msg)
+
+    print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
     # THE NEGATIVE CONTROL. Every check above proves something is refused; without this, a guard
     # that refused EVERYTHING would score full marks. Retyping to SPOT while setting spotAngle is

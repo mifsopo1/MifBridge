@@ -4790,6 +4790,15 @@ def bl_select_edges(object_name: str, selector: dict = None, max_reported: int =
 
 
 @mcp.tool()
+def bl_create_collision_hull(object: str, index: int = None, name: str = None,
+                             prefix: str = None, world_space: bool = None,
+                             max_vertices: int = None, collection: str = None) -> dict:
+    "Build a convex hull collision MESH named for Unreal's UCX_<RenderMesh>_## convention. NOT bl_add_collision, which is a rigid-body PHYSICS setting evaluated by Blender's own simulation - same word, unrelated job, and the addon had that one and not this. THE RECIPE EVERY TUTORIAL GIVES IS WRONG AND LOOKS RIGHT: bm.from_mesh(source) then convex_hull then delete geom_interior returns, on Suzanne, the SAME 66 vertices as a correct hull plus 51 non-manifold edges, 4 boundary edges, Euler 16 instead of 2, 22 convexity violations and an 8% inflated volume, with nothing raised - measured on 4.4.0 and 5.0.1. This builds from POINTS ONLY and then AUDITS: closed, manifold, no loose verts, Euler 2, positive volume, and genuine convexity tested by checking every vertex against every face plane. A hull failing any of those is DELETED and refused, because a broken hull imports, looks like collision, and things fall through it. Degenerate input produces silent garbage rather than an exception - collinear points give an empty mesh, coplanar points a zero-volume sheet - which is why the audit refuses instead of warning. max_vertices simplifies by merging and RE-HULLING, never by decimating: a decimated hull is no longer convex (measured, 24 violations at ratio 0.1) while the hull of a reduced point set is convex by construction. A name collision is REFUSED, not uniquified - Blender's .001 suffix survives FBX export and makes the engine parse the base name wrongly. The UCX naming convention itself is engine-side and is NOT verified here."
+    return _blender("create_collision_hull", object=object, index=index, name=name, prefix=prefix,
+                    worldSpace=world_space, maxVertices=max_vertices, collection=collection)
+
+
+@mcp.tool()
 def bl_uv_unwrap(object_name: str, method: str = "SMART", uv_layer: str = None,
                  angle_limit_deg: float = None, island_margin: float = 0.02,
                  replace: bool = False, dry_run: bool = False,
