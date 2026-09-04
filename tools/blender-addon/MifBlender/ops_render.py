@@ -123,7 +123,17 @@ def op_set_render_settings(params):
                                  "was changed." % (engine, ", ".join(sorted(valid))))
         sc.render.engine = want
 
-    applied = _apply_common(sc, params)
+    # PUT THE ENGINE BACK if the rest refuses. _apply_common validates `samples` against whatever
+    # engine is now selected - it has to run after the switch - and every refusal it makes promises
+    # "NOTHING was changed". Without this, set_render_settings({engine: "CYCLES", samples: ...}) on
+    # a build whose Cycles exposes no sample count left the scene on Cycles and said nothing had
+    # changed, which is the one thing that sentence is meant to rule out.
+    engine_before = sc.render.engine
+    try:
+        applied = _apply_common(sc, params)
+    except MifOpError:
+        sc.render.engine = engine_before
+        raise
 
     out_path = take(params, "filePath", "output", default=None, kind=str)
     if out_path:

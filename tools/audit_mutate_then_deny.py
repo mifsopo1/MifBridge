@@ -267,6 +267,54 @@ def _finally_restores(node):
     return names
 
 
+def _bmesh_scratch_before(fn):
+    """Line number up to which writes land on a SCRATCH bmesh, or None.
+
+    uv_unwrap builds `bm = _bmesh.new()`, clears and sets e.seam on its edges, and refuses in the
+    middle - and nothing it wrote has touched the mesh yet, because a bmesh only reaches the real
+    data at bm.to_mesh(mesh). Two findings, both correct code.
+
+    The module docstring already said bmesh.new() is scratch and does not count; that only excluded
+    the CALL, not the attribute writes on the elements it hands out, which is where the seams are
+    actually set. Everything before the first to_mesh in a function that makes a bmesh is treated as
+    scratch - coarse, and it is why the rule is stated here rather than assumed.
+    """
+    makes_bmesh = any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                      and n.func.attr == "new"
+                      and isinstance(n.func.value, ast.Name)
+                      and "bmesh" in n.func.value.id.lower()
+                      for n in ast.walk(fn))
+    if not makes_bmesh:
+        return None
+    lines = [n.lineno for n in ast.walk(fn)
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+             and n.func.attr == "to_mesh"]
+    return min(lines) if lines else None
+
+
+def _restored_in_handlers(fn):
+    """Dotted targets an except handler puts back, e.g. {"sc.render.engine"}.
+
+    The scalar twin of _removed_names. set_render_settings switches the engine ABOVE its try because
+    _apply_common has to validate `samples` against the engine now selected, and restores it in the
+    handler. Nothing is removed there - a render engine is a value, not a datablock - so a rule that
+    only recognises .remove() called that correct code a finding.
+    """
+    out = set()
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Try):
+            continue
+        for h in node.handlers:
+            for sub in ast.walk(h):
+                if isinstance(sub, ast.Assign) and _is_restore(sub):
+                    for tgt in sub.targets:
+                        if isinstance(tgt, ast.Attribute):
+                            dotted = _dotted(tgt)
+                            if dotted:
+                                out.add(dotted)
+    return out
+
+
 def _removed_names(fn):
     """Locals handed to a .remove() anywhere in this function.
 
@@ -463,12 +511,16 @@ def scan_file(path):
         if not isinstance(fn, ast.FunctionDef):
             continue
         removed = _removed_names(fn)
+        scratch_until = _bmesh_scratch_before(fn)
+        put_back = _restored_in_handlers(fn)
         stmts, terminal, owner, finals, rollbacks = [], {}, {}, {}, {}
         _walk_body(fn.body, [], stmts, terminal, owner, finals, rollbacks)
 
         mutations = [(s, p, _is_mutation(s)) for s, p in stmts]
         mutations = [(s, p, m) for s, p, m in mutations if m
-                     and m.split(".")[0] not in removed]
+                     and m.split(".")[0] not in removed
+                     and not (scratch_until is not None and s.lineno < scratch_until)
+                     and m.split(" =")[0] not in put_back]
         raises = [(s, p, _claim_text(s), None) for s, p in stmts]
         raises = [(s, p, c, h) for s, p, c, h in raises if c and not _undone_before(s, owner)]
         # ...and the calls that refuse on the op's behalf. See _refusing_helpers.

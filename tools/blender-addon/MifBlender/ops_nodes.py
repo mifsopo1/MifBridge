@@ -144,8 +144,15 @@ _POINTER_SOCKETS = {
 }
 
 
-def _socket_value(kind, sock_name, val, where):
+def _socket_value(kind, sock_name, val, where, tail="NOTHING was changed."):
     """Coerce a JSON value for a socket of type `kind`. Raises MifOpError naming the options.
+
+    THE TAIL IS THE CALLER'S TO TELL. This refused with "NOTHING was changed." for everybody, and
+    two of its three callers had already built something by the time they asked: add_group_node has
+    a node in the tree, assign_node_group may have just made a modifier. Both then answered a bad
+    socket value with a sentence promising the file was untouched. Same shape as check_axis_dict's
+    tail, and the same reason - a shared refusal cannot know what its caller has already done, so it
+    has to be told rather than guess.
 
     TAKES THE TYPE STRING, NOT A SOCKET, because the two callers hold different things: the node
     writer has a real socket with .bl_idname, and assign_node_group has only the group's INTERFACE,
@@ -161,14 +168,14 @@ def _socket_value(kind, sock_name, val, where):
             return None
         if not isinstance(val, str):
             raise MifOpError("socket '%s' on %s holds a %s, so it needs the NAME of one as a "
-                             "string - got %r. NOTHING was changed."
-                             % (sock_name, where, noun, val))
+                             "string - got %r. %s"
+                             % (sock_name, where, noun, val, tail))
         coll = getattr(bpy.data, attr)
         found = coll.get(val)
         if found is None:
             have = sorted(d.name for d in coll)[:25]
-            raise MifOpError("no %s named '%s'. This file has: %s. NOTHING was changed."
-                             % (noun, val, ", ".join(have) if have else "(none)"))
+            raise MifOpError("no %s named '%s'. This file has: %s. %s"
+                             % (noun, val, ", ".join(have) if have else "(none)", tail))
         return found
     # A VECTOR, COLOUR OR ROTATION DEFAULT IS A SEQUENCE. add_group_node writes those element by
     # element into a live socket; the group INTERFACE takes the whole thing at once.
@@ -182,8 +189,8 @@ def _socket_value(kind, sock_name, val, where):
         # silent True. Same shape as _write_node_property's boolean branch, in code I wrote the
         # same day, found by the matrix reporting that a DICT had been accepted.
         if not isinstance(val, bool) and val not in (0, 1):
-            raise MifOpError("a %s default is true or false, got %r. NOTHING was changed."
-                             % (kind, val))
+            raise MifOpError("a %s default is true or false, got %r. %s"
+                             % (kind, val, tail))
         return bool(val)
     if kind == "NodeSocketInt":
         return int(val)
@@ -412,8 +419,9 @@ def op_add_group_node(params):
                 elif isinstance(val, bool):
                     sock.default_value = val
                 else:
-                    sock.default_value = _socket_value(sock.bl_idname, sock.name, val,
-                                                      "'%s'" % node.name)
+                    sock.default_value = _socket_value(
+                        sock.bl_idname, sock.name, val, "'%s'" % node.name,
+                        "The node WAS added as '%s'." % node.name)
             except MifOpError:
                 raise
             except (AttributeError, TypeError, ValueError) as exc:
@@ -647,7 +655,9 @@ def op_assign_node_group(params):
                 continue
             key, kind = entry
             try:
-                mod[key] = _socket_value(kind, k, v, "modifier '%s'" % mod.name)
+                mod[key] = _socket_value(kind, k, v, "modifier '%s'" % mod.name,
+                                 "NOTHING was changed." if reused
+                                 else "The '%s' modifier WAS added." % mod.name)
                 # READ BACK, because a pointer socket accepts a wrong-typed value silently on some
                 # paths and simply does not hold it. Reporting the NAME rather than the datablock
                 # keeps the response JSON-safe.
