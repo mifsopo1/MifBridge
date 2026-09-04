@@ -72,7 +72,10 @@
 // safely on disk by the time this appears, so interrupting the user with a modal to tell them about
 // an optional second step would be the wrong weight entirely.
 #include "Framework/Notifications/NotificationManager.h"
-#include "Widgets/Notifications/SNotificationItem.h"
+// SNotificationList.h, NOT SNotificationItem.h - the latter does not exist in 5.3, and this
+// header is where BOTH FNotificationInfo and SNotificationItem are declared. Found by the
+// compiler in 22 seconds, which is the entire argument for building before believing.
+#include "Widgets/Notifications/SNotificationList.h"
 #include "HAL/PlatformProcess.h"
 #include "Misc/ConfigCacheIni.h"
 
