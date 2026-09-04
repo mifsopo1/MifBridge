@@ -38,7 +38,7 @@ _ADDNODE_KEYS = {"group", "tree", "type", "nodeType", "name", "location", "input
 _LINK_KEYS = {"group", "tree", "fromNode", "fromSocket", "toNode", "toSocket"}
 _LIST_KEYS = {"group", "tree"}
 _IFACE_KEYS = {"group", "tree", "name", "socketType", "inOut", "default", "min", "max"}
-_ASSIGN_KEYS = {"object", "name", "group", "tree", "modifierName", "inputs"}
+_ASSIGN_KEYS = {"object", "name", "group", "tree", "modifierName", "inputs", "reuse"}
 
 
 def _tree(name):
@@ -550,9 +550,31 @@ def op_assign_node_group(params):
     if tree.bl_idname != "GeometryNodeTree":
         raise MifOpError("'%s' is a %s, and only a GeometryNodeTree can drive a Nodes modifier. "
                          "NOTHING was assigned." % (tree.name, tree.bl_idname))
-    mod = obj.modifiers.new(name=str(take(params, "modifierName", default="GeometryNodes",
-                                          kind=str)), type="NODES")
-    mod.node_group = tree
+    # REUSE THE MODIFIER THAT ALREADY HOLDS THIS GROUP, rather than stacking a second one.
+    #
+    # Measured on 4.4: three calls with the same object and group produced GeometryNodes,
+    # GeometryNodes.001 and GeometryNodes.002, all three evaluating in sequence. An
+    # assign-look-adjust loop - which is how anybody actually uses this - silently tripled
+    # the stack, and until list_modifiers learned to report a NODES modifier's group there
+    # was no way to even SEE it had happened.
+    #
+    # Reuse is the default because reassigning the same group to the same object means
+    # "update it" essentially every time. reuse:false forces a second modifier for the rare
+    # case where two instances of one group is deliberate, and `reused` is reported either
+    # way so nothing about it is silent.
+    reuse = take_bool(params, "reuse", default=True)
+    mod_name = take(params, "modifierName", default=None, kind=str)
+    mod = None
+    if reuse:
+        for m in obj.modifiers:
+            if (m.type == "NODES" and getattr(m, "node_group", None) is tree
+                    and (mod_name is None or m.name == str(mod_name))):
+                mod = m
+                break
+    reused = mod is not None
+    if mod is None:
+        mod = obj.modifiers.new(name=str(mod_name or "GeometryNodes"), type="NODES")
+        mod.node_group = tree
 
     applied, refused = {}, {}
     given = params.get("inputs")
@@ -595,6 +617,10 @@ def op_assign_node_group(params):
 
     outs = any(l.to_node.bl_idname == "NodeGroupOutput" for l in tree.links)
     return {"object": obj.name, "modifier": mod.name, "group": tree.name,
+            # WHICH IT WAS. False means a new modifier was added to the stack; a caller in
+            # an adjust loop seeing False repeatedly is stacking duplicates.
+            "reused": reused,
+            "nodesModifierCount": len([m for m in obj.modifiers if m.type == "NODES"]),
             "inputsApplied": applied, "inputsRefused": refused,
             "outputConnected": outs,
             "effectNote": (None if outs else

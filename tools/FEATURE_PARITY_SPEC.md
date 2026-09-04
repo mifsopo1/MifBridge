@@ -13419,3 +13419,19 @@ out-of-process the way ops_gen already does with gen_status.
       bones where the second parents to the first in the same call, and four refusals - zero
       length, duplicate name, unknown parent, and a non-armature object. Readback confirms
       ik_hand_gun's parent is hand and the mode is OBJECT. In the matrix on every build.
+
+- [x] **assign_node_group stacked a duplicate modifier every time it was called** DONE 2026-09-04
+      Measured on 4.4: three calls with the same object and the same group produced GeometryNodes,
+      GeometryNodes.001 and GeometryNodes.002, all three evaluating in sequence. An
+      assign-look-adjust loop - which is the only way anybody uses this - tripled the stack, and
+      until list_modifiers learned this morning to report which group a NODES modifier holds there
+      was no way to SEE that it had happened.
+
+      Reuse is now the default, because reassigning the same group to the same object means "update
+      it" essentially every time. reuse:false forces a second instance for the rare deliberate case,
+      and `reused` plus nodesModifierCount are reported either way so nothing about the choice is
+      silent. A DIFFERENT group always gets its own modifier - that is genuinely a second thing.
+
+      Verified on 3.6.23 and 5.0.1, four cases: the first call creates; a second call with inputs
+      REUSES and applies them to the same modifier; reuse:false adds a second; and a different group
+      adds a third.

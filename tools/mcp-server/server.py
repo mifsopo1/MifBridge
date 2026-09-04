@@ -5753,10 +5753,10 @@ def bl_list_group_nodes(group: str) -> dict:
 
 @mcp.tool()
 def bl_assign_node_group(object: str, group: str, modifier_name: str = None,
-                         inputs: dict = None) -> dict:
-    "Attach a Blender geometry node group to an object as a Nodes modifier and set its exposed inputs. The modifier addresses inputs by IDENTIFIER (Socket_2), not by name, which is the most confusing thing about driving geometry nodes from script - this resolves names to identifiers for you and reports anything it could not place."
+                         inputs: dict = None, reuse: bool = True) -> dict:
+    "Attach a Blender geometry node group to an object as a Nodes modifier and set its exposed inputs. The modifier addresses inputs by IDENTIFIER (Socket_2), not by name, which is the most confusing thing about driving geometry nodes from script - this resolves names to identifiers for you and reports anything it could not place. A DATABLOCK INPUT TAKES A NAME: an Object, Collection, Material or Image socket is resolved from the name you pass, because assigning the raw string is ACCEPTED by Blender, stored, and then ignored - the modifier reads an empty socket and the effect silently does nothing. REUSE IS THE DEFAULT: calling this twice for the same object and group used to stack a second modifier, so an assign-look-adjust loop tripled the stack invisibly. It now updates the modifier already holding that group and reports reused:true; pass reuse:false to force a second instance deliberately. A DIFFERENT group always gets its own modifier."
     return _blender("assign_node_group", object=object, group=group, modifierName=modifier_name,
-                    inputs=inputs)
+                    inputs=inputs, reuse=reuse)
 
 
 @mcp.tool()
