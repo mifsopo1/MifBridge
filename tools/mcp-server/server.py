@@ -5070,6 +5070,26 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_set_light_shadow(object: str, enabled: bool = None, soft_size: float = None,
+                        buffer_clip_start: float = None, color: list = None,
+                        filter_radius: float = None, jitter: bool = None,
+                        jitter_overblur: float = None, max_resolution: int = None,
+                        contact_shadow: bool = None, contact_distance: float = None,
+                        contact_bias: float = None, contact_thickness: float = None,
+                        cycles_cast_shadow: bool = None, cycles_max_bounces: int = None,
+                        cycles_mis: bool = None, is_portal: bool = None,
+                        is_caustics_light: bool = None) -> dict:
+    "The engine-specific shadow settings that live on a Blender LIGHT - the general half (hide_render, per-ray visibility, holdout, shadow catcher) is bl_set_object_visibility, because those live on the OBJECT. THIS AREA MOVES MORE THAN ANY OTHER, read off bl_rna on 3.6.23, 4.2.17, 4.4.0 and 5.0.1: light.cycles.cast_shadow exists on 3.6 ONLY and was removed at 4.2; CONTACT SHADOWS exist on 3.6 and 4.2 and EEVEE Next dropped them at 4.4; shadow_buffer_samples/_size are 3.6 only; and jitter, filter radius and max resolution arrived at 4.2. ANYTHING THIS BUILD LACKS IS REFUSED, naming which builds have it - accepting a key and writing it only where it exists is how a caller asks for shadows off, gets shadows on, and is told nothing. Values are read back per key because several are silently CLAMPED rather than refused, and `clamped` reports where the stored value differs from the request. Settings the ACTIVE ENGINE will not read (cycles.* under EEVEE, contact shadows under Cycles) are still written - a scene is often set up under one renderer and rendered with another - but reported in inertUnderThisEngine so the difference is visible."
+    return _blender("set_light_shadow", object=object, enabled=enabled, softSize=soft_size,
+                    bufferClipStart=buffer_clip_start, color=color, filterRadius=filter_radius,
+                    jitter=jitter, jitterOverblur=jitter_overblur, maxResolution=max_resolution,
+                    contactShadow=contact_shadow, contactDistance=contact_distance,
+                    contactBias=contact_bias, contactThickness=contact_thickness,
+                    cyclesCastShadow=cycles_cast_shadow, cyclesMaxBounces=cycles_max_bounces,
+                    cyclesMIS=cycles_mis, isPortal=is_portal, isCausticsLight=is_caustics_light)
+
+
+@mcp.tool()
 def bl_set_light_linking(object: str, receiver_collection: str = None,
                          blocker_collection: str = None, clear_receivers: bool = None,
                          clear_blockers: bool = None) -> dict:

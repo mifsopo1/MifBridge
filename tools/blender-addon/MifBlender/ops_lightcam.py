@@ -27,10 +27,11 @@ import os
 import bpy
 import mathutils
 
-from .ops_common import (MifOpError, camera_readback, light_readback, object_info,
+from .ops_common import (MifOpError, camera_readback, get_object, light_readback, object_info,
                          reject_unknown,
                          refuse_unsupported_shadow, rnd, shadow_attr,
-                         selection_restore, selection_snapshot, take, take_bool, take_float)
+                         selection_restore, selection_snapshot, take, take_bool, take_float,
+                         take_int)
 
 # Blender's own enum, read off the RNA rather than remembered - the same discipline ops_create uses
 # for primitive sizing kwargs, and for the same reason: a hardcoded list goes stale silently.
@@ -1071,8 +1072,194 @@ def op_set_light_linking(params):
     }
 
 
+_SHADOW_KEYS = {
+    "object", "light", "name", "enabled", "softSize", "bufferClipStart", "color",
+    "filterRadius", "jitter", "jitterOverblur", "maxResolution",
+    "contactShadow", "contactDistance", "contactBias", "contactThickness",
+    "cyclesCastShadow", "cyclesMaxBounces", "cyclesMIS", "isPortal", "isCausticsLight",
+}
+
+# param -> (where it lives, the real property name, which builds have it)
+#
+# EVERY ROW WAS READ OFF bl_rna ON ALL FOUR INSTALLS, not from release notes, and the drift here is
+# the reason this op exists at all rather than a set_light parameter:
+#
+#   light.cycles.cast_shadow          3.6 ONLY - removed at 4.2
+#   contact shadows (4 properties)    3.6 and 4.2 - EEVEE Next dropped them at 4.4
+#   shadow_buffer_samples / _size     3.6 only
+#   shadow_buffer_bias, shadow_color  3.6 and 4.2
+#   jitter / filter radius / max res  4.2 and later - they did not exist on 3.6
+#
+# So a caller asking for a contact shadow on 4.4 is asking for something that build cannot do, and
+# the house rule is that this is REFUSED with what happened to it rather than accepted and dropped.
+_SHADOW_MAP = {
+    "enabled":          ("light", "use_shadow", "every build"),
+    "softSize":         ("light", "shadow_soft_size", "every build"),
+    "bufferClipStart":  ("light", "shadow_buffer_clip_start", "every build"),
+    "color":            ("light", "shadow_color", "3.6 and 4.2 only"),
+    "filterRadius":     ("light", "shadow_filter_radius", "4.2 and later"),
+    "jitter":           ("light", "use_shadow_jitter", "4.2 and later"),
+    "jitterOverblur":   ("light", "shadow_jitter_overblur", "4.2 and later"),
+    "maxResolution":    ("light", "shadow_maximum_resolution", "4.2 and later"),
+    "contactShadow":    ("light", "use_contact_shadow", "3.6 and 4.2 only - EEVEE Next dropped it"),
+    "contactDistance":  ("light", "contact_shadow_distance", "3.6 and 4.2 only"),
+    "contactBias":      ("light", "contact_shadow_bias", "3.6 and 4.2 only"),
+    "contactThickness": ("light", "contact_shadow_thickness", "3.6 and 4.2 only"),
+    "cyclesCastShadow": ("cycles", "cast_shadow", "3.6 ONLY - removed at 4.2"),
+    "cyclesMaxBounces": ("cycles", "max_bounces", "every build"),
+    "cyclesMIS":        ("cycles", "use_multiple_importance_sampling", "every build"),
+    "isPortal":         ("cycles", "is_portal", "every build"),
+    "isCausticsLight":  ("cycles", "is_caustics_light", "every build"),
+}
+
+_BOOL_SHADOW = {"enabled", "jitter", "contactShadow", "cyclesCastShadow", "cyclesMIS",
+                "isPortal", "isCausticsLight"}
+_INT_SHADOW = {"maxResolution", "cyclesMaxBounces"}
+
+
+def _shadow_holder(data, where):
+    return data if where == "light" else getattr(data, "cycles", None)
+
+
+def op_set_light_shadow(params):
+    """The engine-specific shadow settings, refusing what this build cannot do.
+
+    THE GENERAL HALF IS set_object_visibility - hide_render, per-ray visibility, holdout and shadow
+    catcher live on the OBJECT and apply to every type. This is the half that lives on the LIGHT and
+    differs by build and by engine, which is exactly why it was left until it could be measured
+    rather than remembered.
+
+    WHAT MOVES, read off bl_rna on 3.6.23, 4.2.17, 4.4.0 and 5.0.1:
+
+      light.cycles.cast_shadow        3.6 ONLY. Removed at 4.2 - a Cycles shadow toggle that simply
+                                      stopped existing.
+      contact shadows, 4 properties   3.6 and 4.2. EEVEE Next dropped them at 4.4, so a caller
+                                      asking for one on 4.4 is asking for a feature the renderer no
+                                      longer has.
+      shadow_buffer_samples / _size   3.6 only.
+      shadow_color, shadow_buffer_bias 3.6 and 4.2.
+      jitter, filter radius, max res  4.2 and later. They did not exist on 3.6.
+
+    ANYTHING THIS BUILD LACKS IS REFUSED, NAMING WHICH BUILDS HAVE IT. Accepting a key and writing
+    it only `if hasattr` is the shape refuse_unsupported_shadow was written to stop: the caller asks
+    for shadows off, gets shadows on, and is told nothing.
+
+    THE ENGINE IS REPORTED because half of these do nothing under the other renderer - contact
+    shadows are EEVEE's, cycles.* are Cycles'. They are still WRITTEN when present, since a scene
+    is often set up under one engine and rendered with the other, but the response says which of
+    them the active engine will actually read.
+
+    params:
+      object / light / name (str)   which light. Required.
+      enabled (bool)                use_shadow - the master toggle
+      softSize (float)              shadow_soft_size, the radius that decides how soft the edge is
+      bufferClipStart (float)
+      color [r,g,b]                 shadow_color - 3.6 and 4.2 only
+      filterRadius (float) / jitter (bool) / jitterOverblur (float) / maxResolution (int)
+                                    4.2 and later
+      contactShadow (bool) / contactDistance / contactBias / contactThickness (float)
+                                    3.6 and 4.2 only
+      cyclesCastShadow (bool)       3.6 only
+      cyclesMaxBounces (int) / cyclesMIS (bool) / isPortal (bool) / isCausticsLight (bool)
+    """
+    reject_unknown(params, _SHADOW_KEYS, "set_light_shadow")
+    want = take(params, "object", "light", "name", required=True, kind=str)
+    obj = get_object(want)
+    if obj.type != "LIGHT":
+        raise MifOpError("'%s' is a %s, not a LIGHT. NOTHING was changed." % (obj.name, obj.type))
+    data = obj.data
+
+    asked = [k for k in _SHADOW_MAP if params.get(k) is not None]
+    if not asked:
+        raise MifOpError("nothing to do - pass at least one of %s. NOTHING was changed."
+                         % ", ".join(sorted(_SHADOW_MAP)))
+
+    # SHAPE BEFORE AVAILABILITY. A malformed colour is wrong on every Blender, so reporting it
+    # should not depend on interrogating this one's bl_rna - the same ordering rule ray_cast,
+    # face_info and create_collision_hull each needed, and the sixth time an offline check has
+    # found it by trying the guard.
+    raw_colour = params.get("color")
+    if raw_colour is not None and (not isinstance(raw_colour, (list, tuple))
+                                   or len(raw_colour) < 3):
+        raise MifOpError("'color' must be [r,g,b], got %r. NOTHING was changed." % (raw_colour,))
+
+    # EVERY KEY CHECKED AGAINST THIS BUILD BEFORE ANY OF THEM IS WRITTEN, so a request that is
+    # half-supported does not leave half of it applied.
+    missing = []
+    for key in asked:
+        where, attr, availability = _SHADOW_MAP[key]
+        holder = _shadow_holder(data, where)
+        if holder is None or attr not in holder.bl_rna.properties:
+            missing.append((key, attr, availability))
+    if missing:
+        raise MifOpError(
+            "this Blender (%s) has no %s. Available on %s. Accepting the key and writing it only "
+            "where it exists is how a caller asks for shadows off, gets shadows on, and is told "
+            "nothing - so it is refused. NOTHING was changed."
+            % (bpy.app.version_string,
+               "; ".join("%s (light.%s%s)" % (k, "cycles." if _SHADOW_MAP[k][0] == "cycles" else "",
+                                              a) for k, a, _ in missing),
+               "; ".join(v for _, _, v in missing)))
+
+    applied = {}
+    for key in asked:
+        where, attr, _availability = _SHADOW_MAP[key]
+        holder = _shadow_holder(data, where)
+        raw = params[key]
+        if key in _BOOL_SHADOW:
+            value = take_bool(params, key, default=True)
+        elif key in _INT_SHADOW:
+            value = take_int(params, key)
+        elif key == "color":
+            value = [float(c) for c in raw[:3]]
+        else:
+            value = take_float(params, key)
+        setattr(holder, attr, value)
+        applied[key] = value
+
+    # READ BACK FROM THE DATABLOCK, per key. Several of these are clamped - a negative softSize or
+    # an out-of-range resolution is silently corrected rather than refused - so echoing the request
+    # would report a value the light does not have.
+    after, wrong = {}, {}
+    for key in asked:
+        where, attr, _ = _SHADOW_MAP[key]
+        stored = getattr(_shadow_holder(data, where), attr)
+        stored = list(stored)[:3] if hasattr(stored, "__len__") else stored
+        after[key] = rnd(stored) if isinstance(stored, list) else (
+            round(float(stored), 6) if isinstance(stored, float) else stored)
+        want_v = applied[key]
+        if isinstance(want_v, bool) and bool(stored) != want_v:
+            wrong[key] = (want_v, bool(stored))
+        elif isinstance(want_v, (int, float)) and not isinstance(want_v, bool) \
+                and abs(float(stored) - float(want_v)) > 1e-4:
+            wrong[key] = (want_v, stored)
+
+    engine = bpy.context.scene.render.engine
+    is_cycles = "CYCLES" in engine
+    inert = [k for k in asked
+             if (_SHADOW_MAP[k][0] == "cycles" and not is_cycles)
+             or (k.startswith("contact") and is_cycles)]
+    return {
+        "ok": True,
+        "light": obj.name,
+        "engine": engine,
+        "applied": after,
+        # CLAMPED, NOT FAILED. Reported rather than raised: Blender correcting an out-of-range value
+        # is legitimate, and a caller comparing what they sent against what stuck needs to see it.
+        "clamped": {k: {"requested": v[0], "stored": v[1]} for k, v in wrong.items()} or None,
+        # WRITTEN BUT NOT READ BY THIS ENGINE. Still written, because a scene is often set up under
+        # one renderer and rendered with another - but saying so is the difference between a
+        # setting that will take effect and one that is sitting there.
+        "inertUnderThisEngine": inert or None,
+        "note": ("%s written and this scene renders with %s, which does not read them. They are "
+                 "stored and will apply if the engine changes."
+                 % (", ".join(inert), engine)) if inert else None,
+        "blenderVersion": bpy.app.version_string,
+    }
+
 OPS = {
     "set_light_linking": op_set_light_linking,
+    "set_light_shadow": op_set_light_shadow,
     "set_light_ies": op_set_light_ies,
     "set_camera_panorama": op_set_camera_panorama,
     "create_light": op_create_light,

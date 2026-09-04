@@ -12729,7 +12729,33 @@ out-of-process the way ops_gen already does with gen_status.
       All three verified on 3.6, 4.4 and 5.0, and all three are exercised on every build by
       blender_version_matrix.
 
-- [ ] **Tier 5 - craft depth** (1 of 5 left)
+- [x] **Tier 5 - craft depth** (5 of 5) DONE 2026-09-04
+      CLOSED by set_light_shadow, the engine-specific half. The general half - hide_render,
+      per-ray visibility, holdout, shadow catcher - landed as set_object_visibility in Tier 2,
+      because those live on the OBJECT and apply to every type.
+
+      IT WAS LEFT UNTIL IT COULD BE MEASURED, and that was the right call: this is the most
+      version-unstable corner of the Blender API the addon touches. Read off bl_rna on
+      3.6.23, 4.2.17, 4.4.0 and 5.0.1 rather than from release notes:
+
+        light.cycles.cast_shadow        3.6 ONLY - removed at 4.2
+        contact shadows, 4 properties   3.6 and 4.2 - EEVEE Next dropped them at 4.4
+        shadow_buffer_samples / _size   3.6 only
+        shadow_color, shadow_buffer_bias 3.6 and 4.2
+        jitter / filter radius / max res 4.2 and later - absent on 3.6
+
+      ANYTHING THIS BUILD LACKS IS REFUSED, naming which builds have it. Verified on all
+      four: filterRadius refuses on 3.6, cyclesCastShadow refuses from 4.2, contact shadows
+      refuse from 4.4, and each accepts everywhere it exists.
+
+      Values are READ BACK per key, because several are silently CLAMPED rather than
+      refused, and settings the active engine will not read are still written but reported
+      in inertUnderThisEngine - a scene is often set up under one renderer and rendered
+      with another.
+
+      Noted while probing: the EEVEE engine identifier is BLENDER_EEVEE on 3.6,
+      BLENDER_EEVEE_NEXT on 4.2 and 4.4, and BLENDER_EEVEE again on 5.0. set_render_settings
+      already resolves that alias against the build rather than a remembered string.
       DONE 2026-09-03: set_camera_panorama, move_keyframes, set_light_ies, set_light_linking.
 
       THAT COMPLETES THE LIGHTING SURFACE. This morning it was create_light and nothing else; it is

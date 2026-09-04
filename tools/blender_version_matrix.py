@@ -100,6 +100,11 @@ PAYLOADS = {
     "aim_object": {"object": "Camera", "target": "Cube"},
     "set_light_ies": {"object": "Light", "clear": True},
     "set_light_linking": {"object": "Light", "clearReceivers": True},
+    # ONLY THE UNIVERSAL KEYS - contact shadows, cycles.cast_shadow and the jitter
+    # group each exist on some builds and not others, and the op correctly REFUSES
+    # what a build lacks. A payload naming them would test the refusal rather than
+    # the write, on whichever builds happen to lack them.
+    "set_light_shadow": {"object": "Light", "enabled": True, "softSize": 0.3},
     # THE CAMERA MUST BE PANO FIRST - the op refuses on a PERSP camera because the settings
     # "would be stored and never used", which is the op working. A fixture retypes MifPano.
     "set_camera_panorama": {"object": "MifPano", "panoramaType": "EQUIRECTANGULAR"},

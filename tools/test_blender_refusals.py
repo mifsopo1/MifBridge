@@ -2031,6 +2031,35 @@ def main():
     check("B128 an inverted slider range is refused", ok, msg)
 
     print("")
+    print("=== B129: set_light_shadow - refusing what a build cannot do ===")
+    # THE LAST TIER 5 ITEM, left until it could be MEASURED rather than remembered, because this is
+    # the most version-unstable corner of the Blender API this addon touches. Read off bl_rna on
+    # 3.6.23, 4.2.17, 4.4.0 and 5.0.1:
+    #
+    #   light.cycles.cast_shadow    3.6 ONLY, removed at 4.2
+    #   contact shadows (4 props)   3.6 and 4.2, dropped by EEVEE Next at 4.4
+    #   jitter / filter / max res    4.2 and later, absent on 3.6
+    #
+    # The version behaviour is exercised on the real builds by blender_version_matrix. What is
+    # checkable here is the guard set.
+    from MifBlender import ops_lightcam as OL
+
+    ok, msg = refuses(OL.op_set_light_shadow, {"object": "Cam"}, "not a LIGHT")
+    check("B129 shadow settings on a non-LIGHT are refused", ok, msg)
+    ok, msg = refuses(OL.op_set_light_shadow, {"object": "Lamp"}, "nothing to do")
+    check("B129 a call with no settings at all is refused", ok, msg)
+    ok, msg = refuses(OL.op_set_light_shadow, {"object": "Lamp", "color": [1, 0]}, "[r,g,b]")
+    check("B129 a two-component shadow colour is refused by shape", ok, msg)
+    ok, msg = refuses(OL.op_set_light_shadow, {"object": "NoSuchLight", "enabled": True},
+                      "no object named")
+    check("B129 an unknown object is refused", ok, msg)
+    check("B129 every documented key maps to a real property path and an availability note - the "
+          "table is what turns 'this build lacks it' into a sentence naming which builds have it",
+          all(isinstance(v, tuple) and len(v) == 3 and v[0] in ("light", "cycles")
+              for v in OL._SHADOW_MAP.values()),
+          "got %s" % {k: v for k, v in list(OL._SHADOW_MAP.items())[:2]})
+
+    print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
     # THE NEGATIVE CONTROL. Every check above proves something is refused; without this, a guard
     # that refused EVERYTHING would score full marks. Retyping to SPOT while setting spotAngle is
