@@ -869,6 +869,21 @@ def op_create_text(params):
         raise MifOpError("'body' is empty, and a text object with no body renders nothing while "
                          "existing perfectly. NOTHING was created.")
 
+    # VALIDATED OFF THE TYPE, BEFORE THE DATABLOCK EXISTS. This read the enum off the instance, so
+    # it could only run after bpy.data.curves.new - and a bad `align` then refused with "NOTHING was
+    # created" having already left an orphaned FONT curve in the file. bl_rna is on the type as well
+    # as the instance, and asking the type costs nothing and needs nothing to exist.
+    aligns = {}
+    for key, attr in (("align", "align_x"), ("alignY", "align_y")):
+        v = take(params, key, kind=str)
+        if v is None:
+            continue
+        valid = {i.identifier for i in bpy.types.TextCurve.bl_rna.properties[attr].enum_items}
+        if str(v).upper() not in valid:
+            raise MifOpError("%s '%s' is not one this Blender offers. Valid: %s. NOTHING was "
+                             "created." % (key, v, ", ".join(sorted(valid))))
+        aligns[attr] = str(v).upper()
+
     coll = _resolve_collection(params)
     data = bpy.data.curves.new(str(take(params, "name", default="Text", kind=str)), type="FONT")
     data.body = str(body)
@@ -876,15 +891,8 @@ def op_create_text(params):
         v = take_float(params, key, default=None)
         if v is not None:
             setattr(data, attr, v)
-    for key, attr in (("align", "align_x"), ("alignY", "align_y")):
-        v = take(params, key, kind=str)
-        if v is None:
-            continue
-        valid = {i.identifier for i in data.bl_rna.properties[attr].enum_items}
-        if str(v).upper() not in valid:
-            raise MifOpError("%s '%s' is not one this Blender offers. Valid: %s. NOTHING was "
-                             "created." % (key, v, ", ".join(sorted(valid))))
-        setattr(data, attr, str(v).upper())
+    for attr, value in aligns.items():
+        setattr(data, attr, value)
 
     obj = bpy.data.objects.new(data.name, data)
     _link_new(obj, coll)

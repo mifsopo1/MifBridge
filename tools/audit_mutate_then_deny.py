@@ -102,9 +102,25 @@ def _dotted(node):
     return ".".join(reversed(parts))
 
 
+# A value named like a saved copy. `data.use_nodes = nodes_before` is a RESTORE, not a change, and
+# counting it made the fix for set_light_ies report itself as a new finding.
+_RESTORE_HINTS = ("before", "_prev", "prev_", "original", "orig_", "snapshot", "snap")
+
+
+def _is_restore(node):
+    """Is this assignment putting a saved value back?"""
+    value = node.value if isinstance(node, ast.Assign) else None
+    for sub in ast.walk(value) if value is not None else ():
+        if isinstance(sub, ast.Name) and any(h in sub.id.lower() for h in _RESTORE_HINTS):
+            return True
+    return False
+
+
 def _is_mutation(node):
     """Does this statement write state a caller could observe? Returns a label or None."""
     if isinstance(node, (ast.Assign, ast.AugAssign)):
+        if isinstance(node, ast.Assign) and _is_restore(node):
+            return None
         targets = node.targets if isinstance(node, ast.Assign) else [node.target]
         for t in targets:
             if isinstance(t, ast.Attribute):
@@ -170,10 +186,109 @@ def _undone_before(rstmt, owner):
     if not body:
         return False
     for stmt in body[:body.index(rstmt)]:
+        # Putting a saved value back is the other honest way to keep the promise, and the one that
+        # fits a scalar. set_light_ies turns use_nodes on to look for a node tree and sets it back
+        # before refusing; only removals were recognised, so the fix reported itself as a finding.
+        if isinstance(stmt, ast.Assign) and _is_restore(stmt):
+            return True
         for sub in ast.walk(stmt):
             if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute)                     and sub.func.attr in CLEANUP:
                 return True
     return False
+
+
+def _rolled_back_by_except(mpath, rpath, rollbacks):
+    """Is the write undone by an `except` that cleans up and re-raises?
+
+    The standard shape in this addon:
+
+        try:
+            ...validate against the thing just created...
+        except MifOpError:
+            if created:
+                bpy.data.materials.remove(mat)
+            raise
+
+    Only writes INSIDE the try are covered. create_material also flips use_nodes on an EXISTING
+    material above the try, and that one is a real finding: `created` is false, nothing is removed,
+    and the caller's material keeps a change made under "NOTHING was changed".
+    """
+    for i, key in enumerate(mpath):
+        if key[1] != "try" or key not in rollbacks or not rollbacks[key]:
+            continue
+        if rpath[:i + 1] == mpath[:i + 1]:
+            return True
+    return False
+
+
+def _except_rolls_back(node):
+    """Does any handler on this try remove something and re-raise?"""
+    for h in node.handlers:
+        raises = any(isinstance(s, ast.Raise) for s in ast.walk(h))
+        cleans = any(isinstance(s, ast.Call) and isinstance(s.func, ast.Attribute)
+                     and s.func.attr in CLEANUP for s in ast.walk(h))
+        if raises and cleans:
+            return True
+    return False
+
+
+def _restored_by_finally(mpath, rpath, finals):
+    """Is the write undone on the way out by a `finally` the raise passes through?
+
+    export_scene deselects everything, sets the active object and moves the scene frame range, and
+    every one of its refusals says "NOTHING was written" - which is true, and the scene changes are
+    true too. It gets away with it honestly: the whole block is a try whose finally puts the frame
+    range back and calls selection_restore(snap). Three findings, all correct code.
+
+    Recognised by shape rather than proved: the write and the raise are inside the same try, and its
+    finally either assigns the same attribute NAME or calls something *restore*. That is a heuristic
+    and deliberately a narrow one - it cannot tell a complete restore from a partial one, so it says
+    so here rather than pretending the check is exact.
+    """
+    for i, key in enumerate(mpath):
+        if key[1] != "try" or key not in finals:
+            continue
+        if rpath[:i + 1] != mpath[:i + 1]:
+            continue          # the raise is not inside this try, so the finally is not on its path
+        if finals[key]:
+            return True
+    return False
+
+
+def _finally_restores(node):
+    """Attribute names the finally re-assigns, plus whether it calls anything named *restore*."""
+    names = set()
+    for stmt in node.finalbody:
+        for sub in ast.walk(stmt):
+            if isinstance(sub, ast.Attribute) and isinstance(sub.ctx, ast.Store):
+                names.add(sub.attr)
+            if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name)                     and "restore" in sub.func.id.lower():
+                return True
+    return names
+
+
+def _removed_names(fn):
+    """Locals handed to a .remove() anywhere in this function.
+
+    create_material writes mat.use_nodes ABOVE its try and rolls back inside it with
+    bpy.data.materials.remove(mat) - so the write IS undone, by removing the thing written to, and
+    no rule about try bodies can see that.
+
+    ONLY REMOVALS IN AN EXCEPT HANDLER COUNT. Counting every removal in the function was too coarse
+    by exactly one real finding: op_add_group_node removes its node before three of its raises and
+    NOT before the _socket_value one, so matching the name anywhere excused the site that still
+    needed reporting. A rollback handler is the one place a removal is unambiguously on the refusal
+    path.
+    """
+    names = set()
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Try):
+            continue
+        for h in node.handlers:
+            for sub in ast.walk(h):
+                if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute)                         and sub.func.attr in CLEANUP and sub.args                         and isinstance(sub.args[0], ast.Name):
+                    names.add(sub.args[0].id)
+    return names
 
 
 def _ends_terminal(body):
@@ -181,7 +296,7 @@ def _ends_terminal(body):
     return bool(body) and isinstance(body[-1], (ast.Return, ast.Raise, ast.Continue, ast.Break))
 
 
-def _walk_body(body, path, out, terminal, owner):
+def _walk_body(body, path, out, terminal, owner, finals, rollbacks):
     """Tag every statement with the branch path it sits under, so exclusivity is decidable.
 
     `path` is a list of (node id, which-branch) pairs. Two statements can both run only if neither
@@ -201,20 +316,22 @@ def _walk_body(body, path, out, terminal, owner):
         if isinstance(stmt, ast.If):
             for key, sub in (("then", stmt.body), ("else", stmt.orelse)):
                 terminal[(id(stmt), key)] = _ends_terminal(sub)
-                _walk_body(sub, path + [(id(stmt), key)], out, terminal, owner)
+                _walk_body(sub, path + [(id(stmt), key)], out, terminal, owner, finals, rollbacks)
         elif isinstance(stmt, ast.Try):
+            finals[(id(stmt), "try")] = _finally_restores(stmt)
+            rollbacks[(id(stmt), "try")] = _except_rolls_back(stmt)
             for key, sub in ([("try", stmt.body)]
                              + [("except%d" % i, h.body) for i, h in enumerate(stmt.handlers)]
                              + [("orelse", stmt.orelse), ("finally", stmt.finalbody)]):
                 terminal[(id(stmt), key)] = _ends_terminal(sub)
-                _walk_body(sub, path + [(id(stmt), key)], out, terminal, owner)
+                _walk_body(sub, path + [(id(stmt), key)], out, terminal, owner, finals, rollbacks)
         elif isinstance(stmt, (ast.For, ast.While)):
             # A loop body can run then fall through to a later raise, so it is NOT exclusive with
             # code after the loop - but two different iterations are not a divergence either.
-            _walk_body(stmt.body, path, out, terminal, owner)
-            _walk_body(stmt.orelse, path, out, terminal, owner)
+            _walk_body(stmt.body, path, out, terminal, owner, finals, rollbacks)
+            _walk_body(stmt.orelse, path, out, terminal, owner, finals, rollbacks)
         elif isinstance(stmt, ast.With):
-            _walk_body(stmt.body, path, out, terminal, owner)
+            _walk_body(stmt.body, path, out, terminal, owner, finals, rollbacks)
 
 
 def _exclusive(a, b, terminal):
@@ -269,7 +386,7 @@ def _refusing_helpers(tree):
             if claim:
                 # A helper that CLEANS UP before refusing is keeping the promise, not breaking it.
                 inner, iterm, iowner = [], {}, {}
-                _walk_body(fn.body, [], inner, iterm, iowner)
+                _walk_body(fn.body, [], inner, iterm, iowner, {}, {})
                 if not _undone_before(sub, iowner):
                     direct[fn.name] = claim
                 break
@@ -290,7 +407,7 @@ def _cleaning_helpers(tree):
         if not isinstance(fn, ast.FunctionDef):
             continue
         inner, iterm, iowner = [], {}, {}
-        _walk_body(fn.body, [], inner, iterm, iowner)
+        _walk_body(fn.body, [], inner, iterm, iowner, {}, {})
         for sub in ast.walk(fn):
             if isinstance(sub, ast.Raise) and _undone_before(sub, iowner):
                 out.add(fn.name)
@@ -345,11 +462,13 @@ def scan_file(path):
     for fn in tree.body:
         if not isinstance(fn, ast.FunctionDef):
             continue
-        stmts, terminal, owner = [], {}, {}
-        _walk_body(fn.body, [], stmts, terminal, owner)
+        removed = _removed_names(fn)
+        stmts, terminal, owner, finals, rollbacks = [], {}, {}, {}, {}
+        _walk_body(fn.body, [], stmts, terminal, owner, finals, rollbacks)
 
         mutations = [(s, p, _is_mutation(s)) for s, p in stmts]
-        mutations = [(s, p, m) for s, p, m in mutations if m]
+        mutations = [(s, p, m) for s, p, m in mutations if m
+                     and m.split(".")[0] not in removed]
         raises = [(s, p, _claim_text(s), None) for s, p in stmts]
         raises = [(s, p, c, h) for s, p, c, h in raises if c and not _undone_before(s, owner)]
         # ...and the calls that refuse on the op's behalf. See _refusing_helpers.
@@ -374,6 +493,8 @@ def scan_file(path):
         for mstmt, mpath, label in mutations:
             for rstmt, rpath, claim, helper in raises:
                 if rstmt.lineno <= mstmt.lineno or _exclusive(mpath, rpath, terminal):
+                    continue
+                if _restored_by_finally(mpath, rpath, finals)                         or _rolled_back_by_except(mpath, rpath, rollbacks):
                     continue
                 findings.append({
                     "file": name, "func": fn.name, "wrote": label, "via": helper,

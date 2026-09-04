@@ -1078,9 +1078,14 @@ def op_set_light_ies(params):
 
     # THE TREE. Blender's light nodes are Emission -> Light Output, and an IES Texture drives the
     # emission STRENGTH rather than its colour.
+    nodes_before = data.use_nodes
     data.use_nodes = True
     nt = data.node_tree
     if nt is None:
+        # PUT BACK before refusing. Turning use_nodes on is itself a change to the light - it swaps
+        # what the renderer reads - so leaving it on while saying "NOTHING was changed" is false in
+        # exactly the way this whole sentence is meant to rule out.
+        data.use_nodes = nodes_before
         raise MifOpError("this Blender gave the light no node tree even with use_nodes set, so "
                          "there is nowhere to put an IES profile. NOTHING was changed.")
 
