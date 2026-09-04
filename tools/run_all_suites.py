@@ -72,9 +72,10 @@ USAGE = """usage: run_all_suites.py [--once] [--with-pie] [--anyway] [name-subst
   --with-pie  include the PIE suites. They need an ATTENDED run: starting PIE stops the bridge
               answering while the editor stays alive, which hangs an unattended sweep.
 
-  --offline   run ONLY the suites that need no editor, no Blender and no bridge. Eight of them,
-              190 assertions, a few seconds. Launches nothing - which is the point, since the
-              mode exists for when somebody else is using the machine.
+  --offline   run ONLY the suites that need no editor, no Blender and no bridge. Seconds, and
+              it launches nothing - which is the point, since the mode exists for when somebody
+              else is using the machine. It prints how many it ran; no count is quoted here,
+              because the one that was went stale the first time a suite joined the list.
 
   --anyway    sweep even though a packaged UE game build is running. That build is the strongest
               signal somebody is sitting at this machine, and a sweep costs them half an hour of
@@ -158,6 +159,7 @@ def main():
     # gets this wrong in both directions.
     OFFLINE_SUITES = (
         "test_blender_headless_guard.py",   # starts its own fake servers
+        "test_blender_refusals.py",         # stubs bpy entirely - no Blender needed
         "test_find_tools.py",
         "test_fuzz_detector.py",
         "test_mcp_post_errors.py",
