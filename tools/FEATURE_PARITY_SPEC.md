@@ -14900,3 +14900,32 @@ out-of-process the way ops_gen already does with gen_status.
       sentinel being weakened to avoid them.
 
       Mutation-tested: removing one allow-list entry makes the run name it and exit 1.
+
+- [x] **"non-serialisable response" was the wrong diagnosis for a response that was too big** DONE 2026-09-04
+      _reply catches TypeError and ValueError from framing and answered both with "op produced a
+      non-serialisable response ... This is a MifBlender bug -- the op must return JSON-safe
+      values". One of the two is a frame past the 64 MiB cap: the response serialised perfectly and
+      there was simply too much of it. That message sent the caller hunting a serialisation defect
+      in an op that has none, and named the op as the bug when the op was right.
+
+      The two now say different things, the size case says what to do about it - narrow the request
+      - and a responseTooLarge flag lets a program tell them apart without reading prose.
+
+      MEASURED RATHER THAN GUESSED, and the measurement is why this is a message fix rather than
+      pagination. On a 4000-object scene at 5.0.1, list_objects costs about 169 bytes per object and
+      scene_info about 67, so the cap arrives near 400,000 and 1,000,000 objects. No op is capped
+      today and none needs to be yet; the number is recorded so the decision can be made on evidence
+      when a scene gets there.
+
+- [ ] **no listing op bounds its output**
+      Falls out of the measurement above. list_objects, scene_info and the other listings return one
+      row per object with no limit, offset or cap - the response just grows with the scene until the
+      frame breaks at roughly 400,000 objects.
+
+      NOT URGENT AND DELIBERATELY NOT DONE: 400k objects is far past anything this tool has been
+      pointed at, and adding pagination to every listing endpoint is a response-shape change every
+      caller and suite would have to follow. The right moment is when a real scene gets within an
+      order of magnitude, or when a caller asks - not on a hypothetical.
+
+      When it is done, the shape is already decided elsewhere in this repo: a `limit` with a
+      reported `truncated` flag, so a caller can never mistake a partial answer for a complete one.
