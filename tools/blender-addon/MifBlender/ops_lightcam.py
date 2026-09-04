@@ -177,7 +177,8 @@ def op_create_light(params):
 
     snap = selection_snapshot()
     try:
-        data = bpy.data.lights.new(name=str(take(params, "name", default="Light", kind=str)),
+        wanted = str(take(params, "name", default="Light", kind=str))
+        data = bpy.data.lights.new(name=wanted,
                                    type=kind)
         obj = bpy.data.objects.new(data.name, data)
         bpy.context.scene.collection.objects.link(obj)
@@ -257,8 +258,13 @@ def op_create_light(params):
             out["shape"] = data.shape
         if data.type == "SUN":
             out["angle"] = round(float(data.angle), 6)
+        # A NOTE IS NOT A FIELD. This said the name "may differ from what was asked for" and
+        # left the caller nothing to test - so a retry after a timeout got Light.001 with prose
+        # about it. requestedName and nameWasSuffixed are the answerable form.
+        out["requestedName"] = wanted
+        out["nameWasSuffixed"] = obj.name != wanted
         out["nameNote"] = ("Blender renames on collision rather than failing, so `name` is what the "
-                           "object ACTUALLY got - it may differ from what was asked for.")
+                           "object ACTUALLY got - check nameWasSuffixed rather than assuming.")
         return out
     finally:
         selection_restore(snap)
@@ -570,7 +576,8 @@ def op_create_camera(params):
 
     snap = selection_snapshot()
     try:
-        data = bpy.data.cameras.new(name=str(take(params, "name", default="Camera", kind=str)))
+        wanted = str(take(params, "name", default="Camera", kind=str))
+        data = bpy.data.cameras.new(name=wanted)
         obj = bpy.data.objects.new(data.name, data)
         bpy.context.scene.collection.objects.link(obj)
 
@@ -623,6 +630,11 @@ def op_create_camera(params):
         bpy.context.view_layer.update()
         out = {
             "name": obj.name,
+            # Blender renames on collision rather than failing, so a caller retrying a
+            # timed-out create gets "Camera.001" while believing it holds "Camera". Same field
+            # pair as _created's, and for the same reason.
+            "requestedName": wanted,
+            "nameWasSuffixed": obj.name != wanted,
             "dataName": data.name,
             "type": data.type,
             "location": rnd(list(obj.matrix_world.to_translation())),

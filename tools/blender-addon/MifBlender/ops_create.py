@@ -687,8 +687,14 @@ def _place(obj, placed):
     obj.location, obj.rotation_euler = placed
 
 
-def _created(obj, coll, want_type, verb):
+def _created(obj, coll, want_type, verb, requested=None):
     """The shared postcondition: it exists, it is the RIGHT TYPE, and it is in a scene.
+
+    AND WHETHER IT GOT THE NAME IT ASKED FOR. Blender renames on collision rather than failing, so
+    a caller retrying a timed-out call gets "Foo.001" while believing it has "Foo" - and every
+    later lookup by the name it asked for finds nothing, or worse, the OTHER object. Reported here
+    rather than in each op because all five of these build a name the same way and got it wrong the
+    same way.
 
     Type is checked because these ops build objects out of datablocks rather than through
     bpy.ops.*_add, so a wrong datablock class produces an object that exists and is not what was
@@ -704,6 +710,8 @@ def _created(obj, coll, want_type, verb):
         raise MifOpError("%s made '%s' and it is in NO collection, so it is in no scene - "
                          "invisible, unrendered and absent from the outliner." % (verb, obj.name))
     return {"ok": True, "name": obj.name, "type": obj.type, "collection": coll.name,
+            "requestedName": requested,
+            "nameWasSuffixed": bool(requested is not None and obj.name != requested),
             "location": rnd(list(obj.location)), "rotation": rnd(list(obj.rotation_euler))}
 
 
@@ -737,14 +745,15 @@ def op_create_empty(params):
     # AN EMPTY IS AN OBJECT WITH NO DATA - objects.new(name, None). There is no "empty datablock",
     # which is why this cannot follow the create_light shape of make-data-then-object.
     coll = _resolve_collection(params)
-    obj = bpy.data.objects.new(str(take(params, "name", default="Empty", kind=str)), None)
+    wanted = str(take(params, "name", default="Empty", kind=str))
+    obj = bpy.data.objects.new(wanted, None)
     _link_new(obj, coll)
     _place(obj, _placed)
     obj.empty_display_type = kind
     if size is not None:
         obj.empty_display_size = size
 
-    out = _created(obj, coll, "EMPTY", "create_empty")
+    out = _created(obj, coll, "EMPTY", "create_empty", wanted)
     out.update({"displayType": obj.empty_display_type,
                 "displaySize": round(float(obj.empty_display_size), 6),
                 "note": "an Empty has no geometry and renders nothing - displaySize is viewport "
@@ -797,7 +806,8 @@ def op_create_curve(params):
                          % stype)
 
     coll = _resolve_collection(params)
-    data = bpy.data.curves.new(str(take(params, "name", default="Curve", kind=str)), type="CURVE")
+    wanted = str(take(params, "name", default="Curve", kind=str))
+    data = bpy.data.curves.new(wanted, type="CURVE")
     data.dimensions = str(take(params, "dimensions", default="3D", kind=str)).upper()
     spline = data.splines.new(stype)
     if stype == "BEZIER":
@@ -835,7 +845,7 @@ def op_create_curve(params):
     if made != len(pts):
         raise MifOpError("asked for %d points and the %s spline holds %d afterwards."
                          % (len(pts), stype, made))
-    out = _created(obj, coll, "CURVE", "create_curve")
+    out = _created(obj, coll, "CURVE", "create_curve", wanted)
     out.update({"splineType": stype, "pointCount": made, "cyclic": bool(spline.use_cyclic_u),
                 "bevelDepth": round(float(data.bevel_depth), 6),
                 "usePath": bool(data.use_path),
@@ -885,7 +895,8 @@ def op_create_text(params):
         aligns[attr] = str(v).upper()
 
     coll = _resolve_collection(params)
-    data = bpy.data.curves.new(str(take(params, "name", default="Text", kind=str)), type="FONT")
+    wanted = str(take(params, "name", default="Text", kind=str))
+    data = bpy.data.curves.new(wanted, type="FONT")
     data.body = str(body)
     for key, attr in (("size", "size"), ("extrude", "extrude"), ("bevelDepth", "bevel_depth")):
         v = take_float(params, key, default=None)
@@ -898,7 +909,7 @@ def op_create_text(params):
     _link_new(obj, coll)
     _place(obj, _placed)
 
-    out = _created(obj, coll, "FONT", "create_text")
+    out = _created(obj, coll, "FONT", "create_text", wanted)
     out.update({"body": data.body, "size": round(float(data.size), 6),
                 "extrude": round(float(data.extrude), 6),
                 "align": data.align_x, "alignY": data.align_y,
@@ -968,7 +979,8 @@ def op_create_armature(params):
                          "edited. NOTHING was created." % mode_before)
 
     coll = _resolve_collection(params)
-    data = bpy.data.armatures.new(str(take(params, "name", default="Armature", kind=str)))
+    wanted = str(take(params, "name", default="Armature", kind=str))
+    data = bpy.data.armatures.new(wanted)
     disp = take(params, "displayType", kind=str)
     if disp:
         valid = {i.identifier for i in data.bl_rna.properties["display_type"].enum_items}
@@ -1018,7 +1030,7 @@ def op_create_armature(params):
         raise MifOpError("asked for %d bone(s) and the armature holds %d after leaving edit mode."
                          % (len(bones), len(data.bones)))
 
-    out = _created(obj, coll, "ARMATURE", "create_armature")
+    out = _created(obj, coll, "ARMATURE", "create_armature", wanted)
     out.update({"bones": [b.name for b in data.bones], "boneCount": len(data.bones),
                 "displayType": data.display_type, "showInFront": bool(obj.show_in_front),
                 "modeAfter": mode_after,
@@ -1083,7 +1095,8 @@ def op_create_lattice(params):
         pts.append(int(raw))
 
     coll = _resolve_collection(params)
-    data = bpy.data.lattices.new(str(take(params, "name", default="Lattice", kind=str)))
+    wanted = str(take(params, "name", default="Lattice", kind=str))
+    data = bpy.data.lattices.new(wanted)
     # RESOLUTION FIRST, before anything else touches the lattice: changing points_u resets the
     # point positions, so writing it after any edit would silently discard the edit.
     data.points_u, data.points_v, data.points_w = pts
@@ -1118,7 +1131,7 @@ def op_create_lattice(params):
     # READ BACK OFF THE DATABLOCK. points_u is clamped by Blender rather than refused, so the
     # resolution the lattice HAS is not necessarily the one that was asked for.
     got = [int(data.points_u), int(data.points_v), int(data.points_w)]
-    out = _created(obj, coll, "LATTICE", "create_lattice")
+    out = _created(obj, coll, "LATTICE", "create_lattice", wanted)
     out.update({
         "resolution": got,
         "resolutionRequested": pts,

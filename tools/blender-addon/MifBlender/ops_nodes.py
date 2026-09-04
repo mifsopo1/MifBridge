@@ -116,6 +116,11 @@ def op_create_node_group(params):
         gout.location = (400, 0)
         made = [gin.name, gout.name]
     return {"group": tree.name, "type": kind, "nodes": made,
+            # Blender renames on collision rather than failing, so a caller retrying a timed-out
+            # create gets "Foo.001" while believing it holds "Foo" - and assign_node_group by the
+            # name it asked for then finds the WRONG group, or none.
+            "requestedName": name,
+            "nameWasSuffixed": tree.name != name,
             "interface": _iface_items(tree),
             "nodeCount": len(tree.nodes),
             "apiNote": ("group sockets live in tree.interface from Blender 4.0 and in "
