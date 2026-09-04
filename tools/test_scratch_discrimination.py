@@ -143,6 +143,92 @@ def main():
           M.pick_adoptable([{"packageName": "/Game/_MifProbe/A"},
                             {"packageName": "/Game/Real/B"}]))
 
+    # ------------------------------------------------------------------
+    # THE SAME QUESTION ABOUT THE OTHER BACKEND
+    # ------------------------------------------------------------------
+    # On 2026-09-04 an audit was pointed at port 8792 believing it had just started the server
+    # there. The start had failed, a real Blender held the port, and seventeen read-only ops ran
+    # against somebody's open file. Read-only is the only reason that was cheap: test_blender_mesh
+    # calls clear_scene SEVEN times, and clear_scene deletes every object in the file with no
+    # confirmation. blender_audit_common now refuses to aim a scene-wide destructive op at any
+    # instance that is interactive or has a file open.
+    #
+    # Gated HERE because the guard was built and mutation-tested by hand in one sitting, and a
+    # guard nobody re-runs is one refactor away from allowing everything. Every branch below has
+    # been watched firing; these checks are what keep it that way.
+    print("")
+    print("=== a scratch Blender, told apart from somebody's session ===")
+
+    import blender_audit_common as B
+
+    def _ping(**kw):
+        base = {"pid": 5488, "blenderVersionString": "5.0.1", "background": True,
+                "blendFile": None, "objectCount": 4}
+        base.update(kw)
+        return lambda op, params=None, timeout=30.0: base
+
+    def _verdict(op, **kw):
+        """(refused?, message) for one op against a faked instance."""
+        saved = B._raw_call
+        B._raw_call = _ping(**kw)
+        try:
+            B._guard_destructive(op)
+            return False, ""
+        except B.LiveInstanceRefused as exc:
+            return True, str(exc)
+        finally:
+            B._raw_call = saved
+
+    refused, msg = _verdict("clear_scene", background=False)
+    check("clear_scene is REFUSED against an interactive Blender - the case that would have "
+          "emptied a live file", refused, msg)
+    check("and the refusal says NOTHING was sent, the promise every other refusal in this "
+          "project makes", "NOTHING was sent" in msg, msg)
+    check("and it names the pid, which is the only thing telling two Blenders apart",
+          "5488" in msg, msg)
+
+    refused, msg = _verdict("clear_scene", blendFile=r"D:\work\MIF_OilRig.blend")
+    check("clear_scene is REFUSED against a BACKGROUND Blender that has a file open - background "
+          "is not the same as empty, and a batch render holds real work too", refused, msg)
+    check("and it names the file, so the operator can tell whose it is",
+          "MIF_OilRig.blend" in msg, msg)
+
+    for op in ("open_file", "save_file"):
+        refused, _ = _verdict(op, background=False)
+        check("%s is REFUSED too - it replaces or overwrites the file, which destroys as much as "
+              "clearing it" % op, refused, op)
+
+    refused, _ = _verdict("clear_scene")
+    check("a real scratch instance - background, no file - is ALLOWED, without which this guard "
+          "would just break every suite it touches", not refused, "scratch was refused")
+
+    for op in ("delete_object", "create_primitive", "ping", "scene_info"):
+        refused, _ = _verdict(op, background=False, blendFile=r"D:\work\real.blend")
+        check("%s is ALLOWED even against a live instance - it names its target, so guarding it "
+              "would fail loudly on work that was never dangerous" % op, not refused, op)
+
+    import os as _os
+    _os.environ[B.ALLOW_LIVE_ENV] = "1"
+    try:
+        refused, _ = _verdict("clear_scene", background=False)
+    finally:
+        del _os.environ[B.ALLOW_LIVE_ENV]
+    check("%s=1 overrides the refusal - a guard with no way past it is a guard people delete"
+          % B.ALLOW_LIVE_ENV, not refused, "override was ignored")
+
+    saved = B._raw_call
+    B._raw_call = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no such endpoint"))
+    try:
+        B._guard_destructive("clear_scene")
+        opened = True
+    except B.LiveInstanceRefused:
+        opened = False
+    finally:
+        B._raw_call = saved
+    check("an unreadable ping FAILS OPEN - deliberately, because refusing to run at all against an "
+          "older addon buys nothing and gets the guard switched off", opened,
+          "an unidentifiable instance was refused")
+
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for name, detail in FAIL:

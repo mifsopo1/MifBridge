@@ -243,7 +243,58 @@ def call(op, params=None, timeout=30.0):
     at a live session on 2026-09-04. Every socket tool goes through call().
     """
     _announce()
+    _guard_destructive(op)
     return _raw_call(op, params, timeout)
+
+
+# Ops that can destroy something the CALLER NEVER NAMED. clear_scene deletes every object in the
+# file; open_file and save_file replace or overwrite it. delete_object is deliberately absent - it
+# takes explicit names, so a suite deleting its own MifT_* fixtures is not the failure mode here.
+SCENE_WIDE_DESTRUCTIVE = ("clear_scene", "open_file", "save_file")
+
+ALLOW_LIVE_ENV = "MIF_BLENDER_ALLOW_LIVE"
+
+
+class LiveInstanceRefused(RuntimeError):
+    """Raised INSTEAD of emptying a Blender that holds somebody's work."""
+
+
+def _guard_destructive(op):
+    """Refuse a scene-wide destructive op against an instance that is not a scratch one.
+
+    A scratch instance is background AND has no file open - what
+    `blender --background --factory-startup` gives you, and what every one of these suites is meant
+    to run against. Anything else is somebody's session until proven otherwise.
+
+    FAILS OPEN ON AN UNREADABLE PING, on purpose. If the instance cannot be identified this raises
+    nothing: the alternative is a harness that refuses to run at all against an older addon, and a
+    guard people disable is worse than one that is occasionally quiet. The banner still prints
+    whatever it managed to read.
+    """
+    if op not in SCENE_WIDE_DESTRUCTIVE:
+        return
+    if os.environ.get(ALLOW_LIVE_ENV) == "1":
+        return
+    try:
+        st = _raw_call("ping", {}, timeout=5.0)
+    except Exception:                                               # noqa: BLE001
+        return
+    if not isinstance(st, dict):
+        return
+    reasons = []
+    if st.get("background") is False:
+        reasons.append("it is INTERACTIVE - a window somebody may be working in")
+    if st.get("blendFile"):
+        reasons.append("it has %s open" % os.path.basename(str(st.get("blendFile"))))
+    if not reasons:
+        return
+    raise LiveInstanceRefused(
+        "refusing to send '%s' to the Blender on %s:%d (pid %s): %s. %s deletes or overwrites "
+        "objects you did not name, so NOTHING was sent and nothing was changed. Start a scratch "
+        "instance instead - blender --background --factory-startup, on a port of its own via "
+        "%s - or set %s=1 if you genuinely mean this one."
+        % (op, HOST, PORT, st.get("pid", "?"), "; ".join(reasons), op,
+           "MIF_BLENDER_PORT", ALLOW_LIVE_ENV))
 
 
 def _raw_call(op, params=None, timeout=30.0):
