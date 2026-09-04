@@ -13838,3 +13838,49 @@ out-of-process the way ops_gen already does with gen_status.
       and rename together, and three refusals. In the matrix on every build, with add_nla_strip's
       payload now naming its track - which also exercises that op's create-if-absent path for the
       first time.
+
+- [~] **automating the read/write lens - a SECOND measured failure, and the reason is the same one**
+      Declining, with the numbers, because a third attempt should not be made without reading this.
+
+      The lens itself is the most productive thing anybody did on 2026-09-04: asking "this key is in
+      a RESPONSE - can anything SET it?" across the twelve families the spec names found ten gaps in
+      ten families, every one real and every one fixed. So automating it looked obviously worth
+      doing, and audit_family_asymmetry's earlier failure looked like a different problem - that one
+      matched a family NOUN, which fails because the addon's readers are generic.
+
+      BUILT AND MEASURED AGAINST THIS MORNING'S CODE, in a worktree at the first commit of the day,
+      where the ten answers were already known. Three attempts, each narrowing the one before:
+
+        every dict literal in every ops_ module      767 findings. ComfyUI workflow JSON keyed
+                                                     "1".."31", file extensions, tables keyed by op
+                                                     name. Unusable.
+        only dicts an op_* function RETURNS          365 findings, and only 3 of the 10 known gaps.
+                                                     The restriction is principled and it throws
+                                                     away most of the signal, because this addon
+                                                     builds its responses in HELPERS - _material_json,
+                                                     camera_readback, _action_row, _anim_summary,
+                                                     _particle_row. blendMethod, dofFocusObject,
+                                                     substeps, solverIterations, survivesSave and
+                                                     isSolo all live in helpers and were invisible.
+        of those, keys naming a real RNA property    41 findings, of which perhaps 6 are genuine.
+        (5831 identifiers dumped from bpy.types)     The rest are collection nouns - actions,
+                                                     cameras, lights, markers, constraints - and
+                                                     generic words that happen to be RNA property
+                                                     names: base, center, space, format, view, node.
+
+      THE TWO FAILURE MODES ARE IN TENSION. Widening to catch the helper-built responses brings back
+      the 767; narrowing to keep the noise down loses six of the ten. No filter resolves that,
+      because both come from one root: THIS ADDON'S RESPONSES ARE DOMINATED BY MEASUREMENTS. That is
+      its design - maxPositionError, keyframesMoved, basisCreated, aabbWouldHaveLied, verticesInGroup
+      - and a syntactic check cannot tell a measurement from a setting somebody forgot to expose. It
+      needs to know what the field MEANS.
+
+      Same root cause as audit_family_asymmetry's failure, arrived at from the opposite direction, so
+      it is worth stating as a property of the codebase rather than of either tool: the addon reports
+      what it DID far more than it reports what it IS, which is exactly why it is trustworthy and
+      exactly why this cannot be automated by shape.
+
+      WHAT WOULD ACTUALLY WORK is a hand-maintained list of which response keys name persistent
+      SETTINGS - and maintaining that list is the manual audit with extra steps, so it earns nothing.
+      The twelve-family sweep is done and its findings are fixed; the next one should be done the
+      same way, by reading, when a family gains ops.
