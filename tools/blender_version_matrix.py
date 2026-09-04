@@ -654,8 +654,23 @@ for name in sorted(table):
 # {"mif":"typo"} as a zero vector, two booleans coerced by bool({...}) being True, and a collection
 # hidden from every render because a dict reached setattr.
 _DICT_IS_LEGAL = {("set_custom_property", "value")}
+# ...and the same escape hatch for the list sentinel. set_custom_property stores whatever it is
+# given, so a list of strings is a legitimate value there and nowhere else yet.
+_LIST_IS_LEGAL = {
+    ("set_custom_property", "value"),
+    # A LIST OF STRINGS IS WHAT THESE TWO ARE FOR, checked by reading both. evaluate_at_frame's
+    # dataPaths is a list of property paths and reads what resolves; set_material_slots' slots is a
+    # list of material names IN ORDER and creates the ones that do not exist, which its own comment
+    # explains. Accepting the sentinel is them working, not them failing.
+    ("evaluate_at_frame", "paths"),
+    ("set_material_slots", "slots"),
+}
 
-_LEAK_SENTINELS = ("\x00mif-not-a-value", {"mif": "not-a-value"})
+# A LIST OF NON-NUMERIC STRINGS, wrong in two independent ways at once: the wrong LENGTH for every
+# vector this addon reads (2 where 3 or 4 belong) and the wrong ELEMENT TYPE for every numeric list.
+# A plain list would prove nothing - location, color, points and edgeIndices all take one - so the
+# sentinel has to be a list nothing can legitimately accept.
+_LEAK_SENTINELS = ("\x00mif-not-a-value", {"mif": "not-a-value"}, ["mif", "not-a-value"])
 _LEAK_COLLECTIONS = ("objects", "meshes", "materials", "images", "lights", "cameras", "actions",
                      "node_groups", "textures", "lattices", "collections", "armatures", "curves",
                      "particles", "worlds")
@@ -715,6 +730,7 @@ for _tname, _tparams in _sub(json.loads(r"""@@TEARDOWN@@""")):
 out["leaks"] = []
 out["badValueRaises"] = []
 out["dictAccepted"] = []
+out["listAccepted"] = []
 out["leakStats"] = {"cases": 0, "refused": 0, "accepted": 0, "raised": 0, "opsCovered": 0}
 for name in sorted(table):
     if only and name not in only:
@@ -785,6 +801,8 @@ for name in sorted(table):
             # for and report success.
             if isinstance(_sentinel, dict) and (name, label) not in _DICT_IS_LEGAL:
                 out["dictAccepted"].append({"op": name, "key": label})
+            if isinstance(_sentinel, list) and (name, label) not in _LIST_IS_LEGAL:
+                out["listAccepted"].append({"op": name, "key": label})
             continue
         except MifOpError as exc:
             out["leakStats"]["refused"] += 1
@@ -1131,6 +1149,20 @@ def main():
             seen_pairs.add(pair)
             print("  %-24s bad %-18s %s" % (row["op"], row["key"], row["detail"][:70]))
 
+    list_ok = []
+    for r in reports:
+        for row in r.get("listAccepted", []) or []:
+            if (row["op"], row["key"]) not in [(x["op"], x["key"]) for x in list_ok]:
+                list_ok.append(row)
+    if list_ok:
+        print("")
+        print("A LIST OF STRINGS WAS ACCEPTED WHERE A VALUE BELONGS - %d. [\"mif\", \"not-a-value\"]"
+              % len(list_ok))
+        print("is the wrong length for every vector here and the wrong element type for every")
+        print("numeric list, so nothing should take it:")
+        for row in list_ok[:20]:
+            print("  %-26s %s" % (row["op"], row["key"]))
+
     dict_ok = []
     for r in reports:
         for row in r.get("dictAccepted", []) or []:
@@ -1213,7 +1245,7 @@ def main():
         print("adding this to .gitignore - the file is the symptom, the path handling is the bug.")
 
     return 1 if (raised or fatal or suspect or new_diffs or leaked or leaks
-                 or bad_raises or strays or silent_builds) else 0
+                 or bad_raises or strays or silent_builds or list_ok) else 0
 
 
 if __name__ == "__main__":

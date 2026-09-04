@@ -29,8 +29,8 @@ way out.
 """
 import bpy
 
-from .ops_common import (MifOpError, check_axis_dict, finite_float, get_object, reject_unknown,
-                         take, take_bool, take_float)
+from .ops_common import (MifOpError, check_axis_dict, finite_float, finite_floats, get_object,
+                         reject_unknown, take, take_bool, take_float)
 
 _CREATE_KEYS = {"name", "type", "withGroupIO"}
 _ADDNODE_KEYS = {"group", "tree", "type", "nodeType", "name", "location", "inputs", "label",
@@ -185,7 +185,10 @@ def _socket_value(kind, sock_name, val, where, tail="NOTHING was changed."):
     # A VECTOR, COLOUR OR ROTATION DEFAULT IS A SEQUENCE. add_group_node writes those element by
     # element into a live socket; the group INTERFACE takes the whole thing at once.
     if isinstance(val, (list, tuple)):
-        return [float(v) for v in val]
+        # A bare float() here let ["mif", "not-a-value"] out as a raw ValueError - "could not
+        # convert string to float: 'mif'" - straight past this addon's refusal contract. Found by
+        # giving the matrix's corrupted-payload pass a LIST sentinel alongside its string and dict.
+        return finite_floats(val, sock_name)
     # A MENU SOCKET IS AN ENUM and a String socket is text; float() destroyed both.
     if kind in ("NodeSocketString", "NodeSocketMenu"):
         return str(val)
