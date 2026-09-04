@@ -14835,6 +14835,19 @@ out-of-process the way ops_gen already does with gen_status.
       untested edit to the shared number parser every numeric parameter passes through is worth less
       than a filed one.
 
+      WRITTEN AND REVERTED ON 2026-09-04, which is worth recording rather than repeating. The one-line
+      guard was applied, and before it could be built an editor appeared on 8791 - Andre's, opened
+      while I was working. Building was then impossible and leaving it in place would have left
+      Source/ dirty against both engine records, red-gating the tree for anyone who ran them: exactly
+      the "worth less than a filed one" this paragraph already warns about, arrived at from the other
+      direction. The patch is preserved verbatim and is a straight re-apply the next time the editor
+      is genuinely free:
+
+        the Number branch of JsonValueAsNumber gains the same !FMath::IsFinite check the String
+        branch already has, with a message that says the value is not FINITE rather than "not a
+        number" - Infinity IS a number, and a caller who sent 1e999 deserves to be told it
+        overflowed rather than that their arithmetic is not arithmetic.
+
 - [x] **NaN reached Blender through the conversion sites too** DONE 2026-09-04
       take_float and finite_floats cover values read through the parameter plumbing. They do not
       cover the places that pull a number straight out of the caller's dict and call float() on it -
