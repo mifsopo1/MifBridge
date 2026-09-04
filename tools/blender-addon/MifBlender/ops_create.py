@@ -665,9 +665,26 @@ def _link_new(obj, coll):
     return coll
 
 
-def _place(obj, params):
-    obj.location = _vec3(params, "location", (0.0, 0.0, 0.0))
-    obj.rotation_euler = _vec3(params, "rotation", (0.0, 0.0, 0.0))
+def _place_values(params):
+    """Parse location and rotation BEFORE anything is created. Returns what _place will write.
+
+    _place runs after bpy.data.*.new and after the object is LINKED, so a malformed vector refused
+    with the object already sitting in the caller's file. Same defect fixed in ops_lightcam's _vec3
+    earlier on 2026-09-04 and still present here, because the parse lived inside the writer rather
+    than beside the caller - five ops share _place, so five shared the defect.
+
+    Found by the matrix's corrupted-payload pass once it learned to take parameters from FIXTURES:
+    create_lattice with a bad location left the lattice behind.
+
+    SPLIT RATHER THAN GUARDED. "Remember to validate first" is the kind of rule this file keeps
+    removing; making _place take the parsed values means the parse cannot be skipped.
+    """
+    return (_vec3(params, "location", (0.0, 0.0, 0.0)),
+            _vec3(params, "rotation", (0.0, 0.0, 0.0)))
+
+
+def _place(obj, placed):
+    obj.location, obj.rotation_euler = placed
 
 
 def _created(obj, coll, want_type, verb):
@@ -706,6 +723,10 @@ def op_create_empty(params):
       displaySize (float)    viewport size only - an Empty has no geometry and renders nothing
       collection (str)       link into this collection instead of the scene root
     """
+    # PARSED BEFORE ANYTHING IS CREATED. _place used to do this itself, after bpy.data.*.new
+    # and after the object was linked, so a malformed vector refused with the object already in
+    # the caller's file. Five ops shared _place and so shared the defect.
+    _placed = _place_values(params)
     reject_unknown(params, _EMPTY_KEYS, "create_empty")
     kind = str(take(params, "displayType", default="PLAIN_AXES", kind=str)).upper()
     if kind not in _EMPTY_TYPES:
@@ -718,7 +739,7 @@ def op_create_empty(params):
     coll = _resolve_collection(params)
     obj = bpy.data.objects.new(str(take(params, "name", default="Empty", kind=str)), None)
     _link_new(obj, coll)
-    _place(obj, params)
+    _place(obj, _placed)
     obj.empty_display_type = kind
     if size is not None:
         obj.empty_display_size = size
@@ -755,6 +776,10 @@ def op_create_curve(params):
       usePath (bool)         default true - a Follow Path constraint does NOTHING without it
       location / rotation / collection
     """
+    # PARSED BEFORE ANYTHING IS CREATED. _place used to do this itself, after bpy.data.*.new
+    # and after the object was linked, so a malformed vector refused with the object already in
+    # the caller's file. Five ops shared _place and so shared the defect.
+    _placed = _place_values(params)
     reject_unknown(params, _CURVE_KEYS, "create_curve")
     raw = params.get("points")
     if not isinstance(raw, (list, tuple)) or len(raw) < 2:
@@ -802,7 +827,7 @@ def op_create_curve(params):
 
     obj = bpy.data.objects.new(data.name, data)
     _link_new(obj, coll)
-    _place(obj, params)
+    _place(obj, _placed)
 
     # THE POINT COUNT IS THE POSTCONDITION, taken from the collection the type actually uses. A
     # spline built into the wrong collection has zero points and raises nothing.
@@ -834,6 +859,10 @@ def op_create_text(params):
       alignY (str)          vertical: TOP | TOP_BASELINE | CENTER | BOTTOM | BOTTOM_BASELINE
       location / rotation / collection
     """
+    # PARSED BEFORE ANYTHING IS CREATED. _place used to do this itself, after bpy.data.*.new
+    # and after the object was linked, so a malformed vector refused with the object already in
+    # the caller's file. Five ops shared _place and so shared the defect.
+    _placed = _place_values(params)
     reject_unknown(params, _TEXT_KEYS, "create_text")
     body = take(params, "body", required=True, kind=str)
     if not str(body):
@@ -859,7 +888,7 @@ def op_create_text(params):
 
     obj = bpy.data.objects.new(data.name, data)
     _link_new(obj, coll)
-    _place(obj, params)
+    _place(obj, _placed)
 
     out = _created(obj, coll, "FONT", "create_text")
     out.update({"body": data.body, "size": round(float(data.size), 6),
@@ -892,6 +921,10 @@ def op_create_armature(params):
                             is invisible and looks like it was never created
       location / rotation / collection
     """
+    # PARSED BEFORE ANYTHING IS CREATED. _place used to do this itself, after bpy.data.*.new
+    # and after the object was linked, so a malformed vector refused with the object already in
+    # the caller's file. Five ops shared _place and so shared the defect.
+    _placed = _place_values(params)
     reject_unknown(params, _ARM_KEYS, "create_armature")
     bones = params.get("bones") or []
     if not isinstance(bones, (list, tuple)):
@@ -938,7 +971,7 @@ def op_create_armature(params):
         data.display_type = str(disp).upper()
     obj = bpy.data.objects.new(data.name, data)
     _link_new(obj, coll)
-    _place(obj, params)
+    _place(obj, _placed)
     obj.show_in_front = take_bool(params, "showInFront", default=True)
 
     made = []
@@ -1022,6 +1055,10 @@ def op_create_lattice(params):
       useOutside (bool)                deform only points outside the lattice's own volume
       location / rotation / scale / collection
     """
+    # PARSED BEFORE ANYTHING IS CREATED. _place used to do this itself, after bpy.data.*.new
+    # and after the object was linked, so a malformed vector refused with the object already in
+    # the caller's file. Five ops shared _place and so shared the defect.
+    _placed = _place_values(params)
     reject_unknown(params, _LATTICE_KEYS, "create_lattice")
     res = params.get("resolution")
     if res is not None and (not isinstance(res, (list, tuple)) or len(res) < 3):
@@ -1061,7 +1098,7 @@ def op_create_lattice(params):
 
     obj = bpy.data.objects.new(data.name, data)
     _link_new(obj, coll)
-    _place(obj, params)
+    _place(obj, _placed)
     # SCALE IS HANDLED HERE RATHER THAN IN _place, which does location and rotation only.
     # It matters more for a lattice than for anything else this file makes: a lattice only
     # influences geometry inside its own volume, so scaling it to cover the mesh is not a

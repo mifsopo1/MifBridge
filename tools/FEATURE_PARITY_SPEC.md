@@ -14247,3 +14247,29 @@ out-of-process the way ops_gen already does with gen_status.
       a comment I had written hours earlier explaining that doubling was required. Correct when
       written, false the moment the template changed, and sitting three lines above the code it
       described - exactly the shape audit_stale_counts exists for, one level down.
+
+- [x] **_place parsed its vectors after the object was already linked, in five ops** DONE 2026-09-04
+      Found by asking a coverage question about the pass itself rather than about the addon: 144 ops
+      reach bpy and only 117 had corrupted-payload coverage. The other eight take their parameters
+      from FIXTURES or TEARDOWN rather than PAYLOADS, so the pass had nothing to corrupt and skipped
+      them silently. Two of the eight were create_lattice and create_texture - my own ops from that
+      morning.
+
+      Teaching it to fall back to those sources took coverage to 124 ops and 546 cases, and it
+      flagged create_lattice on the first run.
+
+      THE DEFECT WAS FIVE OPS WIDE. _place did its own parsing, and it is called AFTER bpy.data.*.new
+      and after the object is linked - so a malformed location refused with the object already in the
+      caller's file. create_primitive, create_empty, create_curve, create_armature and create_lattice
+      all share _place, so all five shared it. This is the same defect fixed in ops_lightcam's _vec3
+      that morning; it survived here because the parse lived inside the WRITER rather than beside
+      the caller, and fixing one file does not fix a second copy of the idea.
+
+      SPLIT RATHER THAN GUARDED. _place_values(params) parses and _place(obj, placed) writes, so the
+      parse is the only way to get the values - a "remember to validate first" rule is the kind this
+      file keeps removing. Inserted into all five by AST rather than by matching text, because the
+      five functions differ.
+
+      Verified on 3.6.23 and 5.0.1: create_primitive, create_lattice and create_empty each place
+      their object correctly with a good vector, and each refuses a bad one with leaked=False -
+      object, lattice, curve and armature counts all unchanged.

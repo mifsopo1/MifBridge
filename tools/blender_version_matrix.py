@@ -670,14 +670,32 @@ def _leak_counts():
     return out
 
 
+# WHERE ELSE A WORKING PAYLOAD LIVES. Eight ops reached bpy with parameters that come from
+# FIXTURES or TEARDOWN rather than PAYLOADS - create_lattice and create_texture among them - so the
+# corrupted-payload pass had nothing to corrupt and skipped them entirely. The destructive four
+# cannot be given a PAYLOADS entry, because that would put them back into the alphabetical sweep
+# and clear_scene at 'c' empties everything; taking their parameters from TEARDOWN covers them
+# without that.
+#
+# A corrupted call is safe for the destructive ones by construction: the point is that it REFUSES.
+_leak_extra = {}
+for _fname, _fparams in fixtures:
+    if _fname not in payloads and _fparams:
+        _leak_extra.setdefault(_fname, _fparams)
+for _tname, _tparams in _sub(json.loads(r"""@@TEARDOWN@@""")):
+    if _tname not in payloads and _tparams:
+        _leak_extra.setdefault(_tname, _tparams)
+
 out["leaks"] = []
 out["badValueRaises"] = []
 out["dictAccepted"] = []
 out["leakStats"] = {"cases": 0, "refused": 0, "accepted": 0, "raised": 0, "opsCovered": 0}
 for name in sorted(table):
-    if (only and name not in only) or name in skip:
+    if only and name not in only:
         continue
-    base = payloads.get(name)
+    # `skip` is about the alphabetical SWEEP, not about this pass - a skipped op still deserves to
+    # have its refusals checked, and a corrupted payload is safe precisely because it refuses.
+    base = payloads.get(name) or _leak_extra.get(name)
     if not base:
         continue
     out["leakStats"]["opsCovered"] += 1
