@@ -199,6 +199,13 @@ PAYLOADS = {
     "render_still": {"filePath": "{TMP}/mif_still.png", "resolutionX": 32,
                      "resolutionY": 32, "samples": 1},
     "create_material": {"name": "MifSweepMat"},
+    # A NORMAL MAP, on purpose: it is the input that needs a Normal Map node between the
+    # image and the socket, and Non-Color rather than sRGB - the two traps the op exists
+    # around. The file is the one render_still wrote at 'r', which is before 's' in the
+    # alphabetical sweep, so no new fixture is needed and the dependency is real rather
+    # than arranged.
+    "set_material_texture": {"material": "MifMatrixMat", "input": "normal",
+                             "file": "{TMP}/mif_still.png"},
     "set_material_properties": {"material": "MifMatrixMat", "baseColor": [1, 0, 0]},
     "describe_material": {"material": "MifMatrixMat"},
     # allowResize, because CHANGING THE COUNT re-indexes every polygon material_index and the op

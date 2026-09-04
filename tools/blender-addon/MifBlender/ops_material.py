@@ -833,6 +833,249 @@ def op_assign_material_to_faces(params):
     }
 
 
+# "slot" IS DELIBERATELY ABSENT, for the reason spelled out above PRINCIPLED_ALIASES about
+# normalStrength. It was listed here while the handler ignored it, so reject_unknown ACCEPTED
+# it and nothing happened - the silent no-op this module calls the worst outcome available.
+# parity_check caught it as an unreachable parameter. A caller passing it now gets a refusal
+# naming what this op does take, which is the honest answer until slots are implemented.
+SET_TEXTURE_KEYS = {"material", "name", "input", "file", "filepath", "image",
+                    "colorspace", "colorSpace", "uvMap", "strength", "replace", "interpolation",
+                    "extension"}
+
+# WHICH COLOUR SPACE EACH SLOT NEEDS, and this is the trap the op exists around.
+#
+# A texture is DATA or it is COLOUR, and Blender decides how to decode it from the image's
+# colorspace_settings rather than from where it is plugged in. A roughness or metallic map loaded as
+# sRGB comes back through the transfer curve, so the values the artist authored are not the values
+# the shader reads - and it looks plausible, just wrong, which is the failure this bridge is built
+# to refuse. Only base colour and emission are colour; everything else is data.
+#
+# THE DEFAULT IS DERIVED, NOT GUESSED, and it is overridable, because an sRGB-encoded mask is a real
+# thing somebody may have on disk.
+_COLOR_INPUTS = ("baseColor", "emissive")
+_DATA_NOTE = ("Non-Color, because this input reads VALUES rather than colour - decoding it through "
+              "the sRGB transfer curve would change every number the shader sees.")
+
+# normal is NOT a Principled alias and never can be: the Normal input takes a vector, and a normal
+# map has to pass through a Normal Map node that converts tangent-space RGB into one. Wiring the
+# image straight into Normal is the single most common way to get a material that looks lit wrong
+# and reads as correct in every field. It is handled as its own case below.
+_NORMAL_INPUT = "normal"
+
+
+def op_set_material_texture(params):
+    """Put an image from disk into a material - which nothing in this addon could do.
+
+    THE HOLE THIS CLOSES, found by asking what the read side reports that the write side cannot
+    produce. describe_material has always walked TEX_IMAGE nodes and reported their images, and
+    bpy.data.images.load appears exactly ONCE in the whole addon - in ops_world, for an HDRI. So a
+    material could be given numbers and never a map, and every job whose deliverable is a textured
+    material was closed at the door.
+
+    A MISSING FILE RENDERS MAGENTA, not black and not an error. Blender creates the image datablock
+    with its source unresolved and shades it bright pink, so the mistake is loud in the viewport and
+    completely silent in every response an agent can read. The path is stat'd BEFORE anything is
+    created, and a load that produces no pixels is refused with the node removed again.
+
+    params:
+      material / name (str)     required
+      input (str)               which Principled input to drive. Any of set_material_properties'
+                                names, plus 'normal', which is not a Principled alias - see below.
+      file / filepath (str)     the image on disk. Excludes `image`.
+      image (str)               an image datablock ALREADY in the file, by name. Excludes `file`.
+      colorspace (str)          override. Default sRGB for baseColor/emissive, Non-Color otherwise.
+      uvMap (str)               drive the texture from a named UV layer instead of the active one.
+      strength (float)          normal input only - the Normal Map node's strength.
+      interpolation (str)       Linear | Closest | Cubic | Smart
+      extension (str)           REPEAT | EXTEND | CLIP | MIRROR
+      replace (bool)            replace an image already on that input. Default true.
+
+    NORMAL IS ITS OWN CASE. The Principled Normal socket takes a VECTOR, and a tangent-space normal
+    map is RGB - so this builds the Normal Map node between them. Wiring the image directly gives a
+    material that is wrong in a way every field in every response still reports as correct.
+    """
+    reject_unknown(params, SET_TEXTURE_KEYS, "set_material_texture")
+    mat_name = take(params, "material", "name", required=True, kind=str)
+    which = str(take(params, "input", required=True, kind=str))
+    path = take(params, "file", "filepath", default=None, kind=str)
+    image_name = take(params, "image", default=None, kind=str)
+
+    if (path is None) == (image_name is None):
+        raise MifOpError("pass `file` (a path on disk) OR `image` (a datablock already in this "
+                         "file), not both and not neither. NOTHING was changed.")
+
+    known = sorted(set(PRINCIPLED_ALIASES) | {_NORMAL_INPUT})
+    if which not in known:
+        raise MifOpError("'%s' is not an input this op can drive. Available: %s. NOTHING was "
+                         "changed." % (which, ", ".join(known)))
+
+    mat = bpy.data.materials.get(str(mat_name))
+    if mat is None:
+        have = sorted(m.name for m in bpy.data.materials)[:25]
+        raise MifOpError("no material named '%s'. This file has: %s. NOTHING was changed."
+                         % (mat_name, ", ".join(have) if have else "(none)"))
+
+    # EVERY REFUSAL ABOVE THIS LINE, before a node or an image datablock exists. A half-built
+    # material is worse than none: it renders, and it renders wrong.
+    node = _principled(mat)
+    if which == _NORMAL_INPUT:
+        target = node.inputs.get("Normal")
+        if target is None:
+            raise MifOpError("this Principled BSDF has no Normal input on Blender %s. NOTHING was "
+                             "changed." % bpy.app.version_string)
+    else:
+        target = _resolve_input(node, which)
+        if target is None:
+            raise MifOpError(
+                "'%s' has no socket on Blender %s - the Principled inputs were renamed at 4.0 and "
+                "this build offers: %s. NOTHING was changed."
+                % (which, bpy.app.version_string, ", ".join(s.name for s in node.inputs)))
+
+    replace = take_bool(params, "replace", default=True)
+    if target.is_linked and not replace:
+        raise MifOpError("'%s' on '%s' is already driven by %s and replace:false was given. "
+                         "NOTHING was changed."
+                         % (which, mat.name, target.links[0].from_node.name))
+
+    if image_name is not None:
+        img = bpy.data.images.get(str(image_name))
+        if img is None:
+            have = sorted(i.name for i in bpy.data.images)[:25]
+            raise MifOpError("no image datablock named '%s'. This file has: %s. NOTHING was "
+                             "changed." % (image_name, ", ".join(have) if have else "(none)"))
+        loaded_now = False
+    else:
+        # STAT IT FIRST. images.load on a missing path still creates a datablock, and Blender
+        # renders an unresolved image MAGENTA - loud on screen, invisible in every response.
+        abspath = os.path.abspath(bpy.path.abspath(str(path)))
+        if not os.path.isfile(abspath):
+            raise MifOpError("no file at '%s'. Blender would still create an image datablock and "
+                             "render it MAGENTA, which is obvious on screen and invisible to "
+                             "anything reading this response. NOTHING was changed." % abspath)
+        try:
+            img = bpy.data.images.load(abspath, check_existing=True)
+        except RuntimeError as exc:
+            raise MifOpError("Blender could not load '%s': %s. NOTHING was changed."
+                             % (abspath, exc))
+        loaded_now = True
+
+    # PIXELS, NOT A HANDLE. A file that exists and is not a readable image loads without raising
+    # and reports 0x0 - the magenta case again, one step further along.
+    if tuple(img.size) == (0, 0):
+        if loaded_now:
+            bpy.data.images.remove(img)
+        raise MifOpError("'%s' loaded but has no pixels (size 0x0), so it is not an image Blender "
+                         "can read. It was removed again. NOTHING was changed."
+                         % (path or image_name))
+
+    tree = mat.node_tree
+    tex = tree.nodes.new("ShaderNodeTexImage")
+    tex.image = img
+    tex.location = (node.location[0] - 600, node.location[1])
+    interp = take(params, "interpolation", default=None, kind=str)
+    if interp:
+        _enum_or_refuse(tex, "interpolation", interp, "interpolation")
+    ext = take(params, "extension", default=None, kind=str)
+    if ext:
+        _enum_or_refuse(tex, "extension", ext, "extension")
+
+    # COLOUR SPACE IS SET ON THE IMAGE, NOT THE NODE, so it applies everywhere that image is used -
+    # which is why an override is reported rather than assumed.
+    want_cs = take(params, "colorspace", "colorSpace", default=None, kind=str)
+    default_cs = "sRGB" if which in _COLOR_INPUTS else "Non-Color"
+    chosen = str(want_cs) if want_cs else default_cs
+    cs_before = img.colorspace_settings.name
+    try:
+        img.colorspace_settings.name = chosen
+    except TypeError:
+        valid = [i.identifier for i in
+                 img.colorspace_settings.bl_rna.properties["name"].enum_items]
+        tree.nodes.remove(tex)
+        raise MifOpError("'%s' is not a colour space on this Blender. Available: %s. NOTHING was "
+                         "changed." % (chosen, ", ".join(valid)))
+
+    uv_node = None
+    uv_map = take(params, "uvMap", default=None, kind=str)
+    if uv_map:
+        uv_node = tree.nodes.new("ShaderNodeUVMap")
+        uv_node.uv_map = str(uv_map)
+        uv_node.location = (tex.location[0] - 300, tex.location[1])
+        tree.links.new(uv_node.outputs["UV"], tex.inputs["Vector"])
+
+    # THE OLD LINK GOES FIRST. links.new on a single-input socket replaces silently, but the node
+    # that fed it is left floating in the tree where describe_material will keep reporting it.
+    replaced = None
+    for link in list(target.links):
+        replaced = link.from_node.name
+        tree.links.remove(link)
+
+    normal_node = None
+    if which == _NORMAL_INPUT:
+        normal_node = tree.nodes.new("ShaderNodeNormalMap")
+        normal_node.location = (node.location[0] - 300, node.location[1] - 300)
+        strength = take_float(params, "strength", default=None)
+        if strength is not None:
+            normal_node.inputs["Strength"].default_value = strength
+        if uv_map:
+            normal_node.uv_map = str(uv_map)
+        tree.links.new(tex.outputs["Color"], normal_node.inputs["Color"])
+        tree.links.new(normal_node.outputs["Normal"], target)
+    elif which == "alpha":
+        # ALPHA COMES FROM THE ALPHA OUTPUT. Wiring Color into Alpha uses the red channel and looks
+        # almost right on a greyscale mask, which is how it survives review.
+        tree.links.new(tex.outputs["Alpha"], target)
+    else:
+        tree.links.new(tex.outputs["Color"], target)
+
+    # READ BACK OFF THE TREE. links.new returns a link object whether or not Blender kept it, and a
+    # rejected link leaves the socket exactly as unlinked as it was.
+    linked = target.is_linked and any(
+        l.from_node.name in (tex.name, getattr(normal_node, "name", None)) for l in target.links)
+    if not linked:
+        tree.nodes.remove(tex)
+        if normal_node is not None:
+            tree.nodes.remove(normal_node)
+        if uv_node is not None:
+            tree.nodes.remove(uv_node)
+        raise MifOpError("the link to '%s' was not accepted by Blender and the nodes were removed "
+                         "again - nothing is wired. NOTHING was changed." % which)
+
+    return {
+        "ok": True,
+        "material": mat.name,
+        "input": which,
+        "imageNode": tex.name,
+        "image": img.name,
+        "imageFile": bpy.path.abspath(img.filepath) if img.filepath else None,
+        "imageSize": list(img.size),
+        "hasAlphaChannel": bool(img.depth in (32, 64)),
+        # MEASURED OFF THE SOCKET, not assumed from the call. This is the field that says the
+        # texture will actually be read.
+        "linked": True,
+        "colorSpace": img.colorspace_settings.name,
+        "colorSpaceWasChanged": cs_before != img.colorspace_settings.name,
+        "colorSpaceNote": (None if which in _COLOR_INPUTS else _DATA_NOTE),
+        "normalMapNode": getattr(normal_node, "name", None),
+        "uvMapNode": getattr(uv_node, "name", None),
+        "replacedLinkFrom": replaced,
+        "loadedFromDisk": loaded_now,
+        "note": ("wired through a Normal Map node, which converts tangent-space RGB into the vector "
+                 "the Normal input takes. Linking the image straight in is the usual mistake and "
+                 "reads as correct in every field.") if normal_node is not None else None,
+    }
+
+
+def _enum_or_refuse(holder, attr, value, label):
+    """Set an enum from the live list, or refuse naming what this build offers."""
+    valid = [i.identifier for i in holder.bl_rna.properties[attr].enum_items]
+    want = str(value).upper()
+    match = [v for v in valid if v.upper() == want]
+    if not match:
+        raise MifOpError("'%s' is not a valid %s on Blender %s. Available: %s. NOTHING was changed."
+                         % (value, label, bpy.app.version_string, ", ".join(valid)))
+    setattr(holder, attr, match[0])
+
+
 OPS = {
     "create_material": op_create_material,
     "set_material_properties": op_set_material_properties,
@@ -840,4 +1083,5 @@ OPS = {
     "describe_material": op_describe_material,
     "bake_texture": op_bake_texture,
     "assign_material_to_faces": op_assign_material_to_faces,
+    "set_material_texture": op_set_material_texture,
 }

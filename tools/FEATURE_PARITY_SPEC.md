@@ -13208,3 +13208,40 @@ out-of-process the way ops_gen already does with gen_status.
       MY FIRST 3.6 RESULT WAS WRONG AND WAS NOT REPORTED. The probe read back through
       tree.interface, which does not exist on 3.6, so all six cases showed a raw AttributeError and
       looked like a version break in the op. It was the readback. Checked before writing it down.
+
+- [x] **no image from disk could enter a material** DONE 2026-09-04
+      Found the way the last four holes were: by asking what the READ side reports that the write
+      side cannot produce. describe_material has always walked TEX_IMAGE nodes and reported their
+      images, and bpy.data.images.load appears exactly ONCE in the whole addon - in ops_world, for
+      an HDRI. So a material could be given numbers and never a map, and every job whose deliverable
+      is a textured material was closed at the door.
+
+      set_material_texture drives any Principled input, plus 'normal', which is not a Principled
+      alias and never can be. TWO TRAPS ARE HANDLED RATHER THAN DOCUMENTED:
+
+      COLOUR SPACE IS PER INPUT. Blender decodes from the IMAGE's colorspace_settings, not from
+      where it is plugged in, so a roughness or metallic map loaded as sRGB comes back through the
+      transfer curve and every value the shader reads is wrong - while looking entirely plausible.
+      sRGB for baseColor and emissive, Non-Color for everything else, overridable because an
+      sRGB-encoded mask is a real thing to have on disk.
+
+      NORMAL GOES THROUGH A NORMAL MAP NODE. The Principled Normal socket takes a VECTOR and a
+      tangent-space map is RGB. Wiring the image straight in is the usual mistake and reads as
+      correct in every field of every response.
+
+      A MISSING FILE IS REFUSED BEFORE ANYTHING EXISTS. images.load on a bad path still creates the
+      datablock and Blender renders it MAGENTA - loud on screen, silent to anything reading a
+      response. A file that loads to 0x0 is refused too, with the image removed again. The link is
+      verified off the SOCKET afterwards, because links.new returns a link object whether or not
+      Blender kept it, and the nodes are removed again if it did not.
+
+      Verified on 3.6.23 and 5.0.1, reading back from the node tree rather than the response:
+      Base Color and Roughness arrive from TEX_IMAGE, Normal from NORMAL_MAP, roughness lands
+      Non-Color and base colour sRGB. Three refusals check out. In the matrix on every build, using
+      the PNG render_still writes at 'r' - a real ordering dependency rather than an arranged one.
+
+      TWO AUDITS CAUGHT ME ON THE WAY IN, both correctly. parity_check found "slot" in the accepted
+      key set with no handler behind it - the silent no-op this very module's normalStrength comment
+      warns about - and it was removed rather than exposed. audit_message_endpoints found the
+      docstring citing describe_material, which is not a tool name; a caller following it would have
+      been told it is not an endpoint on this build.

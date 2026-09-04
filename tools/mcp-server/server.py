@@ -5910,6 +5910,17 @@ def bl_assign_material_to_faces(object: str, slot: int, faces: list = None,
 
 
 @mcp.tool()
+def bl_set_material_texture(material: str, input: str, file: str = None, image: str = None,
+                            colorspace: str = None, uv_map: str = None, strength: float = None,
+                            interpolation: str = None, extension: str = None,
+                            replace: bool = True) -> dict:
+    "Put an IMAGE from disk into a Blender material - the write half of what bl_describe_material has always been able to read. Nothing else in the addon could do it: bpy.data.images.load appears once, in the world/HDRI path, so a material could be given numbers and never a map. `input` takes any bl_set_material_properties name plus 'normal'. TWO TRAPS ARE HANDLED RATHER THAN LEFT TO THE CALLER. Colour space is chosen per input - sRGB for base_color and emissive, Non-Color for everything else - because Blender decodes from the IMAGE's setting, not from where it is plugged in, so a roughness map loaded as sRGB comes back through the transfer curve and every value the shader reads is wrong while looking plausible. And 'normal' is wired through a Normal Map node, because the Principled Normal socket takes a VECTOR and a tangent-space map is RGB; linking the image straight in is the usual mistake and reads as correct in every field of every response. A MISSING FILE IS REFUSED BEFORE ANYTHING IS CREATED: Blender would make the datablock anyway and render it MAGENTA, which is loud on screen and completely silent to anything reading a response. The link is verified off the socket afterwards, and the nodes are removed again if Blender rejected it."
+    return _blender("set_material_texture", material=material, input=input, file=file,
+                    image=image, colorspace=colorspace, uvMap=uv_map, strength=strength,
+                    interpolation=interpolation, extension=extension, replace=replace)
+
+
+@mcp.tool()
 def bl_select_faces(object: str, material: str = None, slot: int = None, axis: str = None,
                     direction: list = None, angle: float = None, min_area: float = None,
                     max_area: float = None, inside_box: list = None, box_min: list = None,
