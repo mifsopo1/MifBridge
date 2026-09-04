@@ -371,8 +371,15 @@ def main():
     # the addon wants radians, the camera pointed at empty space, and every check below failed on a
     # blank render - blaming the measurement for a framing mistake. create_camera advertises lookAt
     # and asking the endpoint what it accepts is this project's own rule.
-    B.call("create_camera", {"name": "S108_Cam", "location": {"x": 6, "y": -6, "z": 4},
-                             "lookAt": "S108_Subject", "makeActive": True})
+    # lookAt takes COORDINATES, not an object name. Passing a name was REFUSED, and S108 passed
+    # anyway because an earlier check had left a camera that happened to frame the shot - the test
+    # was green for a reason that had nothing to do with what it set up. Checked now, so a refused
+    # setup fails here instead of silently borrowing somebody else's camera.
+    _cam = B.call("create_camera", {"name": "S108_Cam", "location": {"x": 6, "y": -6, "z": 4},
+                                    "lookAt": {"x": 0, "y": 0, "z": 0}, "makeActive": True})
+    check("S108 (setup) its own camera is created rather than inheriting one - a refused setup that "
+          "still passes is a test measuring somebody else's scene",
+          _cam.get("ok") is not False, str(_cam.get("error"))[:150])
     B.call("set_render_settings", {"filmTransparent": False})
     B.call("render_still", {"filePath": _a, "resolutionX": 160, "resolutionY": 160,
                             "samples": 4}, timeout=600.0)
