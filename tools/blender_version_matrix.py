@@ -147,7 +147,13 @@ PAYLOADS = {
     "set_color_management": {"exposure": 0.0},
     "add_constraint": {"object": "Cube", "type": "TRACK_TO", "target": "Camera"},
     "remove_constraint": {"object": "MifSpare", "constraintName": "Track To"},
-    "add_modifier": {"object": "Cube", "type": "SUBSURF"},
+    # A SHRINKWRAP POINTED AT SOMETHING, on MifSpare rather than the shared Cube. Until
+    # 2026-09-04 exactly one modifier type could be pointed at an object (ARMATURE), so this
+    # payload could not have been written - and a modifier that cannot be aimed sits in the
+    # stack inert while reading back as perfectly healthy. It also exercises the evaluated
+    # postcondition on a DEFORMING modifier, which is the case counts alone cannot see.
+    "add_modifier": {"object": "MifSpare", "type": "SHRINKWRAP",
+                     "settings": {"target": "MifProbe", "offset": 0.01}},
     "remove_modifier": {"object": "MifSpare", "modifier": "Subsurf"},
     "apply_modifier": {"object": "MifApply", "modifier": "Subsurf"},
     # THE ANIMATION FAMILY, all of which need the f-curve the fixtures lay down first.

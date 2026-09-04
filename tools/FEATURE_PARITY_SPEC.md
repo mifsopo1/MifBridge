@@ -13271,3 +13271,37 @@ out-of-process the way ops_gen already does with gen_status.
 
       _evaluated_counts swallows its own exceptions and returns {} rather than raising - a field
       that exists to report on the operation must not be able to break it.
+
+- [x] **exactly one modifier type could be pointed at an object** DONE 2026-09-04
+      _MODIFIER_WRITES covered seven types and only ARMATURE carried a datablock field, so retopo
+      (shrinkwrap), lattice/hook/mesh-deform rigging, arrays along a curve, boolean operands and
+      displacement were all closed - and each looked like a separate missing feature when the
+      blocker was one idea: a NAME becoming a POINTER. Same root cause as the node sockets fixed
+      earlier today, in a different file.
+
+      Fourteen types added, and EVERY identifier was read off bl_rna on 3.6.23, 4.2.17, 4.4.0 and
+      5.0.1 before being written down - all sixty-odd present on all four. Not from documentation
+      and not from the UI labels, which differ from the RNA names.
+
+      Three new coercions. object/collection/texture resolve a name and refuse with what the file
+      actually holds. `enum` validates against the live enum so the refusal names the options rather
+      than letting RNA raise a TypeError about types. `vgroup` is the interesting one: vertex_group
+      is a plain STRING on the modifier and Blender accepts any value, so a name matching nothing is
+      not an error - it selects no vertices, which on a MASK empties the object. Validated against
+      the owning object's groups.
+
+      Verified on 3.6.23 and 5.0.1 with a read-back off the modifier: a SHRINKWRAP takes its target
+      and offset, a MASK takes a real group, and three refusals fire - bogus group, missing object,
+      invalid enum.
+
+- [ ] **I reproduced the counts-not-positions bug in the helper I wrote to fix it**
+      _evaluated_counts, written for add_modifier's postcondition, compared vertex/edge/face counts.
+      One hour earlier apply_modifier had been fixed for exactly that: a deforming modifier moves
+      vertices and changes no count. So a SHRINKWRAP pointed at a real target reported
+      evaluatedUnchanged:true, and the probe caught it rather than the reasoning.
+
+      Fixed by putting a sha256 of the evaluated coordinates INTO the helper, so the call sites
+      cannot get it wrong individually. Knowing about a trap did not stop me walking into it in the
+      next function - which is the argument for the check living in one place instead of being
+      remembered. Worth a sweep for other count-only comparisons standing in for "did anything
+      change".

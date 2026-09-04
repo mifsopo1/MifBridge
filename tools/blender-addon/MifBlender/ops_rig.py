@@ -31,6 +31,7 @@ see the commit this file was added in for the exact live-call transcript.
 from __future__ import annotations
 
 import array
+import hashlib
 
 import bpy
 
@@ -536,7 +537,112 @@ _MODIFIER_WRITES = {
     "SUBSURF": {"levels": ("levels", int), "renderLevels": ("render_levels", int)},
     "DECIMATE": {"decimateType": ("decimate_type", str), "ratio": ("ratio", float)},
     "TRIANGULATE": {"quadMethod": ("quad_method", str)},
+
+    # EVERY IDENTIFIER BELOW WAS READ OFF bl_rna ON 3.6.23, 4.2.17, 4.4.0 AND 5.0.1 and is present
+    # on all four - not taken from documentation, and not guessed from the UI labels, which differ.
+    #
+    # WHY THESE FOURTEEN. add_modifier could point exactly ONE modifier at an object (ARMATURE), and
+    # a modifier that cannot be pointed at anything sits in the stack doing nothing while reading
+    # back as a perfectly healthy modifier. That closed retopo (shrinkwrap), lattice/hook/mesh-deform
+    # rigging, arrays along a curve, mirror-across-object, boolean operands and displacement - and
+    # every one of them looked like a separate missing feature when the blocker was a single missing
+    # idea: a NAME becoming a POINTER.
+    #
+    # vertex_group is a STRING on the modifier and is validated against the OBJECT's groups anyway,
+    # because Blender accepts any string and a name that matches nothing is not an error. On a MASK
+    # that is the difference between masking by a group and masking EVERYTHING.
+    "SHRINKWRAP": {
+        "target": ("target", "object"), "offset": ("offset", float),
+        "vertexGroup": ("vertex_group", "vgroup"),
+        "wrapMethod": ("wrap_method", "enum"), "wrapMode": ("wrap_mode", "enum"),
+    },
+    "LATTICE": {
+        "object": ("object", "object"), "strength": ("strength", float),
+        "vertexGroup": ("vertex_group", "vgroup"),
+    },
+    "HOOK": {
+        "object": ("object", "object"), "strength": ("strength", float),
+        "falloffRadius": ("falloff_radius", float),
+        "vertexGroup": ("vertex_group", "vgroup"),
+    },
+    "MASK": {
+        "vertexGroup": ("vertex_group", "vgroup"),
+        "invert": ("invert_vertex_group", bool), "threshold": ("threshold", float),
+        "armature": ("armature", "object"),
+    },
+    "CAST": {
+        "object": ("object", "object"), "factor": ("factor", float),
+        "radius": ("radius", float), "size": ("size", float),
+        "castType": ("cast_type", "enum"),
+    },
+    "ARRAY": {
+        "count": ("count", int), "curve": ("curve", "object"),
+        "offsetObject": ("offset_object", "object"),
+        "startCap": ("start_cap", "object"), "endCap": ("end_cap", "object"),
+        "fitType": ("fit_type", "enum"), "mergeThreshold": ("merge_threshold", float),
+        "mergeVertices": ("use_merge_vertices", bool),
+    },
+    "CURVE": {
+        "object": ("object", "object"), "deformAxis": ("deform_axis", "enum"),
+        "vertexGroup": ("vertex_group", "vgroup"),
+    },
+    "BOOLEAN": {
+        "object": ("object", "object"), "collection": ("collection", "collection"),
+        "operation": ("operation", "enum"), "solver": ("solver", "enum"),
+        "doubleThreshold": ("double_threshold", float),
+    },
+    "DISPLACE": {
+        "strength": ("strength", float), "midLevel": ("mid_level", float),
+        "direction": ("direction", "enum"), "texture": ("texture", "texture"),
+        "textureCoordsObject": ("texture_coords_object", "object"),
+        "vertexGroup": ("vertex_group", "vgroup"),
+    },
+    "SIMPLE_DEFORM": {
+        "deformMethod": ("deform_method", "enum"), "angle": ("angle", float),
+        "factor": ("factor", float), "deformAxis": ("deform_axis", "enum"),
+        "origin": ("origin", "object"), "vertexGroup": ("vertex_group", "vgroup"),
+    },
+    "MESH_DEFORM": {
+        "object": ("object", "object"), "precision": ("precision", int),
+        "vertexGroup": ("vertex_group", "vgroup"),
+    },
+    "SMOOTH": {
+        "factor": ("factor", float), "iterations": ("iterations", int),
+        "vertexGroup": ("vertex_group", "vgroup"),
+    },
+    "WELD": {
+        "mergeThreshold": ("merge_threshold", float), "mode": ("mode", "enum"),
+        "vertexGroup": ("vertex_group", "vgroup"),
+    },
+    "WIREFRAME": {
+        "thickness": ("thickness", float), "offset": ("offset", float),
+        "boundary": ("use_boundary", bool), "evenOffset": ("use_even_offset", bool),
+        "creaseWeight": ("crease_weight", float),
+    },
 }
+
+
+# WHICH bpy.data COLLECTION EACH POINTER KIND DRAWS FROM. Same idea as ops_nodes' _POINTER_SOCKETS,
+# kept separate because a modifier field is addressed by RNA name rather than by socket type.
+_DATABLOCK_COERCE = {
+    "object": ("objects", "object"),
+    "collection": ("collections", "collection"),
+    "texture": ("textures", "texture"),
+}
+
+
+def _resolve_datablock(kind, value, key):
+    """A NAME becoming a POINTER, refusing with what is actually in the file."""
+    attr, noun = _DATABLOCK_COERCE[kind]
+    if value is None:
+        return None
+    coll = getattr(bpy.data, attr)
+    found = coll.get(str(value))
+    if found is None:
+        have = sorted(d.name for d in coll)[:25]
+        raise MifOpError("no %s named '%s' for setting '%s'. This file has: %s. NOTHING was "
+                         "changed." % (noun, value, key, ", ".join(have) if have else "(none)"))
+    return found
 
 
 def _apply_modifier_settings(mod, settings, mod_type):
@@ -557,12 +663,33 @@ def _apply_modifier_settings(mod, settings, mod_type):
     for key, value in settings.items():
         target, coerce = table[key]
         try:
-            if coerce == "object":
-                obj = bpy.data.objects.get(str(value))
-                if obj is None:
-                    raise MifOpError("no object named '%s' for setting '%s'. NOTHING was changed."
-                                     % (value, key))
-                setattr(mod, target, obj)
+            if coerce in _DATABLOCK_COERCE:
+                setattr(mod, target, _resolve_datablock(coerce, value, key))
+            elif coerce == "vgroup":
+                # A STRING PROPERTY THAT MUST NAME A REAL GROUP. Blender takes any string here and
+                # a name matching nothing is not an error - it just selects no vertices. On a MASK
+                # that is the difference between masking by a group and masking the whole object.
+                owner = mod.id_data
+                if value is not None and str(value) not in owner.vertex_groups:
+                    have = [g.name for g in owner.vertex_groups][:25]
+                    raise MifOpError(
+                        "'%s' has no vertex group named '%s'. Blender accepts any string here and "
+                        "a name that matches nothing is NOT an error - it simply selects no "
+                        "vertices, which on a MASK empties the object. Groups: %s. NOTHING was "
+                        "changed." % (owner.name, value, ", ".join(have) if have else "(none)"))
+                setattr(mod, target, str(value))
+            elif coerce == "enum":
+                # VALIDATED AGAINST THIS BUILD'S OWN ENUM, so the refusal names what is available
+                # rather than letting RNA raise a TypeError that names the type and not the fix.
+                valid = [i.identifier for i in mod.bl_rna.properties[target].enum_items]
+                want = str(value).upper()
+                match = [v for v in valid if v.upper() == want]
+                if not match:
+                    raise MifOpError(
+                        "'%s' is not a valid %s for a %s modifier on Blender %s. Available: %s. "
+                        "NOTHING was changed."
+                        % (value, key, mod_type, bpy.app.version_string, ", ".join(valid)))
+                setattr(mod, target, match[0])
             else:
                 cast = coerce(value)
                 if callable(target):
@@ -589,8 +716,18 @@ def _evaluated_counts(obj):
         deps = bpy.context.evaluated_depsgraph_get()
         ev = obj.evaluated_get(deps)
         mesh = ev.to_mesh()
-        out = {"verts": len(mesh.vertices), "edges": len(mesh.edges),
-               "faces": len(mesh.polygons)}
+        n = len(mesh.vertices)
+        # A COORDINATE FINGERPRINT, NOT JUST COUNTS, and this was got wrong here FIRST.
+        # The version of this helper written an hour before apply_modifier was fixed for
+        # exactly this compared counts alone, so a SHRINKWRAP pointed at a real target
+        # reported evaluatedUnchanged:true - a deforming modifier moves vertices and
+        # changes no count. Knowing about the trap did not stop me walking into it in the
+        # next function, which is the argument for the fingerprint being in the helper
+        # rather than remembered at each call site.
+        buf = array.array("f", [0.0]) * (3 * n)
+        mesh.vertices.foreach_get("co", buf)
+        out = {"verts": n, "edges": len(mesh.edges), "faces": len(mesh.polygons),
+               "shape": hashlib.sha256(buf.tobytes()).hexdigest()[:16]}
         ev.to_mesh_clear()
         return out
     except Exception:  # noqa: BLE001
