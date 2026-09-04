@@ -343,6 +343,30 @@ Blender's are in §2 above.
 > client-local — it only sets the prefix your client shows on tool names. Keep `mif-ue5` if you have
 > workflows that reference it; nothing on the wire depends on it.
 
+### ✅ 4️⃣ Check it actually worked
+
+```bash
+python tools/verify_install.py
+```
+
+One command for all three pieces. It is worth running even when you are sure, because the failure it
+catches most often is silent: **the MCP dependencies have to be importable by the python your client
+launches**, which is frequently not the one on your `PATH` — and when they are not, your agent simply
+reports the tools as unavailable, which reads as "this product is broken" rather than "`pip install`
+went to the wrong interpreter".
+
+It tells the causes apart rather than lumping them together, which is the part that saves time:
+
+| what it says | what is actually wrong |
+|---|---|
+| `REFUSED the token (HTTP 403)` | the plugin is **fine** — the editor's `MIF_BRIDGE_TOKEN` and your `.mcp.json` disagree |
+| `nothing is listening on 8791` | the bridge is not started — **Tools ▸ Mif Bridge: Start** |
+| `something is listening but it is not answering as MifBridge` | another program has the port; pick a free one with `MIF_BRIDGE_PORT` |
+
+The Blender addon is reported as an **optional note, never a failure** — skipping it is a choice, not
+a fault, and the tool says so. Nothing is started or changed: anything that is not running is reported
+as not running, with the command that starts it.
+
 ---
 
 ## 🔒 Security
