@@ -775,6 +775,76 @@ def plant_removed_guard(text):
     return text[:start] + "if (false) { }" + text[q + 1:]
 
 
+
+# ---------------------------------------------------------------------------
+# audit_vacuous_checks has FIVE rules and had ONE plant
+# ---------------------------------------------------------------------------
+# Its PLANTS entry proved rule 4, and the harness printed "proven" - true of the tool and
+# false of four fifths of what the tool does. Rules 1, 2, 3 and 5 were each hand-verified once,
+# on the day they were written, and nothing re-checked them afterwards. A detector that has
+# LOST a rule looks exactly like one that never had it.
+#
+# Every plant is the SHAPE THE RULE WAS WRITTEN FROM rather than a string that happens to
+# match: all() over a collection nobody checked for emptiness, presence standing in for value,
+# `not <offenders>` where the list may never have been populated, a resolution count printed
+# and never compared.
+#
+# They insert a function ABOVE `def main():` instead of editing an existing assertion, so a
+# plant can never damage a real check, and each marker is an identifier that cannot occur in
+# the file otherwise - which is what stops "already-red" from masking a sleeping rule.
+
+_VACUOUS_ANCHOR = "def main():"
+
+
+def _plant_before_main(text, body):
+    if _VACUOUS_ANCHOR not in text:
+        return None
+    return text.replace(_VACUOUS_ANCHOR, body + "\n\n" + _VACUOUS_ANCHOR, 1)
+
+
+def plant_vacuous_all(text):
+    """RULE 1: all([]) is True, so the assertion passes when the call returned nothing."""
+    return _plant_before_main(text, "\n".join((
+        'def _mifplant_rule1(rows):',
+        '    check("MIFPLANT1 every row has a sensible width",',
+        '          all(r["width"] > 0 for r in rows), rows)',
+    )))
+
+
+def plant_presence_for_value(text):
+    """RULE 2: a key asserted PRESENT on every row, never checked for what it holds.
+
+    The 301-mislabelled-rows defect: `all("cooked" in b for b in rows)` passed green while a
+    fifth of the rows carried the wrong VALUE.
+    """
+    return _plant_before_main(text, "\n".join((
+        'def _mifplant_rule2(rows):',
+        '    check("MIFPLANT2 every row is labelled",',
+        '          all("mifPlantedLabel" in r for r in rows), rows)',
+    )))
+
+
+def plant_empty_counterexample(text):
+    """RULE 3: `not <offenders>` is True when the offender list was never populated."""
+    return _plant_before_main(text, "\n".join((
+        'def _mifplant_rule3(rows):',
+        '    mifPlantedOffenders = [r for r in rows if r.get("bad")]',
+        '    check("MIFPLANT3 nothing is bad", not mifPlantedOffenders, mifPlantedOffenders)',
+    )))
+
+
+def plant_uncompared_count(text):
+    """RULE 5: a resolution count printed and never compared - the select_edges defect itself.
+
+    audit_blender_read_purity printed "matched 0 of 12" for its whole life while reporting OK,
+    because its selector could not resolve against the mesh it ran on.
+    """
+    return _plant_before_main(text, "\n".join((
+        'def _mifplant_rule5(r):',
+        '    print("MIFPLANT5 selector matched %s of %s"',
+        '          % (r.get("matchedCount"), r.get("totalEdges")))',
+    )))
+
 PLANTS = {
     "audit_param_guards.py": (os.path.join(PRIV, "MifBridgeNodes.cpp"), plant_removed_guard,
                              "disconnect_pin"),
@@ -855,8 +925,23 @@ PLANTS = {
     # NOT "RULE 4" - that string is in the rules footer this tool prints on every red run, and the
     # already-red guard correctly refused to call that proof. The marker has to be text only a
     # FINDING can produce.
-    "audit_vacuous_checks.py": (os.path.join(HERE, "mcp_static_check.py"), plant_unreachable,
-                                "is only reached once main() has already returned 0"),
+    # FIVE PLANTS, ONE PER RULE. A single entry until 2026-09-04: it proved rule 4 and let the
+    # harness report "proven" for a tool that does five separate things.
+    "audit_vacuous_checks.py": [
+        (os.path.join(HERE, "mcp_static_check.py"), plant_unreachable,
+         "is only reached once main() has already returned 0"),
+        (os.path.join(HERE, "test_metasound.py"), plant_vacuous_all, "MIFPLANT1"),
+        (os.path.join(HERE, "test_metasound.py"), plant_presence_for_value, "MIFPLANT2"),
+        (os.path.join(HERE, "test_metasound.py"), plant_empty_counterexample, "MIFPLANT3"),
+        # THE MARKER IS THE FIELD NAME, not the planted print. Rule 5 reports
+        # "RULE 5 'matchedCount' is printed and never compared" - it never echoes the string being
+        # printed, so a MIFPLANT5 marker made the harness call a working rule ASLEEP on its first
+        # run. The plant was wrong, not the rule; the harness's own docstring warns that these two
+        # are indistinguishable without care, and here it was the marker that needed the care.
+        # 'matchedCount' appears nowhere else in the repo, so it cannot go already-red.
+        (os.path.join(HERE, "test_metasound.py"), plant_uncompared_count,
+         "RULE 5 'matchedCount'"),
+    ],
     # The marker names the FILE AND THE DEPTH, not just the field: "arrayDim" alone appears in the
     # detector's own header and in the C++, so a run that merely mentioned it would prove nothing.
     # THE ONLY ENTRY THAT PLANTS INTO docs/. It is a file a person edits by hand, so the restore
@@ -991,9 +1076,23 @@ def run(tool):
     return r.returncode, (r.stdout or "") + (r.stderr or "")
 
 
-def prove(tool):
+def entries_for(tool):
+    """Every plant registered for one tool, as a list.
+
+    A PLANTS value may be a single entry tuple or a LIST of them. Both shapes are supported because
+    a tool with five independent rules needs five plants, and because rewriting thirty working
+    entries to make one of them multi-valued would be the risky half of that change.
+
+    The single-tuple case is detected by its first slot being a path string - entry[0] is always a
+    target filename, and a list's first slot is a tuple, so the two can never be confused.
+    """
+    v = PLANTS[tool]
+    return list(v) if isinstance(v, list) else [v]
+
+
+def prove(tool, entry=None):
     """(status, detail). status is one of proven / ASLEEP / anchor-gone / already-red."""
-    entry = PLANTS[tool]
+    entry = entry if entry is not None else entries_for(tool)[0]
     target, planter, marker = entry[0], entry[1], entry[2]
     gate = entry[3] if len(entry) > 3 else True
     # OPTIONAL 5th slot: a string that must be GONE from the mutated text for the plant to have
@@ -1104,18 +1203,24 @@ def main():
             print("  %-26s %-12s %s" % (tool, "skipped", "needs the bridge; it exits 0 saying "
                                                          "'could not check', not ASLEEP"))
             continue
-        if busy and PLANTS[tool][0].startswith(os.path.join(ROOT, "Source")):
+        plants = entries_for(tool)
+        if busy and plants[0][0].startswith(os.path.join(ROOT, "Source")):
             skipped_editor_up.append(tool)
             print("  %-26s %-12s %s" % (tool, "skipped", "editor is running - plants into Source/"))
             continue
-        status, detail = prove(tool)
-        print("  %-26s %-12s %s" % (tool, status, detail))
-        if status == "ASLEEP":
-            asleep.append(tool)
-        elif status == "plant-did-not-land":
-            unlanded.append(tool)
-        elif status != "proven":
-            notproven.append(tool)
+        for i, entry in enumerate(plants):
+            status, detail = prove(tool, entry)
+            # The marker disambiguates which rule was proved. Printing the tool name alone for
+            # five rows would read as one result repeated, which is the exact confusion this
+            # change exists to end.
+            label = tool if len(plants) == 1 else "%s [%s]" % (tool, entry[2][:22])
+            print("  %-26s %-12s %s" % (label, status, detail))
+            if status == "ASLEEP":
+                asleep.append(label)
+            elif status == "plant-did-not-land":
+                unlanded.append(label)
+            elif status != "proven":
+                notproven.append(label)
 
     after = source_digest()
     print("")
