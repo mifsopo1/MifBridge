@@ -350,6 +350,12 @@ FIXTURES = [
     # READ ONLY, AND NOTHING BELOW MAY TOUCH IT. The query ops measure this and only
     # this, so their numbers mean the same thing on every build.
     ("create_primitive", {"kind": "cube", "name": "MifProbe", "location": [32, 0, 0]}),
+    # THE TWO DATABLOCKS THE MODIFIER TABLE CONSUMES. Added 2026-09-04 alongside the ops
+    # that make them - before that the LATTICE and DISPLACE modifiers could be aimed and
+    # there was nothing in the addon able to create a target.
+    ("create_lattice", {"name": "MifLattice", "resolution": [3, 3, 3],
+                        "location": [40, 0, 0]}),
+    ("create_texture", {"name": "MifTexture", "type": "CLOUDS"}),
     ("create_primitive", {"kind": "grid", "name": "MifGrid", "location": [0, 4, 0]}),
     ("create_material", {"name": "MifMatrixMat"}),
     ("set_material_slots", {"object": "Cube", "slots": ["MifMatrixMat"]}),

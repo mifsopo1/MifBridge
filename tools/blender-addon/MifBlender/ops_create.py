@@ -976,8 +976,187 @@ def op_create_armature(params):
                          "nothing in the viewport. Add them with the bones parameter.")})
     return out
 
+
+_LATTICE_KEYS = {"name", "resolution", "pointsU", "pointsV", "pointsW", "interpolation",
+                 "useOutside", "location", "rotation", "scale", "collection"}
+# "useColorRamp" IS DELIBERATELY ABSENT. It was listed here while the handler ignored it, so
+# reject_unknown ACCEPTED it and nothing happened - the same declared-and-ignored mistake as
+# set_material_texture's "slot" a few hours earlier, caught by the same audit. A caller
+# passing it now gets a refusal naming what this op does take.
+_TEXTURE_KEYS = {"name", "type", "image", "intensity", "contrast"}
+
+
+def op_create_lattice(params):
+    """A lattice object - the thing a LATTICE modifier deforms with, which nothing could create.
+
+    FOUND BY THE PRODUCER/CONSUMER QUESTION, the sixth time it has paid: add_modifier learned to
+    point a LATTICE modifier at an object on 2026-09-04, and bpy.data.lattices appears NOWHERE else
+    in this addon. So the modifier could be aimed and there was nothing to aim it at. Same shape as
+    vertex groups, shape keys, armatures, bones and material images before it.
+
+    A DEFAULT LATTICE IS 2x2x2 AND CAN ONLY DEFORM LINEARLY. Eight corner points describe an affine
+    transform and nothing else, so a lattice left at the default bends nothing however it is moved -
+    it reads back as a perfectly healthy lattice and the mesh stays straight. That is reported
+    rather than left to be discovered, and it is why `resolution` is the first parameter.
+
+    THE MESH HAS TO BE INSIDE IT. A lattice only influences geometry within its own volume, so a
+    lattice created at the origin at default scale will not touch a mesh standing somewhere else,
+    and the modifier will report itself perfectly configured. Position and scale it over the mesh.
+
+    params:
+      name (str)
+      resolution [u,v,w] (list[int])   or pointsU / pointsV / pointsW individually. Default 2,2,2.
+      interpolation (str)              KEY_LINEAR | KEY_CARDINAL | KEY_BSPLINE | KEY_CATMULL_ROM,
+                                       validated against this build's own enum. Applied to all
+                                       three axes.
+      useOutside (bool)                deform only points outside the lattice's own volume
+      location / rotation / scale / collection
+    """
+    reject_unknown(params, _LATTICE_KEYS, "create_lattice")
+    res = params.get("resolution")
+    if res is not None and (not isinstance(res, (list, tuple)) or len(res) < 3):
+        raise MifOpError("'resolution' must be [u, v, w]. NOTHING was created.")
+    pts = []
+    for i, key in enumerate(("pointsU", "pointsV", "pointsW")):
+        raw = take_int(params, key, default=None)
+        if raw is None:
+            raw = int(res[i]) if res is not None else 2
+        if raw < 1 or raw > 64:
+            raise MifOpError("%s must be between 1 and 64, got %d - Blender clamps outside that "
+                             "range and the lattice you get would not be the one you asked for. "
+                             "NOTHING was created." % (key, raw))
+        pts.append(int(raw))
+
+    coll = _resolve_collection(params)
+    data = bpy.data.lattices.new(str(take(params, "name", default="Lattice", kind=str)))
+    # RESOLUTION FIRST, before anything else touches the lattice: changing points_u resets the
+    # point positions, so writing it after any edit would silently discard the edit.
+    data.points_u, data.points_v, data.points_w = pts
+
+    interp = take(params, "interpolation", default=None, kind=str)
+    if interp:
+        valid = [i.identifier
+                 for i in data.bl_rna.properties["interpolation_type_u"].enum_items]
+        want = str(interp).upper()
+        match = [v for v in valid if v.upper() == want]
+        if not match:
+            bpy.data.lattices.remove(data)
+            raise MifOpError("interpolation '%s' is not one this Blender offers. Valid: %s. "
+                             "NOTHING was created." % (interp, ", ".join(valid)))
+        data.interpolation_type_u = match[0]
+        data.interpolation_type_v = match[0]
+        data.interpolation_type_w = match[0]
+    if params.get("useOutside") is not None:
+        data.use_outside = take_bool(params, "useOutside", default=False)
+
+    obj = bpy.data.objects.new(data.name, data)
+    _link_new(obj, coll)
+    _place(obj, params)
+    # SCALE IS HANDLED HERE RATHER THAN IN _place, which does location and rotation only.
+    # It matters more for a lattice than for anything else this file makes: a lattice only
+    # influences geometry inside its own volume, so scaling it to cover the mesh is not a
+    # cosmetic choice, it is the difference between deforming something and deforming
+    # nothing. audit_blender_dead_params caught it accepted and unread.
+    if "scale" in params:
+        obj.scale = _vec3(params, "scale", (1.0, 1.0, 1.0))
+
+    # READ BACK OFF THE DATABLOCK. points_u is clamped by Blender rather than refused, so the
+    # resolution the lattice HAS is not necessarily the one that was asked for.
+    got = [int(data.points_u), int(data.points_v), int(data.points_w)]
+    out = _created(obj, coll, "LATTICE", "create_lattice")
+    out.update({
+        "resolution": got,
+        "resolutionRequested": pts,
+        "pointCount": got[0] * got[1] * got[2],
+        "interpolation": str(data.interpolation_type_u),
+        "useOutside": bool(data.use_outside),
+        # THE NUMBER THAT DECIDES WHETHER IT CAN BEND ANYTHING. Two points on an axis describe a
+        # straight line and nothing else.
+        "canDeformNonLinearly": any(p > 2 for p in got),
+        "note": ("every axis is at 2 points, so this lattice can only apply an AFFINE deform - "
+                 "moving its corners scales, shears or translates and cannot bend. Raise "
+                 "resolution on at least one axis for anything else. It reads back as a perfectly "
+                 "healthy lattice either way.") if not any(p > 2 for p in got) else
+                ("a lattice only influences geometry INSIDE its own volume. Position and scale it "
+                 "over the mesh before adding the LATTICE modifier, or the modifier will report "
+                 "itself correctly configured and deform nothing."),
+    })
+    return out
+
+
+def op_create_texture(params):
+    """A legacy texture datablock - what a DISPLACE modifier reads, and nothing could create one.
+
+    THE SAME PRODUCER/CONSUMER GAP as create_lattice above, found in the same pass. add_modifier can
+    point DISPLACE at a texture and bpy.data.textures appears NOWHERE else in this addon.
+
+    THESE ARE NOT SHADER NODES. bpy.data.textures is Blender's older texture system, and it is what
+    the modifier stack reads - a DISPLACE modifier cannot take a ShaderNodeTexNoise. Both exist and
+    they are not interchangeable, which is the confusion this op is most likely to be met with.
+
+    params:
+      name (str)
+      type (str)         validated against this build's own enum. BLEND, CLOUDS, DISTORTED_NOISE,
+                         IMAGE, MAGIC, MARBLE, MUSGRAVE, NOISE, STUCCI, VORONOI, WOOD - identical
+                         on 3.6.23, 4.2.17, 4.4.0 and 5.0.1, read off the enum rather than assumed.
+                         Default CLOUDS.
+      image (str)        an image datablock, for type IMAGE. Refused for any other type.
+      intensity / contrast (float)
+    """
+    reject_unknown(params, _TEXTURE_KEYS, "create_texture")
+    name = str(take(params, "name", default="Texture", kind=str))
+    kind = str(take(params, "type", default="CLOUDS", kind=str)).upper()
+    valid = [i.identifier for i in bpy.types.Texture.bl_rna.properties["type"].enum_items]
+    match = [v for v in valid if v.upper() == kind]
+    if not match:
+        raise MifOpError("texture type '%s' is not one this Blender offers. Valid: %s. NOTHING was "
+                         "created." % (kind, ", ".join(valid)))
+    kind = match[0]
+
+    image_name = take(params, "image", default=None, kind=str)
+    if image_name is not None and kind != "IMAGE":
+        raise MifOpError("'image' only applies to an IMAGE texture and this one is %s. Accepting it "
+                         "here and writing nothing is how a caller believes they attached an image "
+                         "they did not. NOTHING was created." % kind)
+    img = None
+    if image_name is not None:
+        img = bpy.data.images.get(str(image_name))
+        if img is None:
+            have = sorted(i.name for i in bpy.data.images)[:25]
+            raise MifOpError("no image datablock named '%s'. This file has: %s. Load one with "
+                             "set_material_texture, or import a file that carries it. NOTHING was "
+                             "created." % (image_name, ", ".join(have) if have else "(none)"))
+
+    tex = bpy.data.textures.new(name, type=kind)
+    if img is not None:
+        tex.image = img
+    intensity = take_float(params, "intensity", default=None)
+    if intensity is not None:
+        tex.intensity = intensity
+    contrast = take_float(params, "contrast", default=None)
+    if contrast is not None:
+        tex.contrast = contrast
+
+    return {
+        "ok": True,
+        "texture": tex.name,
+        "requestedName": name,
+        "nameWasSuffixed": tex.name != name,
+        "type": str(tex.type),
+        "image": tex.image.name if getattr(tex, "image", None) else None,
+        "intensity": round(float(tex.intensity), 6),
+        "contrast": round(float(tex.contrast), 6),
+        "users": tex.users,
+        "note": ("this is a bpy.data.textures datablock, which is the OLD texture system and the "
+                 "one the modifier stack reads - a DISPLACE modifier cannot take a shader node. "
+                 "It is not the same thing as a ShaderNodeTexNoise and the two are not "
+                 "interchangeable."),
+    }
+
 OPS = {
     "create_primitive": op_create_primitive,
+    "create_lattice": op_create_lattice,
+    "create_texture": op_create_texture,
     "transform_object": op_transform_object,
     "boolean_op": op_boolean_op,
     "join_objects": op_join_objects,

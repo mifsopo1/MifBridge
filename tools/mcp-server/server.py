@@ -5520,6 +5520,27 @@ def bl_add_bones(object: str, bones: list, replace_existing: bool = False) -> di
 
 
 @mcp.tool()
+def bl_create_lattice(name: str = None, resolution: list = None, points_u: int = None,
+                      points_v: int = None, points_w: int = None,
+                      interpolation: str = None,
+                      use_outside: bool = None, location: list = None, rotation: list = None,
+                      scale: list = None, collection: str = None) -> dict:
+    "Create a Blender LATTICE object - the thing a LATTICE modifier deforms with. Found by asking what the addon can consume and cannot produce, the sixth time that question has paid: bl_add_modifier learned to point a LATTICE modifier at an object and bpy.data.lattices appeared nowhere else, so the modifier could be aimed and there was nothing to aim it at. TWO THINGS THAT MAKE A CORRECT-LOOKING LATTICE DO NOTHING, both reported rather than left to be discovered. A default lattice is 2x2x2, and eight corner points describe an AFFINE transform and nothing else - it can scale, shear and translate but cannot bend, however far its points are moved; canDeformNonLinearly says which you have. And a lattice only influences geometry INSIDE its own volume, so one created at the origin will not touch a mesh standing elsewhere while the modifier reports itself perfectly configured. Interpolation is validated against this build's own enum."
+    return _blender("create_lattice", name=name, resolution=resolution, pointsU=points_u,
+                    pointsV=points_v, pointsW=points_w,
+                    interpolation=interpolation, useOutside=use_outside, location=location,
+                    rotation=rotation, scale=scale, collection=collection)
+
+
+@mcp.tool()
+def bl_create_texture(name: str = None, type: str = None, image: str = None,
+                      intensity: float = None, contrast: float = None) -> dict:
+    "Create a legacy Blender TEXTURE datablock - what a DISPLACE modifier reads. Same producer/consumer gap as bl_create_lattice and found in the same pass: bl_add_modifier can point DISPLACE at a texture and bpy.data.textures appeared nowhere else in the addon. THESE ARE NOT SHADER NODES. bpy.data.textures is Blender's older texture system and is what the MODIFIER STACK reads - a DISPLACE modifier cannot take a ShaderNodeTexNoise. Both systems exist, they are not interchangeable, and that is the confusion this is most likely to be met with. The type is validated against this build's own enum (BLEND, CLOUDS, DISTORTED_NOISE, IMAGE, MAGIC, MARBLE, MUSGRAVE, NOISE, STUCCI, VORONOI, WOOD - identical on 3.6, 4.2, 4.4 and 5.0, read off the enum rather than assumed), and `image` is refused for any type but IMAGE rather than accepted and ignored."
+    return _blender("create_texture", name=name, type=type, image=image,
+                    intensity=intensity, contrast=contrast)
+
+
+@mcp.tool()
 def bl_create_armature(name: str = None, bones: list = None, display_type: str = None,
                        show_in_front: bool = None, location: list = None, rotation: list = None,
                        collection: str = None) -> dict:

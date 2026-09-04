@@ -13448,3 +13448,36 @@ out-of-process the way ops_gen already does with gen_status.
 
       MUTATION-TESTED by reverting the fix: the guard reports 20 leaked values across the four
       builds and exits 1, and reports none once the fix is back.
+
+- [x] **I opened two producer/consumer gaps this morning and closed them this afternoon** DONE 2026-09-04
+      Adding fourteen modifier types made the addon able to CONSUME two datablocks it could not
+      PRODUCE: a LATTICE modifier can be pointed at a lattice object and bpy.data.lattices appeared
+      nowhere else in the addon, and DISPLACE can be pointed at a texture with bpy.data.textures the
+      same. The modifier could be aimed and there was nothing to aim it at.
+
+      That is the sixth time the producer/consumer question has paid - vertex groups, shape keys,
+      armatures, bones, material images and now these - and the first time the gap was one I had
+      just created. Worth asking after every capability addition, not only when hunting.
+
+      create_lattice reports the two things that make a correct-looking lattice do nothing. A
+      default lattice is 2x2x2, and eight corner points describe an AFFINE transform - it scales,
+      shears and translates and cannot BEND however far the points move; canDeformNonLinearly says
+      which you have. And a lattice only influences geometry inside its own volume, so one at the
+      origin will not touch a mesh standing elsewhere while the modifier reports itself perfectly
+      configured.
+
+      create_texture makes the LEGACY bpy.data.textures datablock, which is what the modifier stack
+      reads - a DISPLACE modifier cannot take a ShaderNodeTexNoise. Both systems exist and are not
+      interchangeable, which is the confusion the op is most likely to meet. The type enum was read
+      off all four builds rather than assumed: identical on every one, MUSGRAVE included, which is
+      worth knowing because the shader NODE lost Musgrave and this datablock did not.
+
+      Verified on 3.6.23 and 5.0.1: both created, four refusals fire, and - the actual point - the
+      LATTICE and DISPLACE modifiers can now be pointed at them, with DISPLACE reporting the mesh
+      genuinely changed.
+
+      TWO AUDITS CAUGHT ME AGAIN, both right. parity_check found useColorRamp declared in the accept
+      list with no handler behind it - the same declared-and-ignored mistake as set_material_texture's
+      "slot" a few hours earlier, so it was removed rather than exposed. audit_blender_dead_params
+      found `scale` accepted and never read, which matters more on a lattice than anywhere else in
+      that file, so it was wired rather than dropped.
