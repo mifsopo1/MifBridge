@@ -14019,3 +14019,33 @@ out-of-process the way ops_gen already does with gen_status.
       fixed indent - wrong for the two that sit inside an `if`. The script ast.parse()s its own
       output before writing, so it raised IndentationError and changed nothing. A refactor that
       cannot half-apply is worth the extra three lines.
+
+- [x] **two more defects in my own code from today, same lens, same session** DONE 2026-09-04
+      Continuing the self-review after set_material_texture's leak. set_physics_world had both a
+      RAW EXCEPTION and a partial application, and neither was theoretical:
+
+        {"gravity": ["a","b","c"]}           the isinstance check proved only that it was a list of
+                                             three, so float("a") raised ValueError straight out of
+                                             the op. A raw exception escaping a handler's contract
+                                             is precisely what blender_version_matrix's
+                                             SUSPECT_IN_REFUSAL list hunts for in OTHER people's
+                                             code, and the matrix could not see it because no
+                                             payload passes a malformed gravity.
+        {"gravity": [...], "substeps": "x"}  gravity was written and THEN take_int refused.
+                                             Measured: -9.81 became -1.5 and the call failed.
+
+      Both fixed by the structure the other two settings ops already used - parse everything into
+      pending dicts, then commit. set_light_influence and set_material_settings validate every key
+      before writing any of them, and I wrote this one the same day without doing that.
+
+      The COMMIT comment here now says "Nothing below can refuse", which is the sentence that was
+      FALSE in ops_lightcam this morning. It is true here because every parse happens above it - and
+      that is the only reason it is worth writing down.
+
+      Verified on 3.6.23 and 5.0.1: both cases now refuse with partial=False, gravity staying at
+      -9.81, and the matrix's happy-path payload still applies substeps 12 and solverIterations 15.
+
+      THE PATTERN ACROSS THREE SELF-CAUGHT DEFECTS TODAY: every one is "the refusal fires after the
+      mutation". _vec3 in ops_lightcam (existing code), set_material_texture (mine, hours old) and
+      set_physics_world (mine, hours old). Knowing the rule did not stop me breaking it twice while
+      fixing it once, which is the argument for the leak-measuring probe rather than for care.

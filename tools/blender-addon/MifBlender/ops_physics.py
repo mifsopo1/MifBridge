@@ -484,23 +484,33 @@ def op_set_physics_world(params):
             "simulation from a settings call would be a side effect nobody asked for. NOTHING was "
             "changed." % ", ".join(sorted(needs)))
 
+    # PARSED IN FULL BEFORE ANYTHING IS WRITTEN. Both halves of this were defects in this op as
+    # first written on 2026-09-04, found by turning the day's own lenses on the day's own code:
+    #
+    #   {"gravity": ["a","b","c"]}           the isinstance check only proved it was a list of
+    #                                        three, so float("a") raised a RAW ValueError out of the
+    #                                        op - the shape blender_version_matrix's suspect-refusal
+    #                                        detector exists to catch, escaping a handler's contract.
+    #   {"gravity": [...], "substeps": "x"}  gravity was written and THEN take_int refused.
+    #                                        Measured: -9.81 became -1.5 and the call failed. A
+    #                                        half-applied settings call, which set_light_influence
+    #                                        and set_material_settings both avoid by validating up
+    #                                        front - this one did not, on the same day.
     applied = {}
+    pending_scene, pending_world, pending_cache = {}, {}, {}
+
     grav = params.get("gravity")
     if grav is not None:
         if not isinstance(grav, (list, tuple)) or len(grav) < 3:
             raise MifOpError("'gravity' must be [x, y, z] in m/s^2, got %r. NOTHING was changed."
                              % (grav,))
-        sc.gravity = [float(v) for v in grav[:3]]
-        applied["gravity"] = [float(v) for v in grav[:3]]
+        try:
+            pending_scene["gravity"] = [float(v) for v in grav[:3]]
+        except (TypeError, ValueError):
+            raise MifOpError("'gravity' must be three NUMBERS in m/s^2, got %r. NOTHING was "
+                             "changed." % (grav,))
     if params.get("useGravity") is not None:
-        sc.use_gravity = take_bool(params, "useGravity", default=True)
-        applied["useGravity"] = sc.use_gravity
-
-    # THE TOGGLE THAT MAKES THE VECTOR MEAN ANYTHING.
-    auto_gravity = False
-    if "gravity" in applied and "useGravity" not in applied and not sc.use_gravity:
-        sc.use_gravity = True
-        auto_gravity = True
+        pending_scene["useGravity"] = take_bool(params, "useGravity", default=True)
 
     if rbw is not None:
         for key, attr, cast in (("substeps", "substeps_per_frame", int),
@@ -510,18 +520,40 @@ def op_set_physics_world(params):
                                 ("enabled", "enabled", bool)):
             if params.get(key) is None:
                 continue
-            value = (take_bool(params, key, default=True) if cast is bool
-                     else (take_int(params, key) if cast is int else take_float(params, key)))
-            setattr(rbw, attr, value)
-            applied[key] = value
-        pc = getattr(rbw, "point_cache", None)
-        if pc is not None:
+            pending_world[attr] = (take_bool(params, key, default=True) if cast is bool
+                                   else (take_int(params, key) if cast is int
+                                         else take_float(params, key)))
+            applied[key] = pending_world[attr]
+        if getattr(rbw, "point_cache", None) is not None:
             for key, attr in (("cacheStart", "frame_start"), ("cacheEnd", "frame_end"),
                               ("cacheStep", "frame_step")):
                 if params.get(key) is None:
                     continue
-                setattr(pc, attr, take_int(params, key))
-                applied[key] = getattr(pc, attr)
+                pending_cache[attr] = take_int(params, key)
+                applied[key] = pending_cache[attr]
+
+    # COMMIT. Nothing below can refuse - and unlike the same sentence in ops_lightcam before today,
+    # that is true here because every parse above happens before the first write.
+    if "gravity" in pending_scene:
+        sc.gravity = pending_scene["gravity"]
+        applied["gravity"] = pending_scene["gravity"]
+    if "useGravity" in pending_scene:
+        sc.use_gravity = pending_scene["useGravity"]
+        applied["useGravity"] = sc.use_gravity
+
+    # THE TOGGLE THAT MAKES THE VECTOR MEAN ANYTHING.
+    auto_gravity = False
+    if "gravity" in applied and "useGravity" not in applied and not sc.use_gravity:
+        sc.use_gravity = True
+        auto_gravity = True
+
+    if rbw is not None:
+        for attr, value in pending_world.items():
+            setattr(rbw, attr, value)
+        pc = getattr(rbw, "point_cache", None)
+        if pc is not None:
+            for attr, value in pending_cache.items():
+                setattr(pc, attr, value)
 
     # READ BACK. substeps and solver_iterations are CLAMPED by Blender rather than refused, so
     # echoing the request would report a value the solver does not have.
