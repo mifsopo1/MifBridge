@@ -13616,3 +13616,32 @@ out-of-process the way ops_gen already does with gen_status.
       audit_message_endpoints caught bare op names in the MCP docstring where the tools carry the
       bl_ prefix - the SECOND time today, after describe_material. The audit catches it every time,
       which is the system working, but it is a slip worth not repeating a third time.
+
+- [x] **two camera fields were reported by object_info and writable by nothing** DONE 2026-09-04
+      Same lens as blendMethod, pointed at the camera family the spec names alongside lighting.
+      camera_readback returns fovDegrees and dofFocusObject, and the write path had lens and
+      focus_distance and neither of the other two - so a camera could be DESCRIBED in more detail
+      than it could be built.
+
+      ONE WRITER, CALLED FROM BOTH create_camera AND set_camera. This file's own comment above the
+      light type map records why: a second copy is how allowEditConst got past one guard and not the
+      other, in this exact file, on 2026-09-03.
+
+      ANGLE AND LENS ARE ONE PROPERTY IN TWO UNITS - measured, setting 90 degrees moves lens from
+      50mm to 18mm on all four builds - so passing both is refused rather than resolved by argument
+      order. The proof shows up in the response: setting fieldOfView reports BOTH fovDegrees and
+      lensMM in changedFields.
+
+      A FOCUS OBJECT OVERRIDES THE FOCUS DISTANCE SILENTLY. Blender uses the object's distance and
+      ignores focus_distance once one is set, and both fields keep reading back exactly as written -
+      so a caller who sets both gets one of them with nothing to say which. Reported rather than
+      refused, because "focus here for now, track that later" is a reasonable thing to express. A
+      focus object also turns use_dof on, for the same reason cutoffDistance turns on its toggle:
+      stored and ignored is the failure, not a tidy default.
+
+      fovDegrees was already computed correctly against sensor_fit in camera_readback, which is the
+      trap I went looking for and found already handled.
+
+      Verified on 3.6.23 and 5.0.1: FOV 90 on create, FOV 45 on set with both fields moving, focus
+      on a real object with use_dof confirmed by readback, and three refusals - lens and fov
+      together, a 200-degree FOV, and a focus object that does not exist.

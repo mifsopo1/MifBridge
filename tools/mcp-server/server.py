@@ -5333,13 +5333,15 @@ def bl_set_camera(object: str, type: str = None, lens: float = None, sensor_widt
                   clip_start: float = None, clip_end: float = None, shift_x: float = None,
                   shift_y: float = None, f_stop: float = None, dof_distance: float = None,
                   look_at: list = None, location: list = None, rotation: list = None,
-                  make_active: bool = None) -> dict:
+                  make_active: bool = None, field_of_view: float = None,
+                  focus_object: str = None) -> dict:
     "Change a Blender camera that already exists, including SWITCHING which camera the scene renders through - make_active was previously available only at creation, so choosing between two existing cameras was impossible without bl_run_python. sensor_fit is here because without it sensor_width is a half-answer and no real lens can be matched. Type-gated settings are validated against the type the camera will BE after the call, so retyping to ORTHO and setting ortho_scale together is legal. Every refusal fires before any write. The response carries before, after and changedFields, with FOV derived at the current render resolution. rotation and look_at are mutually exclusive. Call mif_help(\"bl_set_camera\") first."
     return _blender("set_camera", object=object, type=type, lens=lens, sensorWidth=sensor_width,
                     sensorHeight=sensor_height, sensorFit=sensor_fit, orthoScale=ortho_scale,
                     clipStart=clip_start, clipEnd=clip_end, shiftX=shift_x, shiftY=shift_y,
                     fStop=f_stop, dofDistance=dof_distance, lookAt=look_at, location=location,
-                    rotation=rotation, makeActive=make_active)
+                    rotation=rotation, makeActive=make_active,
+                    fieldOfView=field_of_view, focusObject=focus_object)
 
 
 @mcp.tool()
@@ -5410,13 +5412,15 @@ def bl_create_camera(name: str = "", location: list = None, rotation: list = Non
                      type: str = None, ortho_scale: float = None, clip_start: float = None,
                      clip_end: float = None, f_stop: float = None, dof_distance: float = None,
                      shift_x: float = None, shift_y: float = None,
-                     make_active: bool = None) -> dict:
-    "Create a Blender camera, optionally aimed with look_at instead of rotation - passing both is refused, since they are two answers to the same question. A Blender camera faces its local -Z, which is what hand-written aiming gets wrong, so look_at derives the euler for you. f_stop or dof_distance enables depth of field; neither is turned on by default. Call mif_help(\"bl_create_camera\") first."
+                     make_active: bool = None, field_of_view: float = None,
+                     focus_object: str = None) -> dict:
+    "Create a Blender camera, optionally aimed with look_at instead of rotation - passing both is refused, since they are two answers to the same question. A Blender camera faces its local -Z, which is what hand-written aiming gets wrong, so look_at derives the euler for you. f_stop or dof_distance enables depth of field; neither is turned on by default. Call mif_help(\"bl_create_camera\") first. FIELD OF VIEW AND FOCUS: field_of_view is the SAME property as lens in different units - setting 90 degrees moves lens from 50mm to 18mm, measured on all four builds - so passing both is refused rather than resolved by argument order, and it is PERSP only. focus_object racks focus onto an object instead of a fixed distance, and it OVERRIDES dof_distance silently: Blender uses the object's distance and ignores the number, while both fields keep reading back exactly as written. Both were REPORTED by bl_object_info and writable by nothing until 2026-09-04, so a camera could be described in more detail than it could be built."
     return _blender("create_camera", name=name or None, location=location, rotation=rotation,
                     lookAt=look_at, lens=lens, sensorWidth=sensor_width, type=type,
                     orthoScale=ortho_scale, clipStart=clip_start, clipEnd=clip_end,
                     fStop=f_stop, dofDistance=dof_distance, shiftX=shift_x, shiftY=shift_y,
-                    makeActive=make_active)
+                    makeActive=make_active,
+                    fieldOfView=field_of_view, focusObject=focus_object)
 
 
 @mcp.tool()

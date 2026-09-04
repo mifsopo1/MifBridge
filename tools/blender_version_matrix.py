@@ -129,6 +129,9 @@ PAYLOADS = {
     "set_light_shadow": {"object": "Light", "enabled": True, "softSize": 0.3},
     # THE CAMERA MUST BE PANO FIRST - the op refuses on a PERSP camera because the settings
     # "would be stored and never used", which is the op working. A fixture retypes MifPano.
+    # fieldOfView and focusObject, both of which object_info REPORTED and nothing could write
+    # until 2026-09-04. fieldOfView also moves lensMM, which the value comparison watches.
+    "set_camera": {"object": "Camera", "fieldOfView": 60.0, "focusObject": "MifProbe"},
     "set_camera_panorama": {"object": "MifPano", "panoramaType": "EQUIRECTANGULAR"},
     "create_primitive": {"kind": "cube", "name": "MifSweepCube"},
     "create_light": {"type": "POINT"},

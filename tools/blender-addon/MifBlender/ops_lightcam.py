@@ -45,6 +45,9 @@ _CAMERA_KEYS = {
     "name", "location", "rotation", "lens", "focalLength", "sensorWidth",
     "clipStart", "clipEnd", "type", "orthoScale", "dofDistance", "fStop",
     "lookAt", "makeActive", "shiftX", "shiftY",
+    # BOTH WERE READ AND NOT WRITEABLE. object_info reports dofFocusObject and angle; nothing could
+    # set either, so a camera could be DESCRIBED in more detail than it could be built.
+    "focusObject", "fieldOfView",
 }
 
 
@@ -395,6 +398,55 @@ def op_list_lights(params):
     }
 
 
+def _write_camera_focus_and_fov(data, params, verb):
+    """focusObject and fieldOfView - both REPORTED by object_info and, until now, writable by nothing.
+
+    THE TWO ASYMMETRIES THIS CLOSES. ops_common reports dofFocusObject and the camera's angle; the
+    write path had focus_distance and lens and neither of the other two. So a camera could be
+    described in more detail than it could be built.
+
+    A FOCUS OBJECT OVERRIDES THE FOCUS DISTANCE, silently. Blender uses the object's distance and
+    ignores focus_distance entirely once focus_object is set, and BOTH fields keep reading back
+    exactly as written - so a caller who sets a distance and an object gets one of them, with
+    nothing to say which. That is reported rather than refused, because setting both is a reasonable
+    way to express "focus here for now, track this later".
+
+    ANGLE AND LENS ARE ONE PROPERTY IN TWO UNITS. Setting angle to 90 degrees moves lens from 50mm
+    to 18mm - measured on all four builds - so passing both is contradictory and is refused rather
+    than resolved by declaration order.
+    """
+    fov = take_float(params, "fieldOfView", default=None)
+    if fov is not None:
+        if take_float(params, "lens", "focalLength", default=None) is not None:
+            raise MifOpError(
+                "pass lens/focalLength OR fieldOfView, not both - they are the SAME property in "
+                "two units, and setting angle to 90 degrees moves lens from 50mm to 18mm. "
+                "NOTHING was %s." % verb)
+        if data.type != "PERSP":
+            raise MifOpError("fieldOfView applies to a PERSP camera and this one is %s - an "
+                             "orthographic camera has no field of view. NOTHING was %s."
+                             % (data.type, verb))
+        if not (0.0 < fov < 180.0):
+            raise MifOpError("fieldOfView is in DEGREES and must be between 0 and 180, got %g. "
+                             "NOTHING was %s." % (fov, verb))
+        data.angle = math.radians(fov)
+
+    focus_name = take(params, "focusObject", default=None, kind=str)
+    focus_set = False
+    if focus_name is not None:
+        target = bpy.data.objects.get(str(focus_name))
+        if target is None:
+            have = sorted(o.name for o in bpy.data.objects)[:25]
+            raise MifOpError("no object named '%s' to focus on. This scene has: %s. NOTHING was %s."
+                             % (focus_name, ", ".join(have) if have else "(none)", verb))
+        data.dof.focus_object = target
+        # A FOCUS OBJECT WITHOUT use_dof IS STORED AND IGNORED, the same shape as a cutoff distance
+        # with its toggle off - the field reads back perfectly and the render does not change.
+        data.dof.use_dof = True
+        focus_set = True
+    return fov, focus_set
+
+
 def op_create_camera(params):
     """Create a camera, optionally aimed at a point.
 
@@ -492,6 +544,7 @@ def op_create_camera(params):
                 data.dof.aperture_fstop = fstop
             if dofd is not None:
                 data.dof.focus_distance = dofd
+        _fov, _focus_set = _write_camera_focus_and_fov(data, params, "created")
 
         make_active = take_bool(params, "makeActive", default=True)
         was = bpy.context.scene.camera.name if bpy.context.scene.camera else None
@@ -510,6 +563,13 @@ def op_create_camera(params):
             "clipStart": round(float(data.clip_start), 6),
             "clipEnd": round(float(data.clip_end), 6),
             "dofEnabled": bool(data.dof.use_dof),
+            "dofFocusObject": (data.dof.focus_object.name
+                               if getattr(data.dof, "focus_object", None) else None),
+            # THE OVERRIDE, SAID OUT LOUD. Blender uses the focus OBJECT's distance and ignores
+            # focus_distance entirely once one is set, and both fields keep reading back exactly as
+            # written - so without this a caller who set both has no way to know which one won.
+            "focusDistanceIgnored": bool(getattr(data.dof, "focus_object", None)),
+            "fieldOfViewDeg": round(math.degrees(data.angle), 4) if data.type == "PERSP" else None,
             "isSceneCamera": bpy.context.scene.camera is obj,
             "previousSceneCamera": was,
         }
@@ -625,6 +685,10 @@ def op_set_camera(params):
             cam.dof.aperture_fstop = fstop
         if dofd is not None:
             cam.dof.focus_distance = dofd
+    # THE SAME WRITER create_camera USES. Two ops asking the same question needs one answer;
+    # a second copy is how allowEditConst got past one guard and not the other in this very
+    # file, which its own comment above _LIGHT_TYPE_KEYS records.
+    _write_camera_focus_and_fov(cam, params, "changed")
     if take_bool(params, "makeActive", default=False):
         bpy.context.scene.camera = obj
 
