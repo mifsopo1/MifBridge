@@ -71,11 +71,50 @@ def reachable(timeout=1.5):
             if not chunk:
                 return False
             buf += chunk
-        return json.loads(buf.decode("utf-8")).get("ok") is not False
+        if json.loads(buf.decode("utf-8")).get("ok") is False:
+            return False
     except Exception:
         return False
     finally:
         s.close()
+    return True
+
+
+_ANNOUNCED = [False]
+
+
+def _announce():
+    """Print WHICH Blender answered - pid, file, background or not - once per process.
+
+    THE ENDPOINT IS ping, NOT bl_status. The first draft of this asked bl_status, on the strength of
+    a comment in the addon telling operators to "compare it against bl_status's pid". There is no
+    bl_status endpoint and never was; the banner would have caught its own exception and printed
+    nothing, forever, while looking installed. That is the shape of check this repo keeps deleting,
+    and it nearly got added by trusting prose over the registry - the same lesson as reading a
+    handler instead of an endpoint name. ping already carries pid, background and blendFile.
+
+    NEVER RAISES AND NEVER BLOCKS A SUITE. A build whose ping lacks a field, or an older addon,
+    must not turn a working suite into a failing one - it simply says less. But it must not be
+    silent by construction, which is why test_blender_ops asserts the line appears.
+    """
+    if _ANNOUNCED[0]:
+        return
+    _ANNOUNCED[0] = True
+    try:
+        st = _raw_call("ping", {}, timeout=5.0)
+    except Exception:                                               # noqa: BLE001
+        return
+    if not isinstance(st, dict):
+        return
+    blend = st.get("blendFile") or ""
+    print("[mif] answering Blender: pid %s, %s, file %s, %d object(s) - %s:%d%s"
+          % (st.get("pid", "?"),
+             st.get("blenderVersionString") or "?",
+             os.path.basename(blend) if blend else "(unsaved)",
+             st.get("objectCount") or 0,
+             HOST, PORT,
+             "" if st.get("background") else
+             "  <- INTERACTIVE, somebody may be working in it"))
 
 
 def port_is_occupied(timeout=1.0):
@@ -195,6 +234,20 @@ def skip_banner(name):
 
 
 def call(op, params=None, timeout=30.0):
+    """One framed request. Announces WHICH Blender is answering before the first one.
+
+    ANNOUNCED FROM HERE, NOT FROM reachable(). reachable()'s own docstring ends on the lesson that
+    "EXTRACTING a shared helper only helps once the copies are deleted" - and
+    audit_blender_read_purity is one of the copies: it has its own connect logic and never calls
+    reachable(), so a banner placed there would have been silent for the very tool that was pointed
+    at a live session on 2026-09-04. Every socket tool goes through call().
+    """
+    _announce()
+    return _raw_call(op, params, timeout)
+
+
+def _raw_call(op, params=None, timeout=30.0):
+    """call() without the banner - what the banner itself uses, so it cannot recurse."""
     s = socket.create_connection((HOST, PORT), timeout=timeout)
     try:
         msg = json.dumps({"endpoint": op, "token": TOKEN, "params": params or {}}).encode("utf-8")

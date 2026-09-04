@@ -165,9 +165,12 @@ def _status_line():
     if _server is None or not _server.running:
         return "MifBlender: stopped"
     # The pid is on the status line because it is the ONLY thing that
-    # distinguishes two Blender windows from the outside. bl_status reports the
-    # pid of whichever process actually owns the port; if it does not match the
-    # one shown here, this Blender is not the one your edits are landing in.
+    # distinguishes two Blender windows from the outside. ping reports the pid
+    # of whichever process actually owns the port; if it does not match the one
+    # shown here, this Blender is not the one your edits are landing in.
+    # SAID bl_status UNTIL 2026-09-04 - an endpoint that does not exist. A tool
+    # built on that advice would have asked for it, caught the error and gone
+    # quiet, which is worse than no advice at all.
     return "MifBlender: listening on %s:%d, pid %d (%d client%s)" % (
         _server.host, _server.port, os.getpid(), _server._clients,
         "" if _server._clients == 1 else "s")

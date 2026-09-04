@@ -22,8 +22,12 @@ This does not (and cannot, since object_info reports no selection flags) prove e
 state is untouched - select_edges's own docstring claim ("the bmesh is never written back") is about
 geometry, and geometry is exactly what this measures.
 
-CANDIDATES. ping, scene_info, list_objects, object_info and select_edges - the ops named or documented
-like reads. gen_status is deliberately excluded: it is a network probe to an external generation
+CANDIDATES. Every read-shaped op that needs no object argument, plus object_info and select_edges
+resolved at runtime. It was five until 2026-09-04, when the twin comparison asked why the UE arm
+covers every read-prefixed endpoint and this one covered a hand-picked handful: 28 ops here are
+shaped like reads and 4 were probed, so the green meant a seventh of the surface. The dozen that
+need an object - describe_material, list_bones, list_modifiers and the rest - are not here yet and
+are filed as their own item; they need the same runtime resolution object_info already gets. gen_status is deliberately excluded: it is a network probe to an external generation
 service, out of scope the same way the gen_* family is declared out of scope elsewhere in this repo,
 and purity is not the interesting question about it.
 
@@ -55,6 +59,22 @@ CANDIDATES = [
     ("ping", {}),
     ("scene_info", {}),
     ("list_objects", {}),
+    # WIDENED 2026-09-04, because the UE twin covers EVERY read-prefixed endpoint and this one
+    # covered five. 28 ops in this addon are shaped like reads - list_*, describe_*, *_info - and
+    # four were probed, so "no read dirties the scene" was a claim about a seventh of the surface.
+    # These are the ones that need no object argument, so they cost nothing to add.
+    ("compositor_info", {}),
+    ("file_info", {}),
+    ("list_actions", {}),
+    ("list_cameras", {}),
+    ("list_collections", {}),
+    ("list_lights", {}),
+    ("list_markers", {}),
+    ("list_materials", {}),
+    ("list_view_layers", {}),
+    ("physics_info", {}),
+    ("render_info", {}),
+    ("world_info", {}),
 ]
 
 # select_edges needs a selector that actually resolves to something real, or it tells you nothing
@@ -177,7 +197,10 @@ def main():
         print("  %-14s NOT EXERCISED - call failed: %s" % ("select_edges", r.get("error")))
 
     print("")
-    print("exercised: %d/5 (%s)" % (len(exercised), ", ".join(exercised)))
+    # The denominator was a hardcoded 5 and stayed 5 when the candidate list grew, which is the
+    # small version of every stale number this repo keeps deleting.
+    print("exercised: %d of %d candidate(s) (%s)"
+          % (len(exercised), len(CANDIDATES) + 2, ", ".join(exercised)))
     if findings:
         print("")
         print("READ OPS THAT MOVED THE MESH:")
