@@ -70,8 +70,15 @@ MUTATORS = sorted(set([
 ] + [name for name, _why in SILENT_APIS]))
 MUTATOR_RE = re.compile(r"\b(%s)\s*\(" % "|".join(re.escape(m) for m in MUTATORS))
 
-# How a handler refuses.
-REFUSE_RE = re.compile(r"\b(Fail|FailScenario|Refuse|RefuseValue)\s*\(")
+# How a handler refuses. ANY Fail*/Refuse* name, not the four that happened to exist when this was
+# written: RefuseIfCookedGraph, RefuseIfSavingOrCollecting, RefuseIfGated and RefuseIfEditLayers are
+# 15 call sites that `Refuse\s*\(` could never match, and the next wrapper would have been invisible
+# in the same silent way.
+#
+# Safe to widen because the CLAIM does the filtering - a refusal call with no "NOTHING was" literal
+# among its arguments yields nothing at all. Measured: all four of those wrappers refuse without
+# promising anything about state, so this changes no count today. It is here for the fifth one.
+REFUSE_RE = re.compile(r"\b(Fail|Refuse)[A-Za-z]*\s*\(")
 
 # The promise, and only when the sentence ENDS at the verb - "NOTHING was changed to the preview
 # range" is a promise about one field. Same rule as the Blender audit, same reason.

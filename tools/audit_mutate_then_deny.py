@@ -165,6 +165,12 @@ def _claim_text(node):
     String constants are joined before matching only because a message CAN be assembled from more
     than one node. Adjacent literals are folded by the parser, so the join is defensive rather than a
     fix for anything observed - written down because the opposite is easy to assume.
+
+    ONLY MifOpError COUNTS, and that is complete rather than convenient: the addon has 723
+    MifOpError raises against 3 RuntimeError, 2 ValueError and 1 ConnectionError, and not one of
+    those six carries a "NOTHING was" promise. Measured 2026-09-04, because a refusal contract
+    enforced on one exception type while another quietly makes the same promise is the shape this
+    file exists to catch.
     """
     if not isinstance(node, ast.Raise) or node.exc is None:
         return None
