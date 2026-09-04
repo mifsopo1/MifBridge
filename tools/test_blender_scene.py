@@ -351,6 +351,73 @@ def main():
           plain.get("image") is None and "imageBytes" not in plain,
           json.dumps({k: v for k, v in plain.items() if "image" in k.lower()})[:160])
 
+    # ---------------------------------------------------------------- S108 reference matching
+    print("")
+    print("=== S108: 'match this reference' as a NUMBER, and when that number is a lie ===")
+    # THE VACUOUS CASE FIRST, because it is what the first version of this op returned. With an
+    # opaque background every pixel is brighter than the luminance threshold, so the mask is the
+    # whole frame and IoU is 1.0 by definition - measured, a cube and the SAME cube at 0.3x scale
+    # both scored 1.0. It would have passed any test comparing a render against itself.
+    _a = os.path.join(tempfile.gettempdir(), "mif_s108_a.png")
+    _b = os.path.join(tempfile.gettempdir(), "mif_s108_b.png")
+    # ITS OWN SUBJECT AND ITS OWN CAMERA. The first version of this block inherited whatever framing
+    # earlier checks had left, and S105 deletes the object the camera was tracking - so the render
+    # came back essentially EMPTY and the op correctly refused to score a blank frame. The failure
+    # was the fixture, not the measurement, which is the fixture-adoption trap this repo already
+    # has an open item about. Everything S108 needs, S108 makes.
+    B.call("create_primitive", {"kind": "cube", "name": "S108_Subject", "size": 2})
+    B.call("transform_object", {"object": "S108_Subject", "location": [0, 0, 0]})
+    # lookAt, NOT hand-computed euler angles. The first attempt passed rotation in degrees where
+    # the addon wants radians, the camera pointed at empty space, and every check below failed on a
+    # blank render - blaming the measurement for a framing mistake. create_camera advertises lookAt
+    # and asking the endpoint what it accepts is this project's own rule.
+    B.call("create_camera", {"name": "S108_Cam", "location": {"x": 6, "y": -6, "z": 4},
+                             "lookAt": "S108_Subject", "makeActive": True})
+    B.call("set_render_settings", {"filmTransparent": False})
+    B.call("render_still", {"filePath": _a, "resolutionX": 160, "resolutionY": 160,
+                            "samples": 4}, timeout=600.0)
+    # threshold 0.0, so EVERY pixel is above it and the mask is unambiguously the whole frame.
+    # The first version of this check assumed an opaque background is always degenerate, and that is
+    # not true: it depends whether the background is brighter or darker than the threshold. In this
+    # scene it is dark, so the luminance mask IS a real silhouette and the op correctly returned a
+    # real score - the op was more capable than the test assumed. Forcing the threshold is what
+    # makes this deterministic rather than a hostage to world colour.
+    opaque = B.call("compare_to_reference", {"image": _a, "reference": _a, "threshold": 0.0})
+    check("S108 a mask covering the WHOLE FRAME is refused a silhouette score rather than given a "
+          "meaningless 1.0 - a number that cannot be wrong cannot be optimised against either",
+          opaque.get("silhouetteIoU") is None and bool(opaque.get("degenerateMask")),
+          json.dumps({k: opaque.get(k) for k in ("silhouetteIoU", "maskCoverage")})[:160])
+    check("S108 and it names the fix, because 'render with a transparent film' is not obvious from "
+          "a null score",
+          "transparent" in (opaque.get("degenerateMask") or "").lower(),
+          (opaque.get("degenerateMask") or "")[:150])
+
+    # NOW A REAL MASK. With a transparent film the alpha channel is the silhouette, which the op
+    # prefers automatically over any threshold.
+    B.call("set_render_settings", {"filmTransparent": True})
+    B.call("render_still", {"filePath": _a, "resolutionX": 160, "resolutionY": 160,
+                            "samples": 4}, timeout=600.0)
+    same = B.call("compare_to_reference", {"image": _a, "reference": _a})
+    check("S108 with alpha available the same image scores IoU 1.0 and is NOT flagged degenerate",
+          same.get("silhouetteIoU") == 1.0 and not same.get("degenerateMask"),
+          json.dumps({k: same.get(k) for k in ("silhouetteIoU", "maskSource")})[:170])
+    check("S108 and alpha is preferred over the luminance threshold when both images have it",
+          "alpha" in (same.get("maskSource") or ""), same.get("maskSource"))
+
+    # THE DISCRIMINATION TEST. Same image scoring 1.0 proves nothing on its own - a metric that
+    # returns 1.0 for everything would pass that too. A genuinely different silhouette must score
+    # genuinely lower.
+    B.call("transform_object", {"object": "S108_Subject", "scale": [0.3, 0.3, 0.3]})
+    B.call("render_still", {"filePath": _b, "resolutionX": 160, "resolutionY": 160,
+                            "samples": 4}, timeout=600.0)
+    diff = B.call("compare_to_reference", {"image": _b, "reference": _a})
+    check("S108 a DIFFERENT silhouette scores materially lower - without this the metric could "
+          "return 1.0 for everything and still pass every check above it",
+          diff.get("silhouetteIoU") is not None and diff["silhouetteIoU"] < 0.6,
+          "same=%s different=%s" % (same.get("silhouetteIoU"), diff.get("silhouetteIoU")))
+    B.call("transform_object", {"object": "S108_Subject", "scale": [1.0, 1.0, 1.0]})
+    B.call("set_render_settings", {"filmTransparent": False})
+
     rm = B.call("remove_constraint", {"object": "S_Cam", "constraintName": "S_Track"})
     check("S105 removing it counts the stack rather than trusting the call",
           rm.get("countsAgree") is True and rm.get("constraintCountAfter") == 0,

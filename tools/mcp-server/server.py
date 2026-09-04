@@ -5519,6 +5519,14 @@ def bl_render_still(file_path: str = None, frame: float = None, samples: int = N
 
 
 @mcp.tool()
+def bl_compare_to_reference(image: str, reference: str, compare_px: int = None,
+                            threshold: float = None) -> dict:
+    "TURN 'match this reference' INTO A NUMBER. Returns silhouetteIoU (intersection over union of the two subject masks - ignores colour and lighting entirely and asks only whether the subject occupies the same space in frame, which is the number for matching a blockout) and meanAbsDiff (per-pixel luminance difference - sensitive to lighting and materials, so useful for 'is this the same shot' and useless for 'is this the same shape'). Reported separately rather than blended, because one score would hide which of the two moved. RENDER WITH A TRANSPARENT FILM FIRST (bl_set_render_settings film_transparent) - with an opaque background every pixel counts as subject, the mask becomes the whole frame, and IoU is 1.0 by definition; the op detects that and returns null with degenerateMask explaining, rather than a meaningless number. This is PIXEL similarity, not semantic similarity: a render matching a blockout's silhouette exactly with entirely wrong materials scores well and should."
+    return _blender("compare_to_reference", image=image, reference=reference,
+                    comparePx=compare_px, threshold=threshold)
+
+
+@mcp.tool()
 def bl_set_color_management(view_transform: str = None, look: str = None, exposure: float = None,
                             gamma: float = None, display_device: str = None,
                             sequencer_colorspace: str = None,

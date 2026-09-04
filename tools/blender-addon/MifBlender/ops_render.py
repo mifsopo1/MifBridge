@@ -32,7 +32,8 @@ import time
 
 import bpy
 
-from .ops_common import (MifOpError, check_output_path, finite_int, reject_unknown, take,
+from .ops_common import (MifOpError, check_output_path, finite_float, finite_int,
+                         reject_unknown, take,
                          take_bool, take_float, take_int)
 
 _SETTINGS_KEYS = {
@@ -111,6 +112,178 @@ def _encode_preview(path, max_px):
                 pass
     return out
 
+
+# ---------------------------------------------------------------------------
+# compare_to_reference
+# ---------------------------------------------------------------------------
+
+# The comparison resolution. Shape is legible here and the pixel loop stays cheap; comparing at
+# render resolution is slower and no more informative about a silhouette.
+_COMPARE_PX_DEFAULT = 128
+_COMPARE_PX_MIN = 16
+_COMPARE_PX_MAX = 512
+
+
+def _load_scaled_luma(path, px):
+    """(luma list, alpha list, w, h) for an image scaled to fit px on its longest edge.
+
+    THE DATABLOCK IS REMOVED BY THE CALLER - this returns plain Python lists precisely so the image
+    does not have to stay alive, because leaving one behind would be this op quietly adding
+    something to the file to answer a question about it.
+    """
+    img = bpy.data.images.load(path)
+    try:
+        w, h = int(img.size[0]), int(img.size[1])
+        if w <= 0 or h <= 0:
+            raise MifOpError("'%s' loaded with a zero dimension (%dx%d)" % (path, w, h))
+        longest = max(w, h)
+        if longest > px:
+            f = float(px) / float(longest)
+            img.scale(max(1, int(round(w * f))), max(1, int(round(h * f))))
+            w, h = int(img.size[0]), int(img.size[1])
+        n = w * h * 4
+        buf = [0.0] * n
+        # foreach_get is a C-level bulk copy - a Python loop over pixels costs orders of magnitude
+        # more, which is the same reason ops_mesh reaches for it on vertex coordinates.
+        img.pixels.foreach_get(buf)
+        luma = [0.0] * (w * h)
+        alpha = [0.0] * (w * h)
+        for i in range(w * h):
+            r, g, b, a = buf[i * 4], buf[i * 4 + 1], buf[i * 4 + 2], buf[i * 4 + 3]
+            luma[i] = 0.2126 * r + 0.7152 * g + 0.0722 * b
+            alpha[i] = a
+        return luma, alpha, w, h
+    finally:
+        try:
+            bpy.data.images.remove(img)
+        except Exception:                                           # noqa: BLE001
+            pass
+
+
+def op_compare_to_reference(params):
+    """How close is an image to a reference? Two numbers, because they fail differently.
+
+    params:
+      image (str, required)      the render to judge
+      reference (str, required)  the picture it is supposed to match
+      comparePx (int)            longest edge both are scaled to, default 128
+      threshold (float)          luminance above which a pixel counts as subject, default 0.1.
+                                 Ignored when the image has real alpha, which is a better mask.
+    """
+    reject_unknown(params, {"image", "reference", "comparePx", "threshold"},
+                   "compare_to_reference")
+    img_path = bpy.path.abspath(str(take(params, "image", required=True, kind=str)))
+    ref_path = bpy.path.abspath(str(take(params, "reference", required=True, kind=str)))
+    for label, p in (("image", img_path), ("reference", ref_path)):
+        if not os.path.isfile(p):
+            raise MifOpError("%s '%s' does not exist. NOTHING was compared." % (label, p))
+
+    px = finite_int(take_float(params, "comparePx", default=_COMPARE_PX_DEFAULT), "comparePx")
+    if px < _COMPARE_PX_MIN or px > _COMPARE_PX_MAX:
+        raise MifOpError("comparePx must be between %d and %d - below that a silhouette carries no "
+                         "information and above it the comparison is slower for no gain. "
+                         "NOTHING was compared." % (_COMPARE_PX_MIN, _COMPARE_PX_MAX))
+    thresh = finite_float(take_float(params, "threshold", default=0.1), "threshold")
+
+    a_luma, a_alpha, aw, ah = _load_scaled_luma(img_path, px)
+    b_luma, b_alpha, bw, bh = _load_scaled_luma(ref_path, px)
+
+    # DIFFERENT ASPECT RATIOS ARE NOT COMPARED PIXEL-FOR-PIXEL. Two images scaled to the same longest
+    # edge can still differ in the other dimension, and lining those up by index would compare a
+    # pixel against whatever happened to land at the same offset - a number that looks like a
+    # measurement and means nothing.
+    if (aw, ah) != (bw, bh):
+        raise MifOpError(
+            # NO GLOBAL CLAIM ABOUT STATE. This refusal happens AFTER both images were loaded and
+            # removed again, so "NOTHING was compared" - which is what this said - was a promise
+            # about the file that this function is not in a position to make cleanly.
+            # audit_mutate_then_deny caught it: a load is a write, and a write above a refusal that
+            # promises nothing happened is the shape it exists to find. What is true is narrower
+            # and is what it says now.
+            "the two images have different aspect ratios (%dx%d vs %dx%d after scaling), so a "
+            "pixel-for-pixel comparison would be meaningless. No comparison was performed. Render "
+            "at the reference's aspect ratio first - set_render_settings resolutionX/resolutionY."
+            % (aw, ah, bw, bh))
+
+    n = aw * ah
+    # Real alpha is a better subject mask than any luminance threshold, so it is preferred when
+    # BOTH images have it - a render on a transparent background and a cut-out reference.
+    a_has_alpha = any(v < 0.999 for v in a_alpha)
+    b_has_alpha = any(v < 0.999 for v in b_alpha)
+    use_alpha = a_has_alpha and b_has_alpha
+
+    if use_alpha:
+        a_mask = [v > 0.5 for v in a_alpha]
+        b_mask = [v > 0.5 for v in b_alpha]
+        mask_source = "alpha (both images have transparency, which is a better mask than a threshold)"
+    else:
+        a_mask = [v > thresh for v in a_luma]
+        b_mask = [v > thresh for v in b_luma]
+        mask_source = ("luminance > %.3f (one or both images are fully opaque, so alpha could not "
+                       "be used)" % thresh)
+
+    inter = union = 0
+    total_diff = 0.0
+    for i in range(n):
+        if a_mask[i] and b_mask[i]:
+            inter += 1
+        if a_mask[i] or b_mask[i]:
+            union += 1
+        total_diff += abs(a_luma[i] - b_luma[i])
+
+    iou = (float(inter) / float(union)) if union else None
+
+    # A MASK COVERING ALMOST THE WHOLE FRAME IS NOT A SILHOUETTE. Measured the first time this ran:
+    # a cube and the same cube at 0.3x scale both scored IoU 1.0, because the opaque grey world
+    # background is brighter than the threshold, so every pixel counted as subject and the
+    # intersection over union of two full frames is 1.0 by definition. It would have passed happily
+    # against a render compared with itself; it took rendering something genuinely DIFFERENT and
+    # still getting 1.0 to see it.
+    #
+    # So a degenerate mask returns NULL rather than a number. A meaningless 1.0 is worse than an
+    # admitted null, because a null cannot be optimised against by mistake.
+    a_cover = float(sum(1 for v in a_mask if v)) / float(n) if n else 0.0
+    b_cover = float(sum(1 for v in b_mask if v)) / float(n) if n else 0.0
+    degenerate = None
+    if max(a_cover, b_cover) > 0.95:
+        degenerate = ("the subject mask covers %.0f%% of the frame, so it is not separating a "
+                      "subject from a background - almost certainly an OPAQUE BACKGROUND brighter "
+                      "than the threshold. silhouetteIoU is null rather than a meaningless number. "
+                      "FIX: render with a transparent film (set_render_settings filmTransparent, or "
+                      "Render Properties > Film > Transparent) and the alpha channel becomes a real "
+                      "mask, which this op prefers automatically. Raising `threshold` can also work "
+                      "when the subject is much brighter than the background."
+                      % (max(a_cover, b_cover) * 100.0))
+    elif max(a_cover, b_cover) < 0.01:
+        degenerate = ("the subject mask covers under 1%% of the frame - the render may be blank, or "
+                      "`threshold` (%.3f) may be above everything in it. silhouetteIoU is null "
+                      "rather than a number derived from a handful of pixels." % thresh)
+    if degenerate:
+        iou = None
+
+    return {
+        "image": img_path,
+        "reference": ref_path,
+        "comparedAt": [aw, ah],
+        "silhouetteIoU": round(iou, 4) if iou is not None else None,
+        "meanAbsDiff": round(total_diff / float(n), 4) if n else None,
+        "maskSource": mask_source,
+        "subjectPixels": {"image": sum(1 for v in a_mask if v),
+                          "reference": sum(1 for v in b_mask if v)},
+        "iouNote": ("silhouetteIoU ignores colour and lighting and asks only whether the subject "
+                    "occupies the same space in frame - it is the number for matching a blockout. "
+                    "1.0 is identical, and there is no threshold here that means 'good enough': "
+                    "that depends on what you are matching."),
+        "limitNote": ("this is PIXEL similarity, not semantic similarity. A render matching a "
+                      "blockout's silhouette exactly with entirely wrong materials scores well on "
+                      "IoU and should. A high score is not 'this looks right'."),
+        "maskCoverage": {"image": round(a_cover, 4), "reference": round(b_cover, 4)},
+        "degenerateMask": degenerate,
+        "emptyMaskNote": (None if union else
+                          "NEITHER image has any subject pixels at this threshold, so IoU is "
+                          "undefined rather than 0 - raise threshold, or check the render is not "
+                          "blank."),
+    }
 
 def _engine_ids():
     return {i.identifier for i in
@@ -1103,6 +1276,7 @@ def op_set_color_management(params):
 OPS = {
     "set_render_settings": op_set_render_settings,
     "render_still": op_render_still,
+    "compare_to_reference": op_compare_to_reference,
     "render_info": op_render_info,
     "render_animation": op_render_animation,
     "render_status": op_render_status,
