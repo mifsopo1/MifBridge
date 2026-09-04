@@ -14955,3 +14955,33 @@ out-of-process the way ops_gen already does with gen_status.
       matrix's PAYLOADS/SKIP/FIXTURES/TEARDOWN. Zero registered ops are unknown to it, so the 7 that
       do not reach their bpy calls are the deliberate skips and nothing has slipped in unnoticed.
       A negative result, recorded so the next person does not have to re-derive it.
+
+- [x] **the last unguarded conversions, and the gate that stops the next one** DONE 2026-09-04
+      Swept every remaining bare float()/int() on a caller-shaped value - the systematic version of
+      how ray_cast was found. Three real, one false alarm:
+
+        set_bone_pose   the sixth copy of the vector parser, and the one whose own comment warns
+                        that a zero QUATERNION is not a rotation. A NaN one is not either.
+        uv_unwrap       uvTransform's isinstance(v, (int, float)) does NOT exclude NaN, because a
+                        NaN IS a float. A NaN scale landed on the UV layer and every coordinate it
+                        touched became nan, under an unwrap reporting success.
+        node sockets    NodeSocketInt and _write_node_property used a bare int(), so the 32-bit
+                        problem reached them too.
+        create_lattice  looked like a fourth and is not - it range-checks 1..64 first, and its
+                        message explains why.
+
+      tools/audit_unguarded_numbers.py gates it at zero.
+
+      THE MUTATION TEST FOUND THREE HOLES IN MY OWN RULE, one after another, and every one would
+      have left the gate green over the exact defect it was written for:
+
+        `len(raw) < 3` counted as a bound. It is a LENGTH check and says nothing about whether a
+        component is NaN - and it excused ops_query's _vec entirely, the parser whose NaN origin
+        made ray_cast answer "no hit".
+        `raw is None` counted too, and every one of these parsers opens with a presence check.
+        getattr(mod, attr) was not recognised as a bpy read, so a value Blender handed back looked
+        like caller input.
+
+      Reverting ray_cast's guard exits 1 and restoring it exits 0. Without that test the audit would
+      have read "0 findings" and meant nothing - which is the whole reason a check has to be shown
+      failing before it is believed.
