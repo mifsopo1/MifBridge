@@ -555,9 +555,13 @@ def _refusing_calls(stmt, helpers, cleaners):
 
 
 def scan_file(path):
-    src = io.open(path, "rb").read().decode("utf-8")
+    return scan_source(os.path.basename(path),
+                       io.open(path, "rb").read().decode("utf-8"))
+
+
+def scan_source(name, src):
+    """The whole audit, given a name and source text. Split out of scan_file for --selftest."""
     tree = ast.parse(src)
-    name = os.path.basename(path)
     helpers = _refusing_helpers(tree)
     cleaners = _cleaning_helpers(tree)
     writers = set()
@@ -634,13 +638,131 @@ def scan_file(path):
     return findings, scoped, delegating, reachable
 
 
+# Each case is (name, should_fire, source). The PAIRS are the point: a rule that only ever suppresses
+# is indistinguishable from one that suppresses everything, and both lists this audit prints now read
+# zero - which is the right answer and also the moment nobody can tell a working rule from a dead one.
+SELFTEST = [
+    ("plain mutate then deny", True, """
+def op_probe(params):
+    obj.location = params["loc"]
+    if bad:
+        raise MifOpError("bad. NOTHING was changed.")
+"""),
+    ("refusal comes first", False, """
+def op_probe(params):
+    if bad:
+        raise MifOpError("bad. NOTHING was changed.")
+    obj.location = params["loc"]
+"""),
+    ("opposite arms of one if", False, """
+def op_probe(params):
+    if ok:
+        obj.location = params["loc"]
+    else:
+        raise MifOpError("bad. NOTHING was changed.")
+"""),
+    ("write in a branch that returns", False, """
+def op_probe(params):
+    if ok:
+        obj.location = params["loc"]
+        return {"ok": True}
+    if other:
+        raise MifOpError("bad. NOTHING was changed.")
+"""),
+    ("removed before the raise", False, """
+def op_probe(params):
+    obj = bpy.data.objects.new("x", None)
+    obj.location = params["loc"]
+    if bad:
+        bpy.data.objects.remove(obj)
+        raise MifOpError("bad. NOTHING was created.")
+"""),
+    ("restored before the raise", False, """
+def op_probe(params):
+    nodes_before = data.use_nodes
+    data.use_nodes = True
+    if bad:
+        data.use_nodes = nodes_before
+        raise MifOpError("bad. NOTHING was changed.")
+"""),
+    ("rolled back in an except", False, """
+def op_probe(params):
+    mat = bpy.data.materials.new("x")
+    try:
+        if bad:
+            raise MifOpError("bad. NOTHING was changed.")
+    except MifOpError:
+        bpy.data.materials.remove(mat)
+        raise
+"""),
+    ("restored in a finally", False, """
+def op_probe(params):
+    frames_before = scene.frame_start
+    try:
+        scene.frame_start = 5
+        if bad:
+            raise MifOpError("bad. NOTHING was changed.")
+    finally:
+        scene.frame_start = frames_before
+"""),
+    ("scoped promise", False, """
+def op_probe(params):
+    scene.frame_start = 5
+    if bad:
+        raise MifOpError("bad. NOTHING was changed to the preview range.")
+"""),
+    ("scratch bmesh", False, """
+def op_probe(params):
+    bm = bmesh.new()
+    for e in bm.edges:
+        e.seam = True
+    if bad:
+        raise MifOpError("bad. NOTHING was changed.")
+    bm.to_mesh(mesh)
+"""),
+]
+
+
+def selftest():
+    """Run each case through scan_source and report both directions."""
+    bad = 0
+    for name, should_fire, src in SELFTEST:
+        findings, scoped, _d, _r = scan_source("selftest.py", src)
+        fired = bool(findings)
+        ok = fired == should_fire
+        bad += 0 if ok else 1
+        print("  %-4s %-38s expected %-5s got %s"
+              % ("ok" if ok else "FAIL", name, should_fire, fired))
+
+    # The operation-verb split, which the two lists above cannot exercise now that both read zero.
+    _f, scoped, _d, _r = scan_source("selftest.py", """
+def op_probe(params):
+    image.generated_color = (1, 0, 1, 1)
+    if bad:
+        raise MifOpError("bad. NOTHING was baked.")
+""")
+    ok = len(scoped) == 1 and not _f
+    bad += 0 if ok else 1
+    print("  %-4s %-38s expected %-5s got %s"
+          % ("ok" if ok else "FAIL", "operation verb lands in scoped", True, ok))
+
+    print("")
+    print("selftest: %d case(s), %d failure(s)" % (len(SELFTEST) + 1, bad))
+    return bad
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--check", action="store_true",
                     help="exit 1 on any finding (for the release gate)")
     ap.add_argument("--show-delegating", action="store_true",
                     help="list ops whose writes happen in a helper, which this cannot follow")
+    ap.add_argument("--selftest", action="store_true",
+                    help="prove each precision rule can both fire and stay quiet")
     args = ap.parse_args()
+
+    if args.selftest:
+        return 1 if selftest() else 0
 
     if not os.path.isdir(ADDON):
         print("addon not found at %s" % ADDON)

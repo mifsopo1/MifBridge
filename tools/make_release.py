@@ -496,6 +496,11 @@ def check_static_audits():
                        # the sweep has applied each payload and re-applying an idempotent set_* op
                        # changes nothing. Measured, not assumed - see the audit's own docstring.
                        ("audit_mutate_then_deny.py", ["--check"]),
+                       # AND ITS OWN RULES, because both of its lists now read zero. That is the
+                       # right answer and also the point at which a working rule and a dead one look
+                       # identical. --selftest drives eleven synthetic ops through the same code
+                       # path, each rule with a case it must catch and a case it must not.
+                       ("audit_mutate_then_deny.py", ["--selftest"]),
                        # TWO SUITES THAT NEED NO EDITOR, joined 2026-09-03. Both were found by
                        # asking which suites have NO record in suite_results.json at all - five did,
                        # and these two turned out to be static, so they had never been run for no
@@ -675,9 +680,14 @@ def check_static_audits():
             head = next((l for l in lines if l.startswith(("NEW", "SELF-CHECK", "MISSING", "WRONG"))
                          or "misclassified" in l or "FAILED:" in l),
                         lines[-1] if lines else "no output")
-            failed.append("%s -> %s" % (tool, head[:110]))
+            failed.append("%s%s -> %s"
+                          % (tool, (" " + " ".join(args)) if args else "", head[:110]))
         else:
-            ran.append(tool)
+            # LABELLED BY WHAT WAS RUN, not by the script name. audit_mutate_then_deny is gated
+            # twice - once for its findings and once for --selftest - and listing both as the bare
+            # script name printed the same audit twice in the summary, which reads as a bug in the
+            # list rather than two different checks.
+            ran.append(tool[:-3] + (" --selftest" if "--selftest" in args else ""))
     if not failed:
         # COUNTED, NOT LISTED BY HAND. This used to name five audits and two self-tests in a literal
         # string, and by 2026-09-03 the tuple above held fourteen entries - so the success message
@@ -685,7 +695,7 @@ def check_static_audits():
         # looks to see what was actually checked. A hand-written list beside a real one is a second
         # source of truth, which is the objection this file raises about manifests elsewhere.
         return True, ("%d ratcheted source checks at baseline: %s"
-                      % (len(ran), ", ".join(sorted(t[:-3] for t in ran))))
+                      % (len(ran), ", ".join(sorted(ran))))
     return False, ("a ratcheted source audit reports something NEW:\n    %s\n"
                    "  Read it and either fix it or accept it with that tool's --update-baseline,\n"
                    "  saying why in the commit. Do not package past it."
