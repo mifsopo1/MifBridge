@@ -30,8 +30,8 @@ import time
 
 import bpy
 
-from .ops_common import (MifOpError, check_output_path, reject_unknown, take, take_bool,
-                         take_float, take_int)
+from .ops_common import (MifOpError, check_output_path, finite_int, reject_unknown, take,
+                         take_bool, take_float, take_int)
 
 _SETTINGS_KEYS = {
     "engine", "resolutionX", "resolutionY", "percentage", "samples",
@@ -77,19 +77,29 @@ def _apply_common(sc, params):
                              "through the engine's own property instead. NOTHING was changed."
                              % sc.render.engine)
 
+    # CONVERTED ABOVE THE COMMIT, all of them, before a single one is written. finite_int CAN
+    # refuse - Blender's int properties are 32-bit and a caller can send 2**40 - so converting each
+    # one inside its own `if` put a refusal between two writes: set_render_settings{resolutionX:
+    # 123, resolutionY: 2**40} moved the width to 123 and then answered "NOTHING was changed".
+    # Measured, and introduced by the fix for the raw ValueError these used to throw.
+    want_x = finite_int(rx, "resolutionX") if rx is not None else None
+    want_y = finite_int(ry, "resolutionY") if ry is not None else None
+    want_pct = finite_int(pct, "percentage") if pct is not None else None
+    want_samples = finite_int(samples, "samples") if samples_target is not None else None
+
     # COMMIT. Nothing below can refuse.
-    if rx is not None:
-        sc.render.resolution_x = int(rx)
+    if want_x is not None:
+        sc.render.resolution_x = want_x
         applied["resolutionX"] = sc.render.resolution_x
-    if ry is not None:
-        sc.render.resolution_y = int(ry)
+    if want_y is not None:
+        sc.render.resolution_y = want_y
         applied["resolutionY"] = sc.render.resolution_y
-    if pct is not None:
-        sc.render.resolution_percentage = int(pct)
+    if want_pct is not None:
+        sc.render.resolution_percentage = want_pct
         applied["percentage"] = sc.render.resolution_percentage
     if samples_target is not None:
         holder, attr, label = samples_target
-        setattr(holder, attr, int(samples))
+        setattr(holder, attr, want_samples)
         applied["samples"] = int(getattr(holder, attr))
         applied["samplesOn"] = label
     return applied
@@ -272,7 +282,7 @@ def op_render_still(params):
     applied = _apply_common(sc, params)
     frame = take_float(params, "frame", default=None)
     if frame is not None:
-        sc.frame_set(int(frame))
+        sc.frame_set(finite_int(frame, "frame"))
     if out_path:
         sc.render.filepath = target
 

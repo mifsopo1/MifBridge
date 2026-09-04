@@ -265,7 +265,15 @@ def _claim_text(node):
 
 
 def _is_state_claim(claim):
-    """Does the promise cover scene state, or only the operation it names?"""
+    """Does the promise cover scene state, or only the operation it names?
+
+    AN INTERPOLATED VERB LANDS HERE, in the strict list. check_output_path says "NOTHING was %s."
+    and takes the verb from its caller, so the word is only knowable at the call site - resolving it
+    would mean following the argument, and the audit does not do whole-program flow anywhere else.
+    Defaulting to the STATE list means such a finding is reported rather than filed under "not a
+    failure", which is the safe direction for something that gates at zero: a scoped promise wrongly
+    reported gets read and dismissed, a state promise wrongly scoped is never read at all.
+    """
     hit = GLOBAL_CLAIM.search(claim or "")
     if not hit:
         return False
@@ -667,6 +675,21 @@ def _refusing_helpers(tree):
     # reach has to survive the refactor that the audit itself prompted.
     candidates = [n for n in ast.walk(tree)
                   if isinstance(n, ast.FunctionDef) and not n.name.startswith("op_")]
+    # ...AND THE SHARED ONES. ops_common holds the helpers every file imports - take_float,
+    # take_int, finite_float, finite_int, check_axis_dict, check_output_path - and every one of them
+    # can refuse. Scanning only the file's OWN functions made them invisible, and that blind spot
+    # was demonstrated rather than theorised: _apply_common was given finite_int inside its commit
+    # block, wrote resolution_x, refused on resolution_y, and this audit reported zero. Measured on
+    # 5.0.1 - the width moved 1920 -> 123 under "NOTHING was changed".
+    common = os.path.join(ADDON, "ops_common.py")
+    if os.path.abspath(getattr(tree, "_mif_path", "")) != os.path.abspath(common):
+        try:
+            shared = ast.parse(io.open(common, "rb").read().decode("utf-8"))
+        except OSError:
+            shared = None
+        if shared is not None:
+            candidates += [n for n in ast.walk(shared)
+                           if isinstance(n, ast.FunctionDef) and not n.name.startswith("op_")]
     direct = {}
     for fn in candidates:
         for sub in ast.walk(fn):

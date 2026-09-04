@@ -28,9 +28,9 @@ object really is left holding the last value written. That is stated rather than
 """
 import bpy
 
-from .ops_common import (MifOpError, check_axis_dict, finite_float, finite_floats, get_object,
-                         reject_unknown, rnd, select_only, selection_restore, selection_snapshot,
-                         take, take_bool, take_float, take_int)
+from .ops_common import (MifOpError, check_axis_dict, finite_float, finite_floats, finite_int,
+                         get_object, reject_unknown, rnd, select_only, selection_restore,
+                         selection_snapshot, take, take_bool, take_float, take_int)
 
 _KEY_KEYS = {
     "object", "name", "frame", "location", "rotation", "scale",
@@ -296,8 +296,8 @@ def op_set_frame_range(params):
     #
     # So the REQUESTED range is validated against itself, falling back to the current value for
     # whichever end was not supplied. Found by test_blender_anim A102 on its first run.
-    want_start = int(start) if start is not None else before["start"]
-    want_end = int(end) if end is not None else before["end"]
+    want_start = finite_int(start, "start") if start is not None else before["start"]
+    want_end = finite_int(end, "end") if end is not None else before["end"]
     if want_end < want_start:
         raise MifOpError("end (%d) is before start (%d), which Blender does not reject - it CLAMPS "
                          "one to the other as you assign them, leaving a range that renders a "
@@ -313,7 +313,7 @@ def op_set_frame_range(params):
         sc.frame_end = want_end
     fps = take_float(params, "fps", default=None)
     if fps is not None:
-        sc.render.fps = int(fps)
+        sc.render.fps = finite_int(fps, "fps")
     # FPS_BASE IS THE OTHER HALF OF THE FRAME RATE and nothing here could set it. Blender stores
     # 29.97 as fps 30 with fps_base 1.001, and 23.976 as 24 with 1.001 - so every broadcast rate is
     # unreachable through `fps` alone, and a caller asking for 30 on an NTSC scene silently got
@@ -325,9 +325,9 @@ def op_set_frame_range(params):
         sc.render.fps_base = fps_base
     step = take_float(params, "frameStep", default=None)
     if step is not None:
-        if int(step) < 1:
+        if finite_int(step, "frameStep") < 1:
             raise MifOpError("frameStep must be at least 1, got %g." % step)
-        sc.frame_step = int(step)
+        sc.frame_step = finite_int(step, "frameStep")
 
     # PREVIEW RANGE, which overrides the scene range for playback and rendering when it is on. A
     # scene with one enabled renders the preview range and NOT frame_start..frame_end, which is a
@@ -347,7 +347,7 @@ def op_set_frame_range(params):
 
     cur = take_float(params, "current", default=None)
     if cur is not None:
-        sc.frame_set(int(cur))
+        sc.frame_set(finite_int(cur, "current"))
 
     # THE TRUE RATE IS fps / fps_base, and durationSeconds divided by fps alone until 2026-09-03 -
     # so every NTSC rate was reported 0.1% short. Small, and exactly the kind of small that makes a

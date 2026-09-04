@@ -1147,10 +1147,26 @@ def main():
 
     print("")
     print("REACH - how far the calls actually got, which is not the same as the findings above:")
+    silent_builds = []
     for r in reports:
         v = r.get("version", "?")
         got = len(reached.get(v, []))
+        if got == 0:
+            silent_builds.append(v)
         print("  %-12s %3d op(s) reached their bpy calls and returned ok" % (v, got))
+
+    # A BUILD THAT RAN NOTHING IS A FAILED RUN, NOT A CLEAN ONE. Observed 2026-09-04: a Blender 5.0
+    # subprocess failed to start behind another Blender still exiting, and this printed
+    # "5.0    0 op(s) reached" and "0 known difference(s) accepted" - then exited 0. Every finding
+    # in this file is a COMPARISON between builds, so a build contributing nothing does not make the
+    # comparison pass, it removes it. Silence from a whole version has to be louder than agreement.
+    if silent_builds:
+        print("")
+        print("A BUILD RAN NOTHING: %s" % ", ".join(silent_builds))
+        print("Every check here compares builds against each other, so a version that contributed")
+        print("no results did not agree with anything - it was absent. Usually the binary failed to")
+        print("start; running another Blender in the same breath is enough to do it. Re-run before")
+        print("believing any line above.")
     if refused_everywhere:
         print("")
         print("  REFUSED ON EVERY BUILD - %d op(s). These were exercised as far as their guards and"
@@ -1197,7 +1213,7 @@ def main():
         print("adding this to .gitignore - the file is the symptom, the path handling is the bug.")
 
     return 1 if (raised or fatal or suspect or new_diffs or leaked or leaks
-                 or bad_raises or strays) else 0
+                 or bad_raises or strays or silent_builds) else 0
 
 
 if __name__ == "__main__":

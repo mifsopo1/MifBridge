@@ -109,6 +109,14 @@ def take_bool(params, *names, default=False):
     raise MifOpError("'%s' must be a boolean" % names[0])
 
 
+# A SHARED READER MUST NOT PROMISE ABOUT STATE. These helpers refuse a bad value and say what is
+# wrong with it - they do NOT end "NOTHING was changed", because they have no idea what their caller
+# has already done. The same conclusion _socket_value reached earlier on 2026-09-04, and the reason
+# it takes its tail from the caller: when take_float briefly did make that claim,
+# audit_mutate_then_deny went from 0 findings to 103, every one of them an op that reads a parameter
+# after a write - which is only a lie if the READER is the thing making the promise.
+
+
 def take_float(params, *names, default=None, required=False):
     value = take(params, *names, default=default, required=required)
     if value is None:
@@ -126,8 +134,14 @@ def take_float(params, *names, default=None, required=False):
     if not math.isfinite(number):
         raise MifOpError("'%s' must be a finite number, got %r. NaN and Infinity are accepted by "
                          "Blender and poison everything that reads the object's bounds afterwards, "
-                         "silently. NOTHING was changed." % (names[0], value))
+                         "silently." % (names[0], value))
     return number
+
+
+# Blender's integer RNA properties are 32-bit signed. Anything outside this cannot be stored, and
+# what happened instead was a raw ValueError out of the assignment - see take_int.
+INT32_MIN = -2147483648
+INT32_MAX = 2147483647
 
 
 def take_int(params, *names, default=None, required=False):
@@ -135,9 +149,22 @@ def take_int(params, *names, default=None, required=False):
     if value is None:
         return None
     try:
-        return int(value)
+        number = int(value)
+    except OverflowError:
+        # int(float("inf")) raises OverflowError, which the old clause did not catch, so an infinite
+        # frame number came back as a raw exception rather than a sentence.
+        raise MifOpError("'%s' must be a finite integer, got %r." % (names[0], value))
     except (TypeError, ValueError):
         raise MifOpError("'%s' must be an integer, got %r" % (names[0], value))
+    # RANGE-CHECKED, because Blender's int properties are 32-bit and the failure was ugly. Measured
+    # on 5.0.1: set_frame_range{start: 2**40} and set_render_settings{resolutionX: 2**40} both came
+    # back as a raw ValueError from deep inside the assignment - "bpy_struct: item.attr = val:
+    # Scene.frame_start expected an int type" - escaping this addon's refusal contract, where every
+    # other refusal is a sentence naming the fix.
+    if not (INT32_MIN <= number <= INT32_MAX):
+        raise MifOpError("'%s' must be between %d and %d - Blender stores integers in 32 bits and "
+                         "cannot hold %r." % (names[0], INT32_MIN, INT32_MAX, value))
+    return number
 
 
 
@@ -151,11 +178,30 @@ def finite_float(value, key):
     try:
         number = float(value)
     except (TypeError, ValueError):
-        raise MifOpError("'%s' must be a number, got %r. NOTHING was changed." % (key, value))
+        raise MifOpError("'%s' must be a number, got %r." % (key, value))
     if not math.isfinite(number):
         raise MifOpError("'%s' must be a finite number, got %r. NaN and Infinity are accepted by "
-                         "Blender and poison everything that reads it afterwards, silently. "
-                         "NOTHING was changed." % (key, value))
+                         "Blender and poison everything that reads it afterwards, silently."
+                         % (key, value))
+    return number
+
+
+def finite_int(value, key):
+    """One caller-supplied value as an int Blender can actually store, or a refusal naming it.
+
+    The int twin of finite_float, for the conversion sites that never see take_int - create_primitive
+    puts these straight into a bpy.ops operator's properties, and the operator converts them itself.
+    segments: 2**40 came back as a raw ValueError from inside primitive_uv_sphere_add.
+    """
+    try:
+        number = int(value)
+    except OverflowError:
+        raise MifOpError("'%s' must be a finite integer, got %r." % (key, value))
+    except (TypeError, ValueError):
+        raise MifOpError("'%s' must be an integer, got %r." % (key, value))
+    if not (INT32_MIN <= number <= INT32_MAX):
+        raise MifOpError("'%s' must be between %d and %d - Blender stores integers in 32 bits and "
+                         "cannot hold %r." % (key, INT32_MIN, INT32_MAX, value))
     return number
 
 
@@ -175,13 +221,12 @@ def finite_floats(values, key):
         try:
             number = float(raw)
         except (TypeError, ValueError):
-            raise MifOpError("'%s'[%d] must be a number, got %r. NOTHING was changed."
-                             % (key, i, raw))
+            raise MifOpError("'%s'[%d] must be a number, got %r." % (key, i, raw))
         if not math.isfinite(number):
             raise MifOpError(
                 "'%s'[%d] must be a finite number, got %r. NaN and Infinity are accepted by Blender "
-                "and poison everything that reads the object's bounds afterwards, silently. "
-                "NOTHING was changed." % (key, i, raw))
+                "and poison everything that reads the object's bounds afterwards, silently."
+                % (key, i, raw))
         out.append(number)
     return out
 

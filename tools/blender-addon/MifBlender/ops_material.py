@@ -551,6 +551,15 @@ def op_bake_texture(params):
             "to land. uv_unwrap creates one. (The operator raises for this too rather than failing "
             "silently, so this refusal is only about naming the fix.) NOTHING was baked."
             % obj.name)
+    # THE PATH IS CHECKED BEFORE THE FIRST WRITE, not beside the bake it guards. Placing it next to
+    # the save looked right and put it BELOW the active-UV-layer switch, so an unusable filepath
+    # refused with the layer already changed. audit_mutate_then_deny found it once it learned to see
+    # refusals coming from ops_common - check_output_path is imported, and until then a shared
+    # helper's refusal was invisible to it.
+    filepath = take(params, "filepath")
+    if filepath:
+        check_output_path(filepath, bpy.path.abspath(str(filepath)), "baked")
+
     if uv_name:
         layer = mesh.uv_layers.get(uv_name)
         if layer is None:
@@ -567,12 +576,6 @@ def op_bake_texture(params):
         raise MifOpError("samples must be between 1 and 4096; got %d" % samples)
     margin = take_int(params, "margin", default=4)
     image_name = take(params, "imageName") or ("MifBake_%s_%s" % (obj.name, bake_type))
-    filepath = take(params, "filepath")
-    # BEFORE THE BAKE, which is the expensive part. A control character here let the whole bake run
-    # and then failed inside image.save_render with a bare RuntimeError - the work done, the
-    # contract broken, and nothing written.
-    if filepath:
-        check_output_path(filepath, bpy.path.abspath(str(filepath)), "baked")
     keep_node = bool(take(params, "keepNode"))
 
     # A material is where the bake TARGET lives, so one is required. Created rather than refused,

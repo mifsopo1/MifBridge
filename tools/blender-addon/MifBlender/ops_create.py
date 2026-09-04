@@ -43,9 +43,10 @@ pipeline wants and is NOT how you place a second object next to a first.
 """
 import bpy
 
-from .ops_common import (MifOpError, check_axis_dict, finite_floats, get_object, mesh_counts,
-                         object_info, reject_unknown, rnd, selection_restore, selection_snapshot,
-                         take, take_bool, take_float, take_int)
+from .ops_common import (MifOpError, check_axis_dict, finite_float, finite_floats, finite_int,
+                         get_object, mesh_counts, object_info, reject_unknown, rnd,
+                         selection_restore, selection_snapshot, take, take_bool, take_float,
+                         take_int)
 
 # What each primitive really accepts. `size` is that operator's own size-like kwarg, or None when it
 # has none at all. `extras` is every other per-kind kwarg. Verified against bpy.ops RNA.
@@ -173,8 +174,13 @@ def op_create_primitive(params):
                 "'%s' does not apply to a %s - it accepts: %s. NOTHING was created."
                 % (key, kind, ", ".join(accepted) or "(no extra parameters)"))
         val = params[key]
+        # BOUNDED AND FINITE, because these go straight into a bpy.ops operator's properties and it
+        # converts them itself. segments: 2**40 came back as a raw ValueError - "Converting py args
+        # to operator properties" - from inside primitive_uv_sphere_add, escaping this op's refusal
+        # contract entirely. The shared helpers say the same thing as a sentence.
         kwargs[blender_key] = (val if isinstance(val, str)
-                               else (int(val) if blender_key in INT_KWARGS else float(val)))
+                               else (finite_int(val, key) if blender_key in INT_KWARGS
+                                     else finite_float(val, key)))
 
     size = take_float(params, "size", default=None)
     radius = take_float(params, "radius", default=None)
