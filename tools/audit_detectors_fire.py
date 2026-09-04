@@ -845,7 +845,88 @@ def plant_uncompared_count(text):
         '          % (r.get("matchedCount"), r.get("totalEdges")))',
     )))
 
+
+# ---------------------------------------------------------------------------
+# The three addon audits that had no plant
+# ---------------------------------------------------------------------------
+# Each scans the addon's ops_*.py for op_ functions, so each plants a whole function above a
+# stable anchor in ops_scene.py rather than editing a real handler - a plant that damages a
+# working op can turn a correct audit red for the wrong reason, which reads as proof and is not.
+
+_ADDON_OPS = os.path.join(ROOT, "tools", "blender-addon", "MifBlender", "ops_scene.py")
+_OPS_ANCHOR = "def op_ping(params):"
+
+
+def _plant_op(text, body):
+    if _OPS_ANCHOR not in text:
+        return None
+    return text.replace(_OPS_ANCHOR, body + "\n\n" + _OPS_ANCHOR, 1)
+
+
+def plant_unreported_created_name(text):
+    """An op that creates a datablock under the CALLER'S name and never says what it got.
+
+    Blender uniquifies a clashing name silently - ask for 'Crate' twice and the second is
+    'Crate.001'. An op that does not report the name it actually got leaves the caller holding
+    a name that resolves to nothing, or worse, to somebody else's object.
+    """
+    return _plant_op(text, "\n".join((
+        'def op_mifplant_unreported(params):',
+        '    wanted = params["name"]',
+        '    made = bpy.data.objects.new(wanted, None)',
+        '    bpy.context.scene.collection.objects.link(made)',
+        '    return {"linked": True}',
+    )))
+
+
+def plant_unguarded_output_path(text):
+    """A writer that takes a path from the caller and writes it without check_output_path."""
+    return _plant_op(text, "\n".join((
+        'def op_mifplant_writes(params):',
+        '    where = params["filepath"]',
+        '    bpy.ops.wm.save_as_mainfile(filepath=where)',
+        '    return {"written": where}',
+    )))
+
+
+def plant_unbounded_number(text):
+    """A caller-supplied number coerced with no bound - the NaN/1e999 class."""
+    return _plant_op(text, "\n".join((
+        'def op_mifplant_unbounded(params):',
+        '    scale = float(params["scale"])',
+        '    return {"scale": scale}',
+    )))
+
+
+def plant_mutate_then_deny(text):
+    """A write, then a refusal promising the caller that NOTHING was changed.
+
+    The motivating defect exactly: op_set_light assigned data.type and then refused through a
+    helper, so a caller who read the refusal believed the light was untouched. Every refusal
+    in this addon ends on that promise, which is what makes a write above one a lie rather
+    than merely untidy.
+    """
+    return _plant_op(text, "\n".join((
+        'def op_mifplant_denies(params):',
+        '    obj = get_object(params["object"])',
+        # A PLAIN ATTRIBUTE WRITE, NOT A SUBSCRIPT. The first version of this plant used
+        # obj.location[0] = 1.0 and the audit reported ASLEEP - correctly. Its own REACH line says
+        # 8 ops are UNJUDGED because they "write through a subscript on a datablock", so the plant
+        # had landed squarely in a blind spot the tool already declares. The tool was right and the
+        # plant was wrong, and only reading the REACH line beside the 0 distinguished the two.
+        '    obj.hide_render = True',
+        '    raise MifOpError("that combination is not supported. NOTHING was changed.")',
+    )))
+
 PLANTS = {
+    # THE ADDON AUDITS BUILT ON 2026-09-03/04. They were listed under "no plant is defined for
+    # these, so their green means nothing here" - and leaving them there because they are recent
+    # and were hand-tested once is exactly the reasoning that listing exists to refuse.
+    "audit_mutate_then_deny.py": (_ADDON_OPS, plant_mutate_then_deny, "op_mifplant_denies"),
+    "audit_created_name_reported.py": (_ADDON_OPS, plant_unreported_created_name,
+                                       "op_mifplant_unreported"),
+    "audit_output_paths.py": (_ADDON_OPS, plant_unguarded_output_path, "op_mifplant_writes"),
+    "audit_unguarded_numbers.py": (_ADDON_OPS, plant_unbounded_number, "op_mifplant_unbounded"),
     "audit_param_guards.py": (os.path.join(PRIV, "MifBridgeNodes.cpp"), plant_removed_guard,
                              "disconnect_pin"),
     # Exits 1 on a finding, so the exit code is real proof. No must_vanish: this plant ADDS a
@@ -1012,6 +1093,13 @@ NOT_OURS = {}
 
 # Extra argv some tools need to report everything rather than only new-against-baseline findings.
 ARGS = {"audit_vacuous_checks.py": ["--all"],
+        # These three REPORT and exit 0 without --check, which is how make_release runs them
+        # (make_release.py:518,525,532). Run bare, the harness would plant a real defect, watch the
+        # tool describe it, see exit 0 and call the tool asleep for doing its job.
+        "audit_mutate_then_deny.py": ["--check"],
+        "audit_created_name_reported.py": ["--check"],
+        "audit_output_paths.py": ["--check"],
+        "audit_unguarded_numbers.py": ["--check"],
         # Without --check it REPORTS and exits 0, so the harness would call it asleep for doing
         # exactly what it is meant to do outside the gate.
         "audit_consequence_fields.py": ["--check"],
