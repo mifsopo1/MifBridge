@@ -56,7 +56,7 @@ namespace MifBridge
 			Fail(Out, FString::Printf(
 				TEXT("%s is unavailable: this MifBridge was built against an engine with no MetaHuman ")
 				TEXT("Character plugin (Engine/Plugins/MetaHuman/MetaHumanCharacter, UE 5.6+ only - ")
-				TEXT("absent from the DDS2 5.3.2 fork entirely). The endpoint is still registered so ")
+				TEXT("absent from the 5.3.2 fork this was developed against, entirely). The endpoint is still registered so ")
 				TEXT("this answer is possible at all - rebuild against an engine that has it."), What));
 		}
 	}

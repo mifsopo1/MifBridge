@@ -68,6 +68,13 @@
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Text/STextBlock.h"
+// The flag button's "file it on GitHub" link. A toast rather than a dialog: the report is already
+// safely on disk by the time this appears, so interrupting the user with a modal to tell them about
+// an optional second step would be the wrong weight entirely.
+#include "Framework/Notifications/NotificationManager.h"
+#include "Widgets/Notifications/SNotificationItem.h"
+#include "HAL/PlatformProcess.h"
+#include "Misc/ConfigCacheIni.h"
 
 static TAutoConsoleVariable<bool> CVarMifBridgeAutoOpen(
 	TEXT("mif.BridgeAutoOpen"),
@@ -598,6 +605,75 @@ private:
 		return FReply::Handled();
 	}
 
+	/** Percent-encode for a query string. RFC 3986 unreserved set; everything else escaped.
+
+	    HAND-ROLLED ON PURPOSE. FGenericPlatformHttp::UrlEncode lives in the HTTP module, which this
+	    plugin does not depend on, and taking a module dependency in a plugin that builds against two
+	    engine versions to save twelve lines is a bad trade. */
+	static FString UrlEscape(const FString& In)
+	{
+		FString Out;
+		Out.Reserve(In.Len() * 3);
+		const FTCHARToUTF8 Utf8(*In);
+		const uint8* Bytes = (const uint8*)Utf8.Get();
+		for (int32 i = 0; i < Utf8.Length(); ++i)
+		{
+			const uint8 C = Bytes[i];
+			const bool bUnreserved =
+				(C >= 'A' && C <= 'Z') || (C >= 'a' && C <= 'z') || (C >= '0' && C <= '9') ||
+				C == '-' || C == '_' || C == '.' || C == '~';
+			if (bUnreserved) { Out.AppendChar((TCHAR)C); }
+			else { Out += FString::Printf(TEXT("%%%02X"), C); }
+		}
+		return Out;
+	}
+
+	/** Where a report goes. Empty disables the link entirely.
+
+	    CONFIGURABLE BECAUSE A FORK'S USERS SHOULD NOT FILE ISSUES AGAINST OURS. Set
+	    [MifBridge] ReportIssueUrl in DefaultEngine.ini to redirect it, or to "" to turn the link
+	    off and keep exactly the old behaviour. */
+	static FString ReportIssueBase()
+	{
+		FString Configured;
+		if (GConfig && GConfig->GetString(TEXT("MifBridge"), TEXT("ReportIssueUrl"), Configured,
+										  GEngineIni))
+		{
+			return Configured.TrimStartAndEnd();
+		}
+		return TEXT("https://github.com/mifsopo1/MifBridge/issues/new");
+	}
+
+	/** Open a PRE-FILLED issue. Nothing is transmitted here - the browser shows the reporter every
+	    character of what they are about to send, on GitHub's own form, and they press Submit.
+
+	    THE BODY IS CAPPED because a prefilled GitHub URL is a GET, and a long one is silently
+	    truncated or rejected by the browser. The file on disk is the complete record and the body
+	    says so, so a truncated link degrades into "the full report is at <path>" rather than into a
+	    report that is quietly missing its end. */
+	static void OpenIssueFor(const FString& Endpoint, const FString& Actual, const FString& Path)
+	{
+		const FString Base = ReportIssueBase();
+		if (Base.IsEmpty()) { return; }
+		const FString Title = FString::Printf(TEXT("bridge-report: %s"), *Endpoint);
+		FString Body = FString::Printf(
+			TEXT("**endpoint**: `%s`\n")
+			TEXT("**actual**: %s\n")
+			TEXT("**payload**: not captured - the panel keeps a transcript, not a request log. ")
+			TEXT("Please paste the call you made.\n\n")
+			TEXT("**expected**: \n\n")
+			TEXT("---\nFiled from the MifBridge editor panel. The full report is on your machine at:\n")
+			TEXT("`%s`\n"),
+			*Endpoint, *Actual, *Path);
+		if (Body.Len() > 4000)
+		{
+			Body = Body.Left(4000) + TEXT("\n\n(truncated for the link - the full report is in the file above)");
+		}
+		const FString Url = FString::Printf(TEXT("%s?title=%s&body=%s"),
+											*Base, *UrlEscape(Title), *UrlEscape(Body));
+		FPlatformProcess::LaunchURL(*Url, nullptr, nullptr);
+	}
+
 	FReply OnFlag(FString Endpoint, bool bWasOk, double Ms)
 	{
 		// The panel does not know the original payload - the ring holds what a transcript needs, not a
@@ -613,6 +689,35 @@ private:
 		{
 			FlaggedThisSession.Add(Endpoint);
 			Rebuild();
+
+			// AND A WAY OUT OF THIS MACHINE. Writing the file used to be the whole feature, and
+			// nothing anywhere read it: four mentions of the reports directory in the entire tree,
+			// all of them the writer and its own comments, while report_intake.py fetches GitHub
+			// issues. So every flag any user has ever clicked went into a folder no code opens.
+			//
+			// The link does not send anything. It opens GitHub's own new-issue form with the fields
+			// filled in, so the reporter reads what they are about to publish and submits it
+			// themselves - the same rule report_intake enforces from the other end, that a report is
+			// data and travels only when a human moves it.
+			const FString IssuePath = Path;
+			const FString IssueActual = Actual;
+			const FString IssueEndpoint = Endpoint;
+			FNotificationInfo Info(FText::Format(
+				NSLOCTEXT("MifBridge", "FlagWritten", "Flagged {0}. The report is saved locally."),
+				FText::FromString(Endpoint)));
+			Info.ExpireDuration = 12.0f;
+			Info.bFireAndForget = true;
+			if (!ReportIssueBase().IsEmpty())
+			{
+				Info.HyperlinkText = NSLOCTEXT("MifBridge", "FlagFile",
+											   "File it on GitHub (opens a prefilled issue)");
+				Info.Hyperlink = FSimpleDelegate::CreateLambda(
+					[IssueEndpoint, IssueActual, IssuePath]()
+					{
+						OpenIssueFor(IssueEndpoint, IssueActual, IssuePath);
+					});
+			}
+			FSlateNotificationManager::Get().AddNotification(Info);
 		}
 		return FReply::Handled();
 	}
@@ -756,10 +861,18 @@ private:
 								SNew(SButton)
 									.ButtonStyle(FAppStyle::Get(), "NoBorder")
 									.ContentPadding(FMargin(4, 0))
+									// THE OLD TEXT PROMISED SOMETHING THAT HAS NEVER HAPPENED: "for the
+									// autonomous loop to pick up, reproduce and fix". Nothing reads
+									// that directory - the loop fetches GitHub issues. For anyone
+									// but us that made this worse than a missing feature: a button
+									// that looks like reporting, tells nobody, and leaves the user
+									// believing they filed something. People do not report a bug
+									// twice.
 									.ToolTipText(LOCTEXT("FlagTip",
 										"Flag this call as wrong. Writes a bug report to "
-										"Saved/MifBridge/reports/ for the autonomous loop to pick up, "
-										"reproduce and fix. Nothing is sent anywhere by itself."))
+										"Saved/MifBridge/reports/ and offers to open a prefilled "
+										"GitHub issue - you see it and submit it yourself. Nothing "
+										"is sent anywhere by itself."))
 									.OnClicked(this, &SMifBridgePanel::OnFlag, R.Endpoint, R.bOk,
 											   R.Milliseconds)
 									[

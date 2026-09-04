@@ -812,7 +812,7 @@ namespace MifBridge
 		if (RawPath.IsEmpty() || !RawPath.StartsWith(TEXT("/")))
 		{
 			Fail(Out, TEXT("path required, must be a mounted object or package path ")
-				TEXT("(e.g. /Game/Foo/Bar, /Engine/..., /DDS2Casino/...)"));
+				TEXT("(e.g. /Game/Foo/Bar, /Engine/..., /YourPlugin/...)"));
 			return;
 		}
 		if (NewPath.IsEmpty() || !NewPath.StartsWith(TEXT("/Game/")))
