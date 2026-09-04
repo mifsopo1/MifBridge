@@ -20,6 +20,7 @@ measured by hand and was not.
 
 | version | date | UE endpoints | Blender ops |
 |---|---|---|---|
+| [Unreleased](#unreleased) | — | 453 | 154 |
 | [0.9.0](#090) | 2026-09-04 | 453 | 151 |
 | [0.8.1](#081) | 2026-09-01 | 440 | 68 |
 | [0.8.0](#080) | 2026-09-01 | 440 | 68 |
@@ -31,6 +32,59 @@ measured by hand and was not.
 | [0.3.0](#030) | 2026-08-10 | 218 | 12 |
 
 ---
+
+## Unreleased
+
+**Not tagged.** Three new Blender ops and the tooling around them, all landed after 0.9.0 shipped.
+
+### The addon can SEE its own work now
+
+Seven render-shaped ops existed and not one returned an image — renders went to disk and nothing
+read them, so an agent could build, light and frame a scene and had never once seen the result. That
+is not a knowledge problem, it is a perception problem, and it is the only change here that alters
+what the tool *can* do rather than how fast it does it.
+
+* **`render_still` gained `returnImage`** — the frame comes back as a base64 PNG, downscaled to
+  `previewMaxPx` (default 1024). Opt-in, so no existing caller is handed an unrequested megabyte.
+  The response carries `renderedWidth`/`renderedHeight` beside `imageWidth`/`imageHeight`, so a
+  preview can never be mistaken for the artifact on disk.
+* **`mesh_quality`** — the objectively checkable things that get an asset rejected from a store:
+  ngons, non-manifold edges, loose and zero-area geometry, unapplied transforms, empty material
+  slots, UV loops outside the tile, texel density spread. It reports every NUMBER and lists only
+  defects with a defensible threshold. **Read `notMeasured` before trusting a clean report** — a
+  mesh with no UV layer gets no UV verdict, which is an absence of data rather than a pass.
+* **`recipe_game_ready`** — the boring pipeline, banked: apply transforms, ensure UVs, then measure
+  the result. Order is the whole value, because unwrapping before scale is baked lays UVs out
+  against the unscaled mesh. If it stops half way it names what it left behind, which is the
+  contract the four UE-side recipes already keep.
+* **`compare_to_reference`** — "match this blockout" as a number. Silhouette IoU and mean luminance
+  difference, reported separately because one blended score would hide which of the two moved.
+  **Render with a transparent film first**: with an opaque background every pixel counts as subject
+  and IoU is 1.0 by definition — the op detects that and returns null rather than a meaningless
+  number.
+
+### Tooling
+
+* **`tools/verify_install.py`** — one command for all three pieces. It tells the causes apart: a
+  refused token means the plugin is *fine* and two configs disagree, a dead port means it is not
+  started, and a squatter on the port means neither. The Blender addon is reported as an optional
+  note, never a failure.
+* **`tools/make_demo.py`** — generates demo images and the numbers behind them from one run, and
+  checks its own output, because a demo generator that writes a blank frame and reports success is
+  worse than none.
+* **`make_release.py --fab`** — packages for a store, leaving out the 305 files of 510 that a buyer
+  never runs. The default zip is unchanged.
+
+### Fixed
+
+* **`start_pie` and `trace` advertised parameters their own handlers refuse.** Both summaries are
+  the text `describe_endpoint` publishes, so the contract a caller read before writing the call
+  disagreed with the guard that answered it. `oneProcess`, `width` and `height` are multiplayer-only;
+  `drawDuration` is only read when `draw` is true. Each condition now attaches to its own parameter.
+* **A constraint whose target was deleted reported itself healthy.** Blender's `is_valid` is correct
+  when a constraint is *created* without a target but is never recomputed when the target is deleted
+  afterwards — the one case the field exists for. `isValid` is now derived, with `targetMissing`
+  beside it. `PIVOT` is exempt, correctly.
 
 ## 0.9.0
 

@@ -57,6 +57,9 @@ BIND_FILE = os.path.join(ROOT, "Source", "MifBridge", "Private", "MifBridgeCommo
 
 # Tracked by git, but NOT part of a deployable plugin. Evidence of a test run and this repo's own CI.
 EXCLUDE_PREFIXES = (".github/",)
+# Set from --fab. A list so the walker, which is module-level, can read it without
+# threading a parameter through every caller.
+FAB_MODE = [False]
 # Patterns rather than a list of the files that happened to exist when this was written. The first
 # version of this named suite_run*.log and *_night.log specifically, and listing the zip afterwards
 # showed cooked_sweep_final.log, fuzz_final.log, fuzz_verify.log and a .bak-predt backup all shipping.
@@ -69,6 +72,34 @@ EXCLUDE_PATTERNS = (
     re.compile(r"^tools/suite_results\.json$"),   # results of one particular run
     re.compile(r"^tools/endpoints_current\.(json|txt)$"),
 )
+
+# WHAT A BUYER NEVER RUNS. Applied ONLY under --fab, never to the default zip.
+#
+# Measured rather than guessed: these four kinds are 305 of the 510 files in the 0.9.0 package, 60%
+# of it. The suites need this project's own fixtures and a live editor, so a buyer cannot run them
+# at all; the dev scripts are release machinery and sweeps.
+#
+# THE AUDITS ARE THE ARGUABLE ONE. They are the credibility story, and unlike the suites they would
+# genuinely run against the shipped source. They are dropped anyway because a buyer did not purchase
+# a code review of their own copy, and 49 files nobody opens reads as a repo dump. That argument
+# belongs in the listing text where it persuades, not in the payload where it confuses. Reversible
+# by deleting one line here.
+FAB_EXCLUDE_PATTERNS = (
+    re.compile(r"^tools/test_[^/]+\.py$"),        # need this repo's fixtures and a live editor
+    re.compile(r"^tools/audit_[^/]+"),            # static analysis of our source, not the buyer's
+    re.compile(r"^tools/probe_[^/]+\.py$"),
+    re.compile(r"^tools/mif_[^/]+\.py$"),
+    re.compile(r"^skills/"),                      # this repo's own agent skills
+)
+
+# KEPT UNDER --fab NO MATTER WHAT, because a pattern above would otherwise catch them and the buyer
+# would lose the two things that make the plugin usable. Listed explicitly: an exclusion that
+# silently removed the MCP server would produce a package that installs and does nothing.
+FAB_KEEP_PREFIXES = (
+    "tools/mcp-server/",      # how an agent talks to any of this
+    "tools/blender-addon/",   # the optional second backend
+)
+
 
 # DEV-ONLY DOCS, excluded by a MARKER IN THE FILE rather than by name.
 #
@@ -933,6 +964,9 @@ def tracked_files():
         # r"\.log$" matched only a path literally beginning with ".log" - i.e. nothing. The first
         # patterns here happened to work because they began with ^tools/, which hid the mistake until
         # the zip was listed and ten artifacts were found still shipping.
+        if FAB_MODE[0] and not rel.startswith(FAB_KEEP_PREFIXES) \
+                and any(p.search(rel) for p in FAB_EXCLUDE_PATTERNS):
+            continue
         if any(p.search(rel) for p in EXCLUDE_PATTERNS):
             continue
         if is_dev_only(os.path.join(ROOT, rel)):
@@ -1052,9 +1086,17 @@ def main():
                     help="stamp a successful 5.3 build against the current Source commit")
     ap.add_argument("--force", action="store_true",
                     help="package even when the badge is stale (it will ship wrong)")
+    ap.add_argument("--fab", action="store_true",
+                    help="package for a store: leave out the test suites, audits and dev scripts a "
+                         "buyer never runs (305 of 510 files at 0.9.0). The default zip is "
+                         "unchanged - what ships is a product decision, not a packaging default.")
     ap.add_argument("--gates", action="store_true",
                     help="report whether the recorded builds still cover Source; changes nothing")
     args = ap.parse_args()
+    # WIRED HERE, and it was not on the first pass - the flag existed, the patterns existed, and
+    # nothing connected them, so --fab would have produced a byte-identical zip and looked like it
+    # worked. Exactly the shape of check this repo keeps deleting, committed while adding one.
+    FAB_MODE[0] = bool(args.fab)
 
     if args.gates:
         # ASK THE GATES WITHOUT ATTEMPTING A RELEASE.
