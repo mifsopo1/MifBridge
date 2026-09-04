@@ -477,14 +477,32 @@ class MifBlenderServer:
             framing.send_json_message(client, payload)
             return True
         except (TypeError, ValueError) as exc:
-            # Payload was not JSON-serialisable. Never let that look like success.
+            # Payload could not be framed. Never let that look like success - and say WHICH of the
+            # two reasons it was, because they point at completely different fixes.
+            #
+            # TOO LARGE IS NOT A BUG IN THE OP. The old message said "op produced a
+            # non-serialisable response ... the op must return JSON-safe values" for both cases, so
+            # a response that serialised perfectly and was merely bigger than the frame sent the
+            # caller looking for a serialisation defect in an op that has none. Measured on 5.0.1:
+            # list_objects costs about 169 bytes per object, so the 64 MiB cap arrives near 400,000
+            # objects - far off, reachable, and worth naming correctly when it happens.
+            too_big = "frame too large" in str(exc)
+            if too_big:
+                message = ("the response is larger than the %d-byte frame limit (%s). The op and "
+                           "its values are fine - there is simply too much of it. Narrow the "
+                           "request: ask for one object, one collection or one frame range rather "
+                           "than the whole scene."
+                           % (framing.MAX_MESSAGE_BYTES, exc))
+            else:
+                message = ("op produced a non-serialisable response (%s). This is a MifBlender bug "
+                           "-- the op must return JSON-safe values." % exc)
             try:
                 framing.send_json_message(
                     client,
                     {"ok": False,
                      "endpoint": payload.get("endpoint") if isinstance(payload, dict) else None,
-                     "error": "op produced a non-serialisable response (%s). This is a "
-                              "MifBlender bug -- the op must return JSON-safe values." % exc})
+                     "responseTooLarge": too_big,
+                     "error": message})
                 return True
             except Exception:
                 return False
