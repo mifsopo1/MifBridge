@@ -80,8 +80,19 @@ BUDGET_USD = "5.00"
 
 
 def log(msg):
+    """Write one line to stdout and the log file. NEITHER may take the watcher down.
+
+    THE PRINT USED TO SIT OUTSIDE THE GUARD, while the comment below claimed a log write can never
+    kill this process. Under pythonw.exe - which is how this now runs, so there is no console window
+    to close or accidentally click into - sys.stdout is None and print() raises AttributeError. That
+    would have killed the watcher on its FIRST log line: alive enough for the scheduler to see a
+    running instance, dead enough to poll nothing.
+    """
     line = time.strftime("%Y-%m-%d %H:%M:%S") + "  " + msg
-    print(line, flush=True)
+    try:
+        print(line, flush=True)
+    except Exception:
+        pass   # no console (pythonw), or a closed pipe - the file below is the real log
     try:
         with io.open(LOG_FILE, "a", encoding="utf-8", newline="\r\n") as f:
             f.write(line + "\n")
