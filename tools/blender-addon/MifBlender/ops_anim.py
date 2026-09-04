@@ -173,8 +173,15 @@ def op_set_keyframe(params):
             dp = transforms[key]
             setattr(obj, dp, _vec3(params, key))
             obj.keyframe_insert(data_path=dp, frame=frame)
-            _apply_interpolation(obj, dp, frame, interp)
-            written.append({"target": "object", "dataPath": dp})
+            # THE SAME COUNT THE dataPath BRANCH KEEPS. It was fixed there and not here,
+            # which left the branch this op's docstring LEADS with - location, rotation,
+            # scale, the ordinary way anybody keys anything - reporting no per-call
+            # evidence at all. keyframesTotal below cannot stand in for it: it sums every
+            # fcurve on the object and its data, so any PRIOR key keeps it non-zero and it
+            # cannot fail. A read/write asymmetry inside one function.
+            keyed_here = _apply_interpolation(obj, dp, frame, interp)
+            written.append({"target": "object", "dataPath": dp,
+                            "keysAtThisFrame": keyed_here})
     else:
         owner, why = _resolve_target(obj, path, take(params, "target", default=None, kind=str))
         if "value" not in params:

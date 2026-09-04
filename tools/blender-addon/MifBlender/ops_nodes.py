@@ -18,10 +18,14 @@ ops_anim, and for the same reason: a helper that knows one version makes three o
 =============================================================================
 A NODE TREE THAT IS NOT LINKED TO ITS OUTPUT DOES NOTHING, SILENTLY
 =============================================================================
-An unconnected Group Output is not an error in Blender - the modifier simply passes the geometry
-through unchanged, which looks exactly like a tree that ran and did nothing useful. So
-list_group_nodes reports whether the output is reachable, and assign_node_group says so on the way
-out rather than leaving somebody to wonder why their modifier has no effect.
+An unconnected Group Output is not an error in Blender, and it does NOT pass the geometry
+through - the modifier evaluates to EMPTY and the object disappears from the viewport and from
+every export. Measured on 3.6.23, 4.2.17, 4.4.0 and 5.0.1: a default cube through a NODES
+modifier with an unlinked Group Output evaluates to 0 vertices on all four. This file said
+"passes through unchanged" in four places, which sends somebody to the opposite end of the
+pipeline - looking for a tree that ran and did nothing, rather than one that ate the mesh. So
+list_group_nodes reports whether the output is reachable, and assign_node_group says so on the
+way out.
 """
 import bpy
 
@@ -275,8 +279,8 @@ def op_list_group_nodes(params):
     """Every node and link in a group, plus whether the Group Output is actually reachable.
 
     THE REACHABILITY LINE IS THE POINT. An unlinked Group Output is not an error - the modifier
-    passes geometry through unchanged, which is indistinguishable from a tree that ran and did
-    nothing. Nothing else in Blender tells you.
+    evaluates to EMPTY and the object vanishes, measured as 0 vertices on 3.6, 4.2, 4.4 and 5.0.
+    Nothing else in Blender tells you, and nothing about the scene says which end to look at.
     """
     reject_unknown(params, _LIST_KEYS, "list_group_nodes")
     tree = _tree(take(params, "group", "tree", required=True, kind=str))
@@ -362,9 +366,10 @@ def op_assign_node_group(params):
             "inputsApplied": applied, "inputsRefused": refused,
             "outputConnected": outs,
             "effectNote": (None if outs else
-                           "the group's output is not connected, so this modifier will pass the "
-                           "mesh through UNCHANGED. That is valid in Blender and looks identical "
-                           "to a modifier that is not working.")}
+                           "the group's output is not connected, so this modifier evaluates to "
+                           "EMPTY - the object will DISAPPEAR from the viewport and from every "
+                           "export, not pass through unchanged. Valid in Blender, and it reports "
+                           "no error. Link something to the Group Output.")}
 
 
 _COMPOSITING_KEYS = {"enabled", "useCompositing", "useSequencer", "withDefaultNodes"}
@@ -422,8 +427,9 @@ def _terminals(tree):
         return _TERMINALS[kind], ("nothing is connected to an output node, so this shader tree "
                                   "contributes nothing.")
     return _TERMINALS.get(kind, _TERMINALS["GeometryNodeTree"]), (
-        "nothing is connected to the Group Output, so this tree passes geometry through "
-        "UNCHANGED. Blender treats that as valid and reports no error.")
+        "nothing is connected to the Group Output, so this tree evaluates to EMPTY - anything "
+        "using it DISAPPEARS rather than passing through. Blender treats that as valid and "
+        "reports no error.")
 
 
 def _owned_tree(name):

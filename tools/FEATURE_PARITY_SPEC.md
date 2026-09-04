@@ -13000,3 +13000,30 @@ out-of-process the way ops_gen already does with gen_status.
       the OS hands back, so every returned path failed to normalise and read as a cross-build diff.
       Fixed by also replacing the os.sep spelling. Worth a look for the same shape elsewhere: a
       normalisation that quietly matches nothing looks exactly like one that had nothing to do.
+
+- [x] **three findings from the six-lens sweep, each verified before it was believed** DONE 2026-09-04
+      A 13-agent sweep returned 49 findings. These three were checked against the source or measured
+      on real Blenders first; none was taken on the agent's word.
+
+      set_keyframe reported keysWrittenAtThisFrame:0 for every location/rotation/scale key. That
+      field sums `w.get("keysAtThisFrame") or 0` over the written list, and the TRANSFORM branch
+      appended entries without the key - so the sum was zero while three keys had been written. The
+      dataPath branch was fixed for exactly this once already; the branch the docstring LEADS with
+      was left. A read/write asymmetry inside one function, and the comment above the field claimed
+      "it IS zero when a call keyed nothing", which was false.
+
+      assign_material_to_faces reported `total if faces is None else len(faces)`. `faces is None` is
+      also true on the fromSlot branch, where targets is only the polygons on that slot - so moving
+      12 faces on a 121-polygon mesh read as requested:121 changed:12, i.e. 109 silently skipped,
+      when every face asked for had landed. Now len(targets), correct on all three branches.
+      fromSlot exists to repair slot order, which is exactly when somebody is counting.
+
+      "An unconnected Group Output passes the geometry through UNCHANGED" appeared four times in
+      ops_nodes.py, including in the note a caller RECEIVES from assign_node_group. It is wrong on
+      every build. Measured rather than reasoned: a default cube through a NODES modifier with an
+      unlinked Group Output evaluates to 0 vertices on 3.6.23, 4.2.17, 4.4.0 and 5.0.1 - the object
+      disappears from the viewport and from every export. "Unchanged" sends somebody to look at
+      their node logic; "gone" sends them to the modifier. Opposite ends of the pipeline.
+
+      B116 asserted the wrong sentence verbatim and went red on the fix, which is the suite working.
+      It now asserts the MEANING - that the note says EMPTY and DISAPPEARS - rather than a phrase.

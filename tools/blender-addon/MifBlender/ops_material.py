@@ -819,7 +819,12 @@ def op_assign_material_to_faces(params):
         "slot": slot,
         "slotMaterial": (obj.material_slots[slot].material.name
                          if obj.material_slots[slot].material else None),
-        "requested": total if faces is None else len(faces),
+        # len(targets), NOT the mesh size. `faces is None` is true on the fromSlot branch
+        # too, where targets is only the polygons currently on that slot - so moving 12
+        # faces off a slot on a 121-polygon mesh reported requested:121 changed:12 and read
+        # as 109 silently skipped, when every face asked for had landed. fromSlot exists to
+        # repair slot order, which is exactly when somebody is counting.
+        "requested": len(targets),
         # MEASURED, not requested: assigning a face to the slot it already had is a no-op,
         # and reporting the request as the result would hide that.
         "changed": changed,

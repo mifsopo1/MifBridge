@@ -1090,8 +1090,13 @@ def main():
           "code would have called a correctly wired compositor inert",
           "CompositorNodeComposite" in terms and "Composite node" in note, "got %s / %s" % (terms, note))
     terms, note = ON._terminals(_CT("GeometryNodeTree", [], []))
-    check("B116 and a geometry tree still terminates at the Group Output, with its own wording",
-          terms == ("NodeGroupOutput",) and "geometry through UNCHANGED" in note,
+    # THE WORDING IS ASSERTED BECAUSE IT WAS WRONG. This read "geometry through UNCHANGED"
+    # until 2026-09-04, when an unlinked Group Output was measured on 3.6.23, 4.2.17, 4.4.0
+    # and 5.0.1: the modifier evaluates to 0 vertices and the object DISAPPEARS. "Unchanged"
+    # and "gone" send somebody to opposite ends of the pipeline, so the note has to say which.
+    check("B116 and a geometry tree still terminates at the Group Output, saying the tree "
+          "evaluates EMPTY rather than passing through",
+          terms == ("NodeGroupOutput",) and "EMPTY" in note and "DISAPPEARS" in note,
           "got %s / %s" % (terms, note))
 
     bpy = sys.modules["bpy"]
