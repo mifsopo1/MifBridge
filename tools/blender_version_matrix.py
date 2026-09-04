@@ -485,7 +485,7 @@ EXPECTED_DIVERGENCE = {
 # The script that runs INSIDE Blender. Kept as a module-level constant rather than a temp file
 # written per version, so what runs is readable here.
 INNER = r'''
-import json, sys, traceback
+import json, re, sys, traceback
 sys.path.insert(0, r"%(addon_parent)s")
 import bpy
 
@@ -542,6 +542,15 @@ def _digest(value, prefix="", into=None):
         into[prefix] = round(value, 6)
     elif isinstance(value, str):
         s = value.replace(_TMP, "<tmp>").replace(_TMP.replace("/", os.sep), "<tmp>")
+        # A DURATION EMBEDDED IN PROSE. _NOISE drops elapsedSeconds by field NAME, which cannot see
+        # a timing inside a sentence: render_still's blockingNote reads "this held Blender's main
+        # thread for 0.4s", and that number differs on every run on every build. It was sitting in
+        # the accepted list as a permanent, meaningless entry - and worse, it would have MASKED a
+        # real change to the note's wording, because the pair was already accepted as differing.
+        #
+        # Narrow on purpose: a decimal followed by 's'. "3 material(s) have no users" carries a
+        # count that IS a cross-build fact and must keep differing, so an integer is left alone.
+        s = re.sub(r"\d+\.\d+s\b", "<duration>", s)
         if s == bpy.app.version_string:
             s = "<version>"
         into[prefix] = s[:120]

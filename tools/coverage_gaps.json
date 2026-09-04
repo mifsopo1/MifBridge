@@ -592,6 +592,7 @@
    "test_widget_tree.py"
   ],
   "create_collection": [
+   "test_blender_refusals.py",
    "test_collections.py"
   ],
   "create_data_layer": [
@@ -683,6 +684,7 @@
    "test_add_k2_node.py",
    "test_anim_state.py",
    "test_array_wildcard_durability.py",
+   "test_audit_fixes.py",
    "test_blend_profiles.py",
    "test_blueprint_breakpoint.py",
    "test_blueprint_watch.py",

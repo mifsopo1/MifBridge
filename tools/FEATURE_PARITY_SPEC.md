@@ -13559,3 +13559,26 @@ out-of-process the way ops_gen already does with gen_status.
       Verified on 4.4 with a negative control: a working texture reports colorSpace sRGB and no
       warning, an image-less node is flagged and named in texturesNeedingAttention, and the count
       went from 1 to 2 because the broken one had simply not been there before.
+
+- [x] **I audited the 61 accepted value differences instead of trusting them** DONE 2026-09-04
+      Six of them turned out to be fixture contamination earlier the same day, so the rest deserved
+      the same suspicion. Classified all 61: engine renames, Filmic to AgX, the Principled socket
+      renames at 4.0, the 5.0 compositor move, pass count 29 to 30 - all genuine Blender history and
+      correctly accepted.
+
+      TWO CLUSTERS GOT A CLOSER LOOK. Nine fields across file_info, save_file and list_materials all
+      concern ORPHANED or UNUSED datablocks, and a cluster that size usually has one cause - which
+      is exactly how the six phantoms were found. Measured over repeated runs instead of guessing:
+      8/8/9/8 orphans and 3/3/3/2 images, IDENTICAL on every run. A real per-build difference in what
+      the sweep leaves behind, not a flake, and correctly accepted.
+
+      The other was a genuine defect in my own tool. render_still's blockingNote reads "this held
+      Blender's main thread for 0.4s", and that number differs on every run on every build. _NOISE
+      drops elapsedSeconds by field NAME and cannot see a timing embedded in a SENTENCE, so the pair
+      sat in the accepted list as a permanently meaningless entry - and worse, being already accepted
+      as differing, it would have MASKED a real change to that note's wording.
+
+      Durations are normalised out of strings now, narrowly: a decimal followed by 's'. An integer
+      is left alone, because "3 material(s) have no users" carries a count that IS a cross-build
+      fact and must keep differing. The baseline went 61 to 60 and that one entry now means
+      something again.
