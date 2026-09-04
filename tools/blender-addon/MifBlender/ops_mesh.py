@@ -3644,6 +3644,116 @@ def op_mesh_quality(params):
     out.update(shared_data_note(obj))
     return out
 
+# ---------------------------------------------------------------------------
+# recipe_game_ready - the boring pipeline, banked
+# ---------------------------------------------------------------------------
+
+def op_recipe_game_ready(params):
+    """Apply transforms, ensure UVs, and MEASURE the result. The first Blender-side recipe.
+
+    Composes ops that already exist rather than reimplementing them, so every guard they carry -
+    shared mesh data, linked libraries, edit mode - still applies. It does nothing a caller could not
+    do by hand; it does it in the right order and then checks.
+
+    params:
+      object (str, required)
+      applyTransform (bool)  bake loc/rot/scale into the mesh data. Default true.
+      unwrap (bool)          unwrap when there is no UV layer. Default true.
+      forceUnwrap (bool)     unwrap even if a layer already exists. Default FALSE - re-unwrapping a
+                             mesh somebody already laid out by hand is destructive and silent.
+      uvMethod (str)         SMART or ANGLE, default SMART.
+    """
+    reject_unknown(params, {"object", "name", "applyTransform", "unwrap", "forceUnwrap",
+                            "uvMethod"}, "recipe_game_ready")
+    obj = get_object(take(params, "object", "name", required=True, kind=str), want_mesh=True)
+
+    do_apply = take_bool(params, "applyTransform", default=True)
+    do_unwrap = take_bool(params, "unwrap", default=True)
+    force_unwrap = take_bool(params, "forceUnwrap", default=False)
+    uv_method = str(take(params, "uvMethod", default="SMART", kind=str)).upper()
+
+    steps = []
+    left_behind = []
+
+    def _record(name, changed, detail=""):
+        steps.append({"step": name, "changed": bool(changed), "detail": detail})
+
+    # ---- 1. transforms ------------------------------------------------------------------
+    # WHY FIRST. Unwrapping before the scale is baked lays UVs out against the unscaled mesh, so a
+    # non-uniformly scaled object gets a texel density that is wrong the moment the scale is applied.
+    # Order is the entire value of a recipe; doing the same three ops in the wrong one is why this
+    # keeps being got wrong by hand.
+    if do_apply:
+        before_scale = tuple(round(v, 6) for v in obj.scale)
+        before_rot = tuple(round(v, 6) for v in obj.rotation_euler)
+        if before_scale == (1.0, 1.0, 1.0) and before_rot == (0.0, 0.0, 0.0):
+            _record("applyTransform", False, "already identity - nothing to bake")
+        else:
+            try:
+                op_apply_transform({"object": obj.name, "location": False,
+                                    "rotation": True, "scale": True})
+                _record("applyTransform", True,
+                        "baked scale %s and rotation %s into the mesh data"
+                        % (list(before_scale), list(before_rot)))
+            except MifOpError as exc:
+                # NOTHING HAS BEEN CHANGED YET at this point, so the recipe can stop cleanly and
+                # say so. That is worth stating rather than leaving the caller to infer it.
+                raise MifOpError(
+                    "recipe stopped at applyTransform and NOTHING was changed: %s" % exc)
+    else:
+        _record("applyTransform", False, "skipped - applyTransform was false")
+
+    # ---- 2. UVs -------------------------------------------------------------------------
+    had_uvs = len(obj.data.uv_layers) > 0
+    if do_unwrap and (force_unwrap or not had_uvs):
+        try:
+            op_uv_unwrap({"object": obj.name, "method": uv_method})
+            _record("uvUnwrap", True,
+                    "unwrapped with %s (%s)" % (uv_method,
+                                                "replaced an existing layout" if had_uvs
+                                                else "there was no UV layer"))
+        except MifOpError as exc:
+            # HALF-APPLIED, AND IT SAYS SO. The transform above is already baked into the mesh data
+            # and no exception undoes it - FTransaction-style rollback does not exist here. The UE
+            # recipes' contract is not "leaves nothing" but "TELLS YOU what it left", and this is
+            # that contract on the Blender side.
+            if steps and steps[0].get("changed"):
+                left_behind.append(
+                    "applyTransform ALREADY RAN and its result is baked into the mesh data - the "
+                    "object's scale and rotation are now identity and that is NOT undone by this "
+                    "failure. The mesh is in a valid state, just further along than you asked for.")
+            raise MifOpError(
+                "recipe stopped at uvUnwrap: %s%s"
+                % (exc, (" WHAT IS LEFT BEHIND: " + " ".join(left_behind)) if left_behind else ""))
+    elif had_uvs and not force_unwrap:
+        _record("uvUnwrap", False,
+                "skipped - a UV layer already exists and forceUnwrap is false. Re-unwrapping a "
+                "layout somebody made by hand is destructive and silent, so it is opt-in.")
+    else:
+        _record("uvUnwrap", False, "skipped - unwrap was false")
+
+    # ---- 3. measure ---------------------------------------------------------------------
+    # THE POINT OF THE RECIPE. Reporting the steps it took would be exactly the "ok:true is not
+    # proof" failure in a new hat: the steps ran, and whether the result is shippable is a different
+    # question that only a measurement answers.
+    quality = op_mesh_quality({"object": obj.name})
+
+    return {
+        "object": obj.name,
+        "steps": steps,
+        # NO leftBehind FIELD HERE, and its absence is deliberate. A failure RAISES, so this dict is
+        # only ever built on the success path where nothing was left half-applied - the field could
+        # never be anything but empty, and a field that is always empty is decoration. What was left
+        # behind is named in the ERROR TEXT instead, which is where the UE recipes put it too and
+        # where a caller who hit the failure will actually read it. audit_blender_consequence_fields
+        # caught this by asking who reads the field; the answer was nobody, correctly.
+        "quality": quality,
+        "concernCount": quality.get("concernCount"),
+        "recipeNote": ("the steps above say what was DONE; quality says whether the result is "
+                       "shippable, and they are different questions. Read quality.notMeasured "
+                       "before treating concernCount:0 as a clean bill of health."),
+    }
+
 OPS = {
     "import_mesh": op_import_mesh,
     "decimate_mesh": op_decimate_mesh,
@@ -3653,6 +3763,7 @@ OPS = {
     "set_vertex_color": op_set_vertex_color,
     "mesh_stats": op_mesh_stats,
     "mesh_quality": op_mesh_quality,
+    "recipe_game_ready": op_recipe_game_ready,
     "export_mesh": op_export_mesh,
     "select_edges": op_select_edges,
     "bevel_edges": op_bevel_edges,

@@ -4827,6 +4827,14 @@ def bl_mesh_quality(object: str, uv_layer: str = None, texel_density_for: float 
 
 
 @mcp.tool()
+def bl_recipe_game_ready(object: str, apply_transform: bool = None, unwrap: bool = None,
+                         force_unwrap: bool = None, uv_method: str = None) -> dict:
+    "THE BORING PIPELINE, BANKED: apply transforms, ensure a UV layer, then MEASURE the result with the same battery bl_mesh_quality exposes. Composes existing ops rather than reimplementing them, so every guard they carry - shared mesh data, linked libraries, edit mode - still applies; it does nothing you could not do by hand, it does it in the right ORDER and then checks. Order is the whole value: unwrapping before the scale is baked lays UVs out against the unscaled mesh, so a non-uniformly scaled object ends up with a texel density that is wrong the moment scale is applied. forceUnwrap defaults FALSE because re-unwrapping a layout somebody made by hand is destructive and silent. If a step fails half way it reports leftBehind saying what already happened and is NOT undone - a partial composition that stayed quiet would be the worst outcome. Read quality.notMeasured before treating concernCount:0 as a clean bill of health."
+    return _blender("recipe_game_ready", object=object, applyTransform=apply_transform,
+                    unwrap=unwrap, forceUnwrap=force_unwrap, uvMethod=uv_method)
+
+
+@mcp.tool()
 def bl_create_collision_hull(object: str, index: int = None, name: str = None,
                              prefix: str = None, world_space: bool = None,
                              max_vertices: int = None, collection: str = None) -> dict:

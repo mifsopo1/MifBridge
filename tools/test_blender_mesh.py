@@ -683,6 +683,39 @@ def main():
               and "uv" not in (nouv.get("checks") or {}),
               json.dumps(nouv.get("notMeasured"))[:200])
 
+    # ------------------------------------------------------------------
+    # T791  recipe_game_ready - and what it says when it stops half way
+    # ------------------------------------------------------------------
+    print("")
+    print("=== T791: the recipe fixes what it can, and admits what it left behind ===")
+    call("create_primitive", kind="cylinder", name="R_Ok", radius=1.0)
+    call("transform_object", object="R_Ok", scale=[2.0, 1.0, 1.0])
+    pre = call("mesh_quality", object="R_Ok")
+    rec = call("recipe_game_ready", object="R_Ok")
+    check("T791 the recipe reduces the concern count - it bakes the transform the caller forgot",
+          (rec.get("concernCount") or 99) < (pre.get("concernCount") or 0),
+          "before=%s after=%s" % (pre.get("concernCount"), rec.get("concernCount")))
+    check("T791 and it does NOT hide what it cannot fix - the ngon caps are still reported, "
+          "because a recipe that quietly dropped the remaining problems would be worse than none",
+          any("ngon" in c for c in ((rec.get("quality") or {}).get("concerns") or [])),
+          json.dumps((rec.get("quality") or {}).get("concerns"))[:180])
+    check("T791 an existing UV layout is NOT re-unwrapped without forceUnwrap - re-unwrapping work "
+          "somebody did by hand is destructive and silent",
+          any(s["step"] == "uvUnwrap" and s["changed"] is False for s in rec.get("steps") or []),
+          json.dumps(rec.get("steps"))[:200])
+
+    # THE HALF-APPLIED PATH, which is the whole reason the UE recipes have a contract. Forced with a
+    # bad uvMethod so the transform bakes and the unwrap then refuses.
+    call("create_primitive", kind="cube", name="R_Half", size=2)
+    call("transform_object", object="R_Half", scale=[3.0, 1.0, 1.0])
+    half = call("recipe_game_ready", object="R_Half", forceUnwrap=True, uvMethod="NOT_A_METHOD")
+    _err = str(half.get("error") or "")
+    check("T791 a recipe that stops half way REFUSES rather than reporting success",
+          half.get("ok") is False, _err[:160])
+    check("T791 and it names WHAT IS LEFT BEHIND - the transform is already baked and nothing "
+          "undoes it, which is the UE recipes' contract applied to the Blender side",
+          "WHAT IS LEFT BEHIND" in _err and "applyTransform" in _err, _err[:220])
+
     print("")
     print("=" * 70)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
