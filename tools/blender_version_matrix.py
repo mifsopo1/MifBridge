@@ -70,63 +70,163 @@ PAYLOADS = {
     "bisect_plane": {"object": "Cube", "planeCo": [0, 0, 0], "axis": "Z"},
     "uv_info": {"object": "Cube"},
     "uv_unwrap": {"object": "Cube"},
-    "list_modifiers": {"object": "Cube"},
+    "list_modifiers": {"object": "MifSpare"},
     "list_vertex_groups": {"object": "Cube"},
     "list_shape_keys": {"object": "Cube"},
-    "list_constraints": {"object": "Cube"},
+    "list_constraints": {"object": "MifSpare"},
     "list_animation_data": {"object": "Cube"},
     "list_keyframes": {"object": "Cube"},
     "list_custom_properties": {"object": "Cube"},
     "list_particles": {"object": "Cube"},
+    "list_bones": {"object": "MifRig"},
     "set_object_visibility": {"object": "Cube", "hideRender": False},
     "set_light": {"object": "Light", "energy": 100.0},
     "set_camera": {"object": "Camera", "lens": 50.0},
-    "aim_object": {"object": "Camera", "target": [0, 0, 0]},
+    # TARGET IS A NAME, NOT A VECTOR - "'target' must be str, got list" is what the first guess got.
+    "aim_object": {"object": "Camera", "target": "Cube"},
     "set_light_ies": {"object": "Light", "clear": True},
     "set_light_linking": {"object": "Light", "clearReceivers": True},
-    "set_camera_panorama": {"object": "Camera", "type": "EQUIRECTANGULAR"},
-    "create_primitive": {"kind": "cube"},
+    "set_camera_panorama": {"object": "Camera", "panoramaType": "EQUIRECTANGULAR"},
+    "create_primitive": {"kind": "cube", "name": "MifSweepCube"},
     "create_light": {"type": "POINT"},
     "create_camera": {},
     "create_empty": {},
     "create_text": {"body": "Mif"},
     "create_curve": {"points": [[0, 0, 0], [1, 0, 0]]},
-    "create_armature": {"bones": [{"name": "root", "head": [0, 0, 0], "tail": [0, 0, 1]}]},
-    "create_collection": {"name": "MifMatrixColl"},
-    "link_objects": {"collection": "MifMatrixColl", "object": "Cube"},
+    "create_armature": {"name": "MifRig2",
+                        "bones": [{"name": "root", "head": [0, 0, 0], "tail": [0, 0, 1]}]},
+    "create_collection": {"name": "MifSweepColl"},
+    "link_objects": {"collection": "MifSweepColl", "object": "Cube"},
+    "unlink_objects": {"collection": "MifMatrixColl", "object": "MifSpare",
+                       "allowOrphans": True},
     "set_collection_visibility": {"collection": "MifMatrixColl", "hideRender": True},
     "create_view_layer": {"name": "MifMatrixVL"},
     "set_view_layer": {"enablePasses": ["z"]},
     "set_world": {"strength": 0.5},
     "set_compositing": {"enabled": True},
+    "compositor_info": {},
     "set_render_settings": {"samples": 4},
     "set_color_management": {"exposure": 0.0},
     "add_constraint": {"object": "Cube", "type": "TRACK_TO", "target": "Camera"},
+    "remove_constraint": {"object": "MifSpare", "index": 0},
     "add_modifier": {"object": "Cube", "type": "SUBSURF"},
-    "set_keyframe": {"object": "Cube", "path": "location", "frame": 1},
+    "remove_modifier": {"object": "MifSpare", "name": "Subdivision"},
+    "apply_modifier": {"object": "MifSpare", "name": "Subdivision"},
+    # THE ANIMATION FAMILY, all of which need the f-curve the fixtures lay down first.
+    "set_keyframe": {"object": "Cube", "location": [0, 0, 1], "frame": 20},
+    "delete_keyframe": {"object": "Cube", "path": "location", "frame": 10},
+    "edit_fcurve": {"object": "Cube", "path": "location", "index": 2,
+                    "extrapolation": "LINEAR"},
+    "move_keyframes": {"object": "Cube", "path": "location", "offset": 2},
+    "add_fcurve_modifier": {"object": "Cube", "path": "location", "index": 2, "type": "CYCLES"},
+    "evaluate_at_frame": {"object": "Cube", "paths": ["location"], "frame": 5},
+    "bake_to_keyframes": {"object": "Cube", "start": 1, "end": 5},
+    "add_driver": {"object": "Cube", "path": "scale", "index": 0, "expression": "1.0"},
+    "remove_driver": {"object": "Cube", "path": "scale", "index": 0},
+    "add_nla_strip": {"object": "Cube", "action": "MifMatrixAction"},
+    "assign_action": {"object": "Cube", "action": "MifMatrixAction"},
     "set_frame_range": {"start": 1, "end": 10},
     "create_action": {"name": "MifMatrixAction"},
+    "list_actions": {},
+    "set_marker": {"name": "MifMark2", "frame": 7},
+    "list_markers": {},
     "add_particles": {"object": "Cube", "count": 10},
     "add_rigid_body": {"object": "Cube", "type": "ACTIVE"},
-    "add_cloth": {"object": "Cube"},
+    # CLOTH REFUSES 8 VERTICES - "a quad has nothing to bend" - so it gets the grid.
+    "add_cloth": {"object": "MifGrid"},
     "add_collision": {"object": "Cube"},
-    "create_material": {"name": "MifMatrixMat"},
+    "physics_info": {},
+    "create_material": {"name": "MifSweepMat"},
     "set_material_properties": {"material": "MifMatrixMat", "baseColor": [1, 0, 0]},
     "describe_material": {"material": "MifMatrixMat"},
-    "assign_material_to_faces": {"object": "Cube", "material": "MifMatrixMat", "faces": [0]},
-    "create_node_group": {"name": "MifMatrixGroup"},
+    "set_material_slots": {"object": "MifSpare", "slots": ["MifMatrixMat"]},
+    "assign_material_to_faces": {"object": "Cube", "faces": [0], "slot": 0},
+    "create_node_group": {"name": "MifSweepGroup"},
     "add_group_node": {"group": "MifMatrixGroup", "type": "GeometryNodeSetPosition"},
+    "add_group_interface": {"group": "MifMatrixGroup", "name": "Amount",
+                            "socketType": "NodeSocketFloat"},
+    "link_group_nodes": {"group": "MifMatrixGroup", "fromNode": "MifNodeA",
+                         "fromSocket": "Geometry", "toNode": "MifNodeB",
+                         "toSocket": "Geometry"},
     "list_group_nodes": {"group": "MifMatrixGroup"},
+    "assign_node_group": {"object": "MifSpare", "group": "MifMatrixGroup"},
     "set_viewport_shading": {"shading": "SOLID"},
     "transform_object": {"object": "Cube", "location": [1, 0, 0]},
     "apply_transform": {"object": "Cube"},
-    "set_origin": {"object": "Cube", "to": "GEOMETRY"},
-    "clean_mesh": {"object": "Cube"},
-    "decimate_mesh": {"object": "Cube", "ratio": 0.5},
-    "bevel_edges": {"object": "Cube", "width": 0.02},
-    "select_edges": {"object": "Cube"},
-    "rename_bones": {"object": "Cube", "map": {}},
+    # mode, NOT "to" - the accept list is location, mode, name, object.
+    "set_origin": {"object": "Cube", "mode": "ORIGIN_GEOMETRY"},
+    # EVERY STEP OFF IS REFUSED outright: "clean_mesh was asked to do nothing".
+    "clean_mesh": {"object": "Cube", "recalcNormals": True},
+    "decimate_mesh": {"object": "MifSpare", "ratio": 0.5},
+    # offset, NOT width, and a selector is required.
+    "bevel_edges": {"object": "MifSpare", "allEdges": True, "offset": 0.02, "segments": 2},
+    "select_edges": {"object": "Cube", "allEdges": True},
+    "extrude_skirt": {"object": "MifGrid", "boundaryOnly": True, "distance": 0.1},
+    "separate_mesh": {"object": "MifSpare", "mode": "LOOSE"},
+    "boolean_op": {"target": "Cube", "cutter": "MifCutter", "operation": "DIFFERENCE",
+                   "deleteCutter": False},
+    "join_objects": {"target": "Cube", "objects": ["MifSpare"]},
+    "transfer_weights": {"source": "MifCutter", "destination": "Cube"},
+    "normalize_weights": {"object": "Cube"},
+    "rename_bones": {"object": "MifRig", "map": {"tip": "tip_renamed"}},
+    "set_bone_pose": {"object": "MifRig", "bone": "root", "location": [0, 0, 0.1]},
+    "set_shape_key": {"object": "Cube", "name": "MifKey", "value": 0.5},
+    "set_custom_property": {"object": "Cube", "key": "mif_probe2", "value": 2},
+    "list_collections": {},
+    "list_view_layers": {},
+    "world_info": {},
+    "render_info": {},
+    "render_status": {},
+    "file_info": {},
+    "scene_info": {},
+    "list_objects": {},
+    "list_lights": {},
+    "list_cameras": {},
+    "list_materials": {},
+    "frame_viewport": {},
+    "set_viewport_view": {"view": "FRONT"},
+    "ping": {},
 }
+
+# FIXTURES, RUN BEFORE THE SWEEP AND IN THIS ORDER.
+#
+# THE SWEEP IS ALPHABETICAL, which is fine for finding drift and useless for building state:
+# add_group_node runs before create_node_group, so it refused with "no node group named ..." on
+# every build and its bpy calls were never reached. Same for every op needing an armature, a second
+# mesh, an f-curve or a material slot. Forty ops were refused at the door for want of a fixture,
+# and an op refused at the door hides an API break exactly as well as no test at all - which is not
+# hypothetical, because the compositor bug lived PAST the first guard.
+#
+# Order matters here and nowhere else in this file. A failure is recorded and does not stop the run:
+# a fixture that cannot be built on one version is itself worth seeing, and stopping would turn one
+# missing prerequisite into a blank report.
+FIXTURES = [
+    ("create_node_group", {"name": "MifMatrixGroup"}),
+    ("add_group_node", {"group": "MifMatrixGroup", "type": "GeometryNodeSetPosition",
+                        "name": "MifNodeA"}),
+    ("add_group_node", {"group": "MifMatrixGroup", "type": "GeometryNodeSetPosition",
+                        "name": "MifNodeB"}),
+    ("create_armature", {"name": "MifRig",
+                         "bones": [{"name": "root", "head": [0, 0, 0], "tail": [0, 0, 1]},
+                                   {"name": "tip", "head": [0, 0, 1], "tail": [0, 0, 2],
+                                    "parent": "root"}]}),
+    # A SECOND MESH, for the ops that need something to combine with - and a GRID rather than a cube
+    # for cloth, which refuses 8 vertices outright: "a quad has nothing to bend".
+    ("create_primitive", {"kind": "cube", "name": "MifCutter", "location": [0.5, 0.5, 0.5]}),
+    ("create_primitive", {"kind": "cube", "name": "MifSpare", "location": [4, 0, 0]}),
+    ("create_primitive", {"kind": "grid", "name": "MifGrid", "location": [0, 4, 0]}),
+    ("create_material", {"name": "MifMatrixMat"}),
+    ("set_material_slots", {"object": "Cube", "slots": ["MifMatrixMat"]}),
+    ("create_collection", {"name": "MifMatrixColl"}),
+    ("link_objects", {"collection": "MifMatrixColl", "object": "MifSpare"}),
+    # AN F-CURVE, without which the whole animation-editing family refuses for want of one.
+    ("set_keyframe", {"object": "Cube", "location": [0, 0, 0], "frame": 1}),
+    ("set_keyframe", {"object": "Cube", "location": [0, 0, 2], "frame": 10}),
+    ("set_marker", {"name": "MifMark", "frame": 5}),
+    ("add_modifier", {"object": "MifSpare", "type": "SUBSURF"}),
+    ("add_constraint", {"object": "MifSpare", "type": "TRACK_TO", "target": "Camera"}),
+    ("set_custom_property", {"object": "Cube", "key": "mif_probe", "value": 1}),
+]
 
 # Ops deliberately NOT run, with the reason. Each would leave the throwaway process doing something
 # slow or pointless rather than testing an API.
@@ -188,6 +288,25 @@ except Exception:
 payloads = json.loads(r"""%(payloads)s""")
 skip = json.loads(r"""%(skip)s""")
 only = json.loads(r"""%(only)s""")
+fixtures = json.loads(r"""%(fixtures)s""")
+
+# FIXTURES FIRST, IN ORDER. The sweep below is alphabetical, which builds no state - add_group_node
+# runs before create_node_group ever makes a group. A failure here is recorded and does NOT stop the
+# run: a fixture that cannot be built on one build is itself worth seeing, and stopping would turn
+# one missing prerequisite into a blank report.
+out["fixtures"] = []
+for fname, fparams in fixtures:
+    if fname not in table:
+        out["fixtures"].append({"op": fname, "status": "absent"})
+        continue
+    try:
+        table[fname](dict(fparams))
+        out["fixtures"].append({"op": fname, "status": "ok"})
+    except MifOpError as exc:
+        out["fixtures"].append({"op": fname, "status": "refused", "detail": str(exc)[:200]})
+    except Exception as exc:
+        out["fixtures"].append({"op": fname, "status": "RAISED",
+                                "detail": "%%s: %%s" %% (type(exc).__name__, str(exc)[:200])})
 
 for name in sorted(table):
     if only and name not in only:
@@ -205,6 +324,22 @@ for name in sorted(table):
                                 "detail": "%%s: %%s" %% (type(exc).__name__, str(exc)[:220])}
 print("MIFMATRIX" + json.dumps(out))
 '''
+
+
+# EXCEPTION TYPES THAT SHOULD NEVER APPEAR INSIDE A REFUSAL MESSAGE.
+#
+# A refusal is not a finding - unless it is a raw exception WEARING a refusal's clothes. add_driver
+# called driver_add(data_path=..., index=...) and driver_add takes NO keyword arguments on any
+# Blender from 3.6 to 5.0, so the op had never worked on any build. It shipped green because the
+# TypeError was caught and re-raised as a MifOpError reading "Blender refused to add a driver", and
+# every check that asks only "did it refuse politely" agreed with it.
+#
+# That is the same shape as the compositor: correct-looking at every layer that was inspected. The
+# catch is not wrong - a caller SHOULD get a sentence rather than a traceback - but a message
+# carrying a Python exception type is evidence about the ADDON, not about the caller's arguments.
+SUSPECT_IN_REFUSAL = ("TypeError", "AttributeError", "KeyError", "IndexError", "NameError",
+                      "ValueError:", "takes no keyword arguments", "unexpected keyword argument",
+                      "object has no attribute", "is not defined")
 
 
 def installs(wanted=None):
@@ -225,6 +360,7 @@ def run_one(label, exe, only, scratch):
         "payloads": json.dumps(PAYLOADS),
         "skip": json.dumps(SKIP),
         "only": json.dumps(sorted(only or [])),
+        "fixtures": json.dumps(FIXTURES),
     })
     try:
         proc = subprocess.run([exe, "--background", "--factory-startup", "--python", script],
@@ -242,6 +378,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ops", default="", help="comma-separated op names")
     ap.add_argument("--versions", default="", help="comma-separated version labels")
+    # WHY THE REFUSAL TEXT IS WORTH A FLAG: the ops that refuse on every build are the
+    # untested ones, and the message says exactly which payload key is missing. Guessing
+    # a second time is how the first twelve payloads came out wrong.
+    ap.add_argument("--show-refusals", action="store_true",
+                    help="print the refusal message for ops refused on every build")
     args = ap.parse_args()
     only = {o.strip() for o in args.ops.split(",") if o.strip()}
     want_v = {v.strip() for v in args.versions.split(",") if v.strip()}
@@ -321,6 +462,38 @@ def main():
             refused_everywhere.append(op)
     skipped = sorted({op for r in reports for op, e in r.get("results", {}).items()
                       if e.get("status") == "skipped"})
+    # SUSPECT REFUSALS - a refusal quoting a Python exception is the addon meeting an API that is
+    # not what it expected, dressed as a polite decline. See SUSPECT_IN_REFUSAL.
+    suspect = []
+    for op in ops:
+        for r in reports:
+            e = r.get("results", {}).get(op, {})
+            if e.get("status") != "refused":
+                continue
+            detail = e.get("detail", "")
+            hit = next((s for s in SUSPECT_IN_REFUSAL if s in detail), None)
+            if hit:
+                suspect.append((op, r.get("version", "?"), hit, detail))
+                break
+    if suspect:
+        print("")
+        print("SUSPECT REFUSALS - a refusal quoting a Python exception is a raw break wearing a")
+        print("refusal's clothes. add_driver had NEVER worked on any build and looked like this:")
+        for op, v, hit, detail in suspect:
+            print("  %-26s %-12s [%s] %s" % (op, v, hit, detail[:90]))
+
+    bad_fixtures = []
+    for r in reports:
+        for f in r.get("fixtures", []):
+            if f.get("status") in ("RAISED", "refused", "absent"):
+                bad_fixtures.append((r.get("version", "?"), f.get("op"), f.get("status"),
+                                     f.get("detail", "")))
+    if bad_fixtures:
+        print("")
+        print("FIXTURES THAT DID NOT BUILD - every op depending on one of these then refuses, so")
+        print("read these BEFORE reading the reach numbers below:")
+        for v, op, status, detail in bad_fixtures:
+            print("  %-12s %-24s %-8s %s" % (v, op, status, detail[:90]))
     print("")
     print("REACH - how far the calls actually got, which is not the same as the findings above:")
     for r in reports:
@@ -335,6 +508,17 @@ def main():
         print("  Give them a payload in PAYLOADS to close the gap:")
         for i in range(0, len(refused_everywhere), 4):
             print("    " + "  ".join("%-26s" % o for o in refused_everywhere[i:i + 4]))
+    if refused_everywhere and args.show_refusals:
+        print("")
+        print("  WHY EACH REFUSED (first build reporting one):")
+        for op in refused_everywhere:
+            detail = ""
+            for r in reports:
+                d = r.get("results", {}).get(op, {})
+                if d.get("status") == "refused":
+                    detail = d.get("detail", "")
+                    break
+            print("    %-26s %s" % (op, detail[:150]))
     if skipped:
         print("")
         print("  DELIBERATELY NOT RUN - %d op(s), each with a reason in SKIP: %s"
@@ -343,7 +527,7 @@ def main():
     print("A refusal is NOT a finding - an op declining because the default scene has no armature")
     print("is the op working. Raw exceptions and divergences are the findings; REACH is how much of")
     print("the table those findings actually cover.")
-    return 1 if (raised or fatal) else 0
+    return 1 if (raised or fatal or suspect) else 0
 
 
 if __name__ == "__main__":

@@ -1414,11 +1414,20 @@ def op_add_driver(params):
     except (TypeError, ValueError):
         before = None
 
-    kwargs = {"data_path": path}
-    if index is not None:
-        kwargs["index"] = int(index)
+    # POSITIONAL, NOT KEYWORDS. driver_add() takes NO keyword arguments - not on 5.0, and not on
+    # 3.6, 4.2 or 4.4 either. This op called it as driver_add(data_path=..., index=...) and had
+    # therefore NEVER WORKED ON ANY BLENDER, on any build this addon supports.
+    #
+    # It shipped and stayed green because the TypeError was caught right here and re-raised as a
+    # MifOpError reading "Blender refused to add a driver" - so an API break that had never once
+    # succeeded wore the clothes of a legitimate refusal, and every check that asks only "did it
+    # refuse politely" agreed with it.
+    #
+    # Found 2026-09-03 by blender_version_matrix, and only because the reach report made it
+    # conspicuous that this op never reached its bpy calls on any version. Verified against all four
+    # installs: keywords raise TypeError everywhere, positional returns an FCurve everywhere.
     try:
-        fc = obj.driver_add(**kwargs)
+        fc = obj.driver_add(path) if index is None else obj.driver_add(path, int(index))
     except (RuntimeError, TypeError) as exc:
         raise MifOpError("Blender refused to add a driver on '%s': %s. NOTHING was added."
                          % (path, exc))
@@ -1494,11 +1503,13 @@ def op_remove_driver(params):
                          "NOTHING was removed."
                          % (obj.name, path, "" if index is None else "[%s]" % index))
 
-    kwargs = {"data_path": path}
-    if index is not None:
-        kwargs["index"] = int(index)
+    # POSITIONAL for the same reason as driver_add above - driver_remove() takes no keyword
+    # arguments either, so the removal half had never worked on any build either.
     try:
-        obj.driver_remove(**kwargs)
+        if index is None:
+            obj.driver_remove(path)
+        else:
+            obj.driver_remove(path, int(index))
     except (RuntimeError, TypeError) as exc:
         raise MifOpError("Blender refused to remove the driver on '%s': %s." % (path, exc))
 
