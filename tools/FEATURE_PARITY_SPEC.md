@@ -12109,6 +12109,39 @@ out-of-process the way ops_gen already does with gen_status.
       than changing unilaterally, because the current split is a considered design and not an
       oversight.
 
+- [x] **audit_stale_counts - the front-door numbers, checked against the tools that compute them** DONE 2026-09-04
+      Written because this failed FOUR TIMES in one working day, and the fourth was found by
+      accident while reading the docs for an unrelated reason.
+
+        * 00_ARCHITECTURE said "68 ops across 14 modules" against 140 across 20 - on a line ALREADY
+          carrying a comment explaining it had read "12 ops" for long enough to be misleading.
+          Knowing about the trap did not prevent it.
+        * README's Blender cell said the same, with a sentence claiming the figure was "counted at
+          packaging time, not typed here" while being typed there.
+        * The badge was 72 ops, 13 endpoints, 85 tools and 12 suites out of date. check_badge knew
+          and is not in --gates.
+        * And the audit found a FIFTH on its first run: "the other 63 Blender ops", a DERIVED count
+          (68 minus the five gen_* ops) that no badge check could ever have covered.
+
+      FOUR COUNTS ONLY, and only where a tool already computes them - UE endpoints, Blender ops,
+      MCP tools, test suites - reusing make_release's own functions rather than reimplementing them,
+      which would be the duplication this file exists to complain about one level up. Timings and
+      "roughly N" are out of scope: a number nothing can recompute cannot be checked, and guessing
+      would make it cry wolf.
+
+      SCOPED TO THE DOCS THAT ASSERT THE PRESENT. The postmortems, the gotchas and this spec are
+      LOGS whose dated numbers were correct when written and must stay. Auditing a log for
+      staleness asks history to keep changing.
+
+      A HISTORICAL QUOTE IS NOT A CLAIM. `this line read "12 ops"` must not be flagged, so quoted
+      numbers and past-tense-about-the-text sentences are exempt - a heuristic, wrong only in the
+      safe direction, since a missed one lands in the baseline and is accepted once by a person.
+
+      GATED, and unlike check_badge this is not churn: the badge changes every time an op is added,
+      while this fires only when somebody WRITES a number that disagrees. With none written, adding
+      an op leaves it green. 0.23s. Ground-truthed both ways - a planted "99 Blender ops" fails with
+      the file, line and both numbers; a planted historical quote is correctly ignored.
+
 - [ ] **Tier 3 - motion worth rendering** (1 of 11 left)
       DONE 2026-09-03: evaluate_at_frame, edit_fcurve, add_fcurve_modifier, create_action /
       assign_action / list_actions, set_bone_pose, set_shape_key, bake_to_keyframes, markers with

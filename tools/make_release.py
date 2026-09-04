@@ -604,6 +604,23 @@ def check_static_audits():
                        # checker that proves its own newest arm before reporting.
                        ("spec_check.py", []),
                        ("audit_message_endpoints.py", []),
+                       # THE FRONT-DOOR NUMBERS, gated because they failed FOUR TIMES in one
+                       # working day and nothing said so. The architecture doc claimed 68 Blender
+                       # ops against a real 140 - on a line already carrying a comment about having
+                       # read "12 ops" for too long - the README cell said the same, its badge was
+                       # 72 ops out, and a derived "the other 63 Blender ops" was stale in a
+                       # phrasing no badge check could ever cover.
+                       #
+                       # NEEDS --check: bare, it reports and exits 0, the same trap its siblings
+                       # carry. 0.23s.
+                       #
+                       # THIS IS NOT CHURN, which is the objection that keeps check_badge out of
+                       # this tuple. The badge changes every time an op is added; this fires only
+                       # when somebody WRITES a number into a current-state doc that disagrees with
+                       # the tool computing it. With none written, adding an op leaves it green.
+                       # Scoped to the docs that assert the PRESENT - the postmortems, gotchas and
+                       # the spec are logs whose dated numbers are correct history.
+                       ("audit_stale_counts.py", ["--check"]),
                        # A POSTMORTEM CITES THIS AS ITS PREVENTION, and until 2026-09-03 it had no
                        # non-zero exit anywhere in the file - it could not fail, so nothing made a
                        # person read the drift it found. A "Prevention" line is a claim that a class
