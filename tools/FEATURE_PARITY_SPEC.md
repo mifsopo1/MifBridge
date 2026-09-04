@@ -14774,3 +14774,52 @@ out-of-process the way ops_gen already does with gen_status.
 
       16 of 16 answer. Mutation-tested: removing create_node_group's reporting makes --check name it
       and exit 1.
+
+- [x] **NaN was accepted everywhere in the addon, and made the response invalid JSON** DONE 2026-09-04
+      Three linked defects, measured on 5.0.1.
+
+      Python's json module PARSES NaN, Infinity and -Infinity by default, so a caller can send one
+      over the bridge and it arrives as a real float. take_float's guard was `float(value)`, which is
+      perfectly happy with it, and so is Blender: a NaN location is ACCEPTED, reads back as nan, and
+      poisons everything that touches the object's bounds - the viewport frames nothing, physics goes
+      unstable, an exporter writes nan into the file - while every field in the response agrees the
+      call worked.
+
+      Then the response goes out as {"location": [NaN, 0.0, 0.0]}, which is NOT valid JSON. Python's
+      json.loads accepts it, so the Python client never noticed; a strict parser rejects the whole
+      frame. The bridge could emit an answer no conforming client can read.
+
+      AND THE DEFENCE ALREADY EXISTED, wired to the wrong door. jsonable turns a non-finite float
+      into a string and its docstring says an unserialisable response is "a silent hang from the
+      caller's point of view" - and server._execute called it only on the `result` key, the RARE
+      path. An op returning a dict, which is nearly all of them, went to json.dumps untouched.
+
+      Fixed at three layers: take_float refuses non-finite; the four vector parsers share
+      finite_floats, because they convert with a bare float(x) and never went near take_float, so a
+      NaN in a LIST still landed; and every response passes through jsonable, so a COMPUTED
+      non-finite value cannot produce invalid JSON either. Dict branches included - {"x": NaN} lands
+      exactly as hard as [NaN, 0, 0].
+
+      jsonable's depth cap went 8 -> 24. It guards against CYCLES, not nesting, and at 8 it was about
+      to start truncating real answers now that every response passes through it.
+
+- [ ] **the C++ number reader guards a string "1e999" and not the number 1e999** (10 min + a rebuild)
+      Found 2026-09-04 while fixing the addon's NaN handling, by reading the UE twin of the same
+      question rather than assuming it shared the defect - it has HALF the guard.
+
+      MifBridgeCommon.cpp's ParseWholeNumber ends with `if (!FMath::IsFinite(Parsed)) return false;`
+      so a caller sending the STRING "1e999" is refused. JsonValueAsNumber's other branch is:
+
+          if (Value->Type == EJson::Number) { OutValue = Value->AsNumber(); return true; }
+
+      with no such check. 1e999 is a perfectly valid JSON number literal that overflows to +Infinity
+      as a double, so `{"scale": 1e999}` is ACCEPTED and `{"scale": "1e999"}` is REFUSED - the same
+      value, opposite outcomes, decided by quoting.
+
+      All 233 JNum call sites go through this, so the fix is one line in the Number branch mirroring
+      the guard the string branch already has, plus the message JsonValueAsNumber already knows how
+      to write.
+
+      NOT DONE HERE because it cannot be compiled or tested while the editor holds the DLL, and an
+      untested edit to the shared number parser every numeric parameter passes through is worth less
+      than a filed one.
