@@ -1689,5 +1689,41 @@ def main():
     return 1 if FAIL else 0
 
 
+def run():
+    """main(), but a CRASH still reports what passed and where it died.
+
+    WHY THIS EXISTS, and it is the same lesson three times over. check() takes an already-EVALUATED
+    condition, so any expression inside one that can raise - a dict subscript, an attribute on a
+    None - escapes before check() is ever called and takes the interpreter with it. Three separate
+    ground-truth plants on 2026-09-03 hit exactly that: the suite exited 1 having printed ZERO
+    failures, which reads as "the plant was not caught" when in fact it was caught so hard the
+    harness died.
+
+    That is the same shape B111 forbids in the ops themselves - a crash instead of a refusal reports
+    one problem and hides the rest - and the harness gets no exemption from its own rule.
+
+    The individual fix is discipline (use .get(), wrap a call in succeeds()); this is the backstop,
+    so a mistake in one line costs that line rather than the whole report. The exit code is still
+    non-zero, because a suite that could not finish has not passed.
+    """
+    try:
+        return main()
+    except Exception:                              # noqa: BLE001
+        import traceback
+        print("")
+        print("=" * 72)
+        print("THE SUITE CRASHED - %d check(s) had already PASSED and %d FAILED before this."
+              % (len(PASS), len(FAIL)))
+        for name, detail in FAIL:
+            print("  FAILED: %s" % name)
+            print("          %s" % detail)
+        print("")
+        print("A crash is NOT a clean run and NOT an empty one. Everything after the traceback")
+        print("below went unrun, so the checks it would have made are unknown rather than green.")
+        print("=" * 72)
+        traceback.print_exc()
+        return 1
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run())
