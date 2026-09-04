@@ -12313,6 +12313,17 @@ out-of-process the way ops_gen already does with gen_status.
       second source of truth and would need its own guard, so it is a design decision rather than
       an afternoon.
 
+      THE MISLEADING HALF IS FIXED, 2026-09-04, and the blindness is not. Those are separable and
+      only one of them is a design decision. The tool printed "453 endpoints, 249 families" and then
+      "none - every family with two or more writers is readable somewhere" with no denominator - a
+      verdict about the UE half, phrased as a verdict about the product. It now ends with a REACH
+      block naming what it covers, what it does not (154 addon ops, counted by importing
+      make_release.blender_op_count rather than recounting), and the four times this exact pattern
+      paid in the part it cannot see.
+
+      Costs nothing and removes the false impression. The item stays OPEN because the tool is still
+      blind; it just no longer sounds like it isn't.
+
 - [ ] **Tier 3 - motion worth rendering** (1 of 11 left)
       DONE 2026-09-03: evaluate_at_frame, edit_fcurve, add_fcurve_modifier, create_action /
       assign_action / list_actions, set_bone_pose, set_shape_key, bake_to_keyframes, markers with

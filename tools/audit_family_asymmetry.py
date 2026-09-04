@@ -180,6 +180,36 @@ def main():
             print("  %-22s %s" % (k, ACCEPTED[k]))
 
     print("")
+    # REACH, NOT GREEN. Every audit here prints how much of its surface it can judge, and this one
+    # printed a total and a verdict with no denominator: "453 endpoints ... none - every family with
+    # two or more writers is readable somewhere" is true of the C++ and says nothing about the
+    # addon, which this tool cannot see at all. A reader gets "none" and concludes the product is
+    # clean.
+    #
+    # The count is IMPORTED rather than recounted. A second implementation of "how many ops are
+    # there" is precisely what let one prose line read "20 ops" long after it was 68.
+    ops = 0
+    try:
+        sys.path.insert(0, HERE)
+        from make_release import blender_op_count
+        ops = blender_op_count()
+    except Exception:
+        pass
+    print("")
+    print("REACH - what this audit can and cannot judge:")
+    print("  covered      %d UE endpoints, read from MIF_BIND in the C++" % len(names))
+    if ops:
+        print("  NOT covered  %d Blender addon ops. This tool does not read the addon at all, so"
+              % ops)
+    else:
+        print("  NOT covered  the Blender addon. This tool does not read it at all, so")
+    print("               every verdict above - including 'none' - is about the UE half only.")
+    print("  AND THE PATTERN HAS PAID FOUR TIMES IN THE HALF IT CANNOT SEE, all found by hand on")
+    print("  2026-09-03/04: nothing could create a COLLECTION, an EMPTY, a CURVE, an ARMATURE, a")
+    print("  VERTEX GROUP or a SHAPE KEY, while ops required every one of them. Porting the check")
+    print("  was tried and reverted - the addon's readers are generic where these are specific, so")
+    print("  it produced 13 findings that were nearly all false. See FEATURE_PARITY_SPEC.")
+    print("")
     print("A hit is a READING LIST entry, not a defect. Deciding whether the missing half is worth")
     print("building is a judgement call, which is why this exits 0 either way.")
     return 0
