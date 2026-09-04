@@ -152,8 +152,28 @@ COMMITTED"*, and a compile is not a test.
 | what | why it is unproven | what proves it |
 |---|---|---|
 | Two C++ fixes (2026-08-31): `layersCreated` on `modify_actor_layers`; three refusals that reported a MISSING parameter as a failed lookup. **The third — issue 28's create-after-delete guard — was REVERTED**, see below | the running editor loads a DLL built before them | rebuild, then `python tools/verify_pending_fixes.py` — exit 2 means SKIPPED because the loaded DLL predates the fixes, which is the honest answer rather than a failure |
-| Seven Blender parameter additions (2026-08-31): cone/torus radii, six `bevel_edges` options, four `export_mesh` FBX overrides, `import_mesh.useCustomNormals`, `uv_unwrap.correctAspect`, `bake_texture.device`, `list_objects.pattern`/`detail` | the addon suites skip without a running Blender | start Blender with the addon, then `python tools/run_blender_suites.py` |
+| Seven Blender parameter additions (2026-08-31): cone/torus radii, six `bevel_edges` options, four `export_mesh` FBX overrides, `import_mesh.useCustomNormals`, `uv_unwrap.correctAspect`, `bake_texture.device`, `list_objects.pattern`/`detail` | the addon SUITES skip without a running Blender - but this row is now HALF WRONG, see the note under the table | `blender_version_matrix.py` proves every one of them REACHES bpy on 3.6/4.2/4.4/5.0 headlessly; `run_blender_suites.py` (live Blender) is still what proves the results are right |
 | Two suite repairs: `compile_blueprint` → `compile` (three call sites), and `read_datatable`'s `limit` → `maxRows` | both need the editor to run the suites | re-run `test_ability_system`, `test_spline_landscape`, `test_datatables` |
+
+> **A LIVE BLENDER IS NO LONGER REQUIRED TO PROVE BLENDER WORK, since 2026-09-04.**
+>
+> `python tools/blender_version_matrix.py` runs EVERY addon op on EVERY installed Blender
+> (3.6, 4.2, 4.4, 5.0) headlessly, each in a throwaway `--background --factory-startup` process
+> that touches no file and nobody's session — so even the mutating ops run. It is in `--gates`,
+> it takes about two seconds, and it is what catches VERSION DRIFT.
+>
+> It exists because the compositor family shipped DEAD on Blender 5.0 with thirteen offline checks
+> passing and every static gate green. `test_blender_refusals` could not have caught that: it runs
+> against a stub written from the same assumptions as the code, so it agrees with whatever the
+> author believed, including the wrong parts. A stub is a mirror, not a check.
+>
+> In the two days after it was written it found three more ops that had NEVER worked on any build —
+> `add_driver`, `bake_to_keyframes`, `transfer_weights` — plus `uv_unwrap` producing different UVs
+> per version. **Read its REACH line, not just its green**: an op refused at the door hides a break
+> exactly as well as no test at all.
+>
+> `run_blender_suites.py` still needs a live Blender and still proves things the matrix cannot —
+> postconditions that depend on evaluation. The two are complementary, not alternatives.
 
 **What IS proven about them.** The C++ fixes are BUILD OK on UE 5.3 installed, Development, with a
 linked DLL and a verified mtime. The Blender additions are names the addon provably accepts —
