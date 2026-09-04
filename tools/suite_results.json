@@ -364,19 +364,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "29 PASS  0 FAIL",
-  "seconds": 0.9,
+  "seconds": 0.7,
   "editorSurvived": null,
-  "ranAt": 1788484478.3478744,
+  "ranAt": 1788515646.1951563,
   "tail": ""
  },
  {
   "suite": "test_blender_headless_guard.py",
   "pass": 2,
   "rc": 0,
-  "summary": "",
-  "seconds": 0.9,
-  "editorSurvived": true,
-  "ranAt": 1788259747.9237669,
+  "summary": "29 PASS  0 FAIL",
+  "seconds": 0.7,
+  "editorSurvived": null,
+  "ranAt": 1788515647.9551678,
   "tail": ""
  },
  {
@@ -443,10 +443,20 @@
   "suite": "test_blender_refusals.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 56   FAIL 0",
-  "seconds": 0.2,
+  "summary": "PASS 255   FAIL 0",
+  "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788484478.506768,
+  "ranAt": 1788515646.3400974,
+  "tail": ""
+ },
+ {
+  "suite": "test_blender_refusals.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 255   FAIL 0",
+  "seconds": 0.1,
+  "editorSurvived": null,
+  "ranAt": 1788515648.0970979,
   "tail": ""
  },
  {
@@ -1096,7 +1106,7 @@
   "summary": "PASS 22   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788484478.6040912,
+  "ranAt": 1788515646.4228575,
   "tail": ""
  },
  {
@@ -1105,8 +1115,8 @@
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
   "seconds": 0.1,
-  "editorSurvived": true,
-  "ranAt": 1788260025.3887646,
+  "editorSurvived": null,
+  "ranAt": 1788515648.1754322,
   "tail": ""
  },
  {
@@ -1176,7 +1186,7 @@
   "summary": "PASS 24   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788484478.7333038,
+  "ranAt": 1788515646.5247805,
   "tail": ""
  },
  {
@@ -1185,8 +1195,8 @@
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
   "seconds": 0.1,
-  "editorSurvived": true,
-  "ranAt": 1788260065.0927062,
+  "editorSurvived": null,
+  "ranAt": 1788515648.2728732,
   "tail": ""
  },
  {
@@ -1856,7 +1866,7 @@
   "summary": "PASS 25   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788484478.8115354,
+  "ranAt": 1788515646.5880506,
   "tail": ""
  },
  {
@@ -1865,8 +1875,8 @@
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
   "seconds": 0.1,
-  "editorSurvived": true,
-  "ranAt": 1788260485.2578416,
+  "editorSurvived": null,
+  "ranAt": 1788515648.3325963,
   "tail": ""
  },
  {
@@ -2176,7 +2186,17 @@
   "summary": "PASS 29   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788484478.9513261,
+  "ranAt": 1788515646.7011495,
+  "tail": ""
+ },
+ {
+  "suite": "test_payload_contract.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 29   FAIL 0",
+  "seconds": 0.1,
+  "editorSurvived": null,
+  "ranAt": 1788515648.442365,
   "tail": ""
  },
  {
@@ -2446,7 +2466,17 @@
   "summary": "PASS 16   FAIL 0",
   "seconds": 0.2,
   "editorSurvived": null,
-  "ranAt": 1788484479.1773229,
+  "ranAt": 1788515646.8802931,
+  "tail": ""
+ },
+ {
+  "suite": "test_release_gates.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 16   FAIL 0",
+  "seconds": 0.2,
+  "editorSurvived": null,
+  "ranAt": 1788515648.6152139,
   "tail": ""
  },
  {
@@ -2474,19 +2504,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 40   FAIL 0",
-  "seconds": 0.1,
+  "seconds": 0.3,
   "editorSurvived": null,
-  "ranAt": 1788484479.3043394,
+  "ranAt": 1788515647.16124,
   "tail": ""
  },
  {
   "suite": "test_report_intake.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 34   FAIL 0",
+  "summary": "PASS 40   FAIL 0",
   "seconds": 0.1,
-  "editorSurvived": true,
-  "ranAt": 1788260814.4600039,
+  "editorSurvived": null,
+  "ranAt": 1788515648.7128036,
   "tail": ""
  },
  {
@@ -2576,7 +2606,17 @@
   "summary": "PASS 16   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788484479.4279892,
+  "ranAt": 1788515647.262934,
+  "tail": ""
+ },
+ {
+  "suite": "test_scratch_discrimination.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 16   FAIL 0",
+  "seconds": 0.1,
+  "editorSurvived": null,
+  "ranAt": 1788515648.809868,
   "tail": ""
  },
  {

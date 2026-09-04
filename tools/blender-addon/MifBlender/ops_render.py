@@ -95,6 +95,34 @@ def _apply_common(sc, params):
     return applied
 
 
+def _check_output_path(raw, resolved, verb):
+    """Refuse an output path Blender cannot write, BEFORE anything depends on it.
+
+    Blender does not tell you until it has finished rendering. A filePath containing a NUL or a
+    control character collapses on the way to the filesystem: the render runs, then the save fails
+    with a bare RuntimeError - a RAW EXCEPTION escaping the op's contract, in a codebase where every
+    other refusal is a sentence. And with a format Blender can write to a relative path it does not
+    fail at all: it silently wrote a file called ".exr" into the process's working directory. That
+    turned up as an untracked file in this repo, produced by the version matrix on every run, and
+    was noticed by a stray line in `git status` rather than by any check.
+
+    SHARED BY BOTH OPS THAT TAKE ONE. set_render_settings STORES the path and render_still USES it,
+    so validating only at render time meant set_render_settings accepted an unusable path, answered
+    ok, and left the failure to surface later in a different endpoint against a caller who had
+    already been told it worked. Same rule, one implementation - the shape this file keeps arriving
+    at whenever two ops answer the same question.
+    """
+    if any(ord(ch) < 32 for ch in resolved):
+        raise MifOpError("filePath contains a control character, which collapses to nothing on the "
+                         "way to the filesystem - Blender renders first and then fails to save, or "
+                         "silently writes a file named after the extension alone in the working "
+                         "directory. Got %r. NOTHING was %s." % (raw or resolved, verb))
+    if not os.path.basename(resolved.rstrip("/\\")):
+        raise MifOpError("filePath '%s' names a directory, not a file - Blender would write a file "
+                         "called after the format's extension alone. Pass a full path including a "
+                         "file name. NOTHING was %s." % (raw or resolved, verb))
+
+
 def op_set_render_settings(params):
     """Configure the render, and report what the scene ACTUALLY holds afterwards."""
     reject_unknown(params, _SETTINGS_KEYS, "set_render_settings")
@@ -104,6 +132,16 @@ def op_set_render_settings(params):
               "percentage": sc.render.resolution_percentage,
               "filePath": sc.render.filepath,
               "fileFormat": sc.render.image_settings.file_format}
+
+    # PARSED AND CHECKED ABOVE EVERY WRITE. Placing this beside the assignment it guards looked
+    # right and was not: _apply_common runs first, so an unusable filePath refused with "NOTHING was
+    # changed" after the engine and sample count had already moved. audit_mutate_then_deny caught it
+    # in the same minute it was written, which is the whole argument for gating that audit at zero.
+    out_path = take(params, "filePath", "output", default=None, kind=str)
+    resolved_path = None
+    if out_path:
+        resolved_path = bpy.path.abspath(str(out_path))
+        _check_output_path(out_path, resolved_path, "changed")
 
     engine = take(params, "engine", default=None, kind=str)
     if engine:
@@ -135,9 +173,11 @@ def op_set_render_settings(params):
         sc.render.engine = engine_before
         raise
 
-    out_path = take(params, "filePath", "output", default=None, kind=str)
-    if out_path:
-        sc.render.filepath = bpy.path.abspath(str(out_path))
+    if resolved_path is not None:
+        # Validated at the top. This op is where a bad path gets REMEMBERED and render_still is
+        # where it fails, so checking only there meant this one answered ok and left the failure to
+        # surface later, in a different endpoint, against a caller already told it worked.
+        sc.render.filepath = resolved_path
     fmt = take(params, "fileFormat", default=None, kind=str)
     # CAPTURED BEFORE THE FORMAT IS WRITTEN, not after. The first version of the colorDepth
     # rollback below read the "before" value AFTER this block had already changed it, so it
@@ -244,22 +284,7 @@ def op_render_still(params):
         raise MifOpError("no output path is set - pass filePath, or set one with "
                          "set_render_settings. NOTHING was rendered.")
 
-    # THE PATH HAS TO BE USABLE, and Blender will not say so until it has finished rendering. A
-    # filePath containing a NUL or a control character collapses on the way to the filesystem: the
-    # render runs, then the save fails with a bare RuntimeError - a RAW EXCEPTION escaping this
-    # op's contract, where every other refusal here is a sentence. Worse, when the scene format is
-    # one Blender can write to a relative path it does NOT fail: it silently produced a file called
-    # ".exr" in the process's working directory. That was found as an untracked file in this repo,
-    # written by the version matrix, which is the definition of an artifact nobody can attribute.
-    if any(ord(ch) < 32 for ch in target):
-        raise MifOpError("filePath contains a control character, which collapses to nothing on the "
-                         "way to the filesystem - Blender renders first and then fails to save, or "
-                         "silently writes a file named after the extension alone in the working "
-                         "directory. Got %r. NOTHING was rendered." % (out_path or target))
-    if not os.path.basename(target.rstrip("/\\")):
-        raise MifOpError("filePath '%s' names a directory, not a file - Blender would write a file "
-                         "called after the format's extension alone. Pass a full path including a "
-                         "file name. NOTHING was rendered." % (out_path or target))
+    _check_output_path(out_path, target, "rendered")
 
     # The directory too: it needs the target and the filesystem, nothing from the scene, and below
     # the settings write it was refusing "NOTHING was rendered" with the render settings and the
