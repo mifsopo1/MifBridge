@@ -2821,3 +2821,50 @@ rather than as an exit code; and that the failure you get is the one you planted
 than any non-zero exit. Prefer monkeypatching the function in-process over copying files, because a
 copy inherits none of the module's path assumptions — every case above became easy the moment the
 plant moved in-process.
+
+## Right-looking and inert: when the data is perfect and the behaviour is absent (2026-09-03)
+
+Five separate features were found in one session where **every field a caller can read is correct
+and the thing does nothing**. They are not related by subsystem — they are related by shape, and the
+shape is worth recognising because the usual instinct, "read the state back and check it", cannot
+see any of them.
+
+  a constraint whose target was deleted   stays on the stack with its type, influence and target
+                                          NAME all reading fine. `is_valid` is the only tell, and
+                                          Blender shows it as a red field in the UI and reports it
+                                          nowhere an API caller can reach.
+  a driver with a broken expression       evaluates to ZERO. No error, no warning, and the
+                                          expression and variables all read back exactly as written.
+  an NLA stack under an active action     contributes nothing, because animation_data.action is
+                                          evaluated ON TOP of the whole stack. Every strip, track
+                                          and blend mode is correct.
+  an IES texture node left unlinked       sits in the node tree looking entirely correct and changes
+                                          no photon.
+  an empty light-linking receiver         illuminates NOTHING AT ALL, and is indistinguishable from
+  collection                              a correct link from every other field.
+
+**WHAT THEY HAVE IN COMMON IS THAT THE EFFECT LIVES SOMEWHERE THE DATA DOES NOT.** A constraint is
+applied by the depsgraph and never touches `obj.matrix_world`. A driver's result is an evaluated
+value, not the expression. An NLA strip's contribution depends on something on a different
+datablock. A node's effect depends on a LINK rather than on the node. A light-linking collection's
+effect depends on its CONTENTS rather than on the assignment.
+
+**SO READING BACK WHAT YOU WROTE IS A PROXY THAT CANNOT FAIL**, and it is the natural thing to
+write. `add_constraint` that returns the influence it just set is green forever. The postcondition
+has to be taken from the layer where the effect actually happens:
+
+  * through `evaluated_get(depsgraph)` for constraints, drivers and anything animated — which is
+    what `evaluate_at_frame` exists to make routine;
+  * on the LINK, not the node, for anything in a node tree;
+  * on the CONTENTS, not the reference, for anything collection-shaped;
+  * and from a validity flag the API exposes but the UI hides, where one exists.
+
+**THE UE HALF HAS THE SAME SHAPE, ONE LAYER OVER.** Six MCP tools were uncallable the same day
+because a wrapper sent a key the handler refuses by presence — the wrapper was right, the handler
+was right, and the call was dead. `parity_check` saw the name, `param_reach` saw the parameter, the
+suites saw an endpoint. Nothing asked whether the call *worked*, because every layer's own data was
+correct.
+
+**THE TEST FOR THIS, WHEN WRITING A NEW OP:** ask what would still read as correct if the feature
+did nothing at all. If the answer is "everything I am about to return", the postcondition is in the
+wrong place. It is not enough for the op to be honest; it has to be *able* to be wrong.
