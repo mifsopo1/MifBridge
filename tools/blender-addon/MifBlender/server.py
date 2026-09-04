@@ -218,9 +218,18 @@ def _execute(request):
     if isinstance(result, dict):
         out.update(result)
     elif result is not None:
-        out["result"] = jsonable(result)
+        out["result"] = result
     out["elapsedMs"] = round((time.perf_counter() - started) * 1000.0, 2)
-    return out
+    # COERCED AT THE DOOR, not on one branch of it. jsonable's own docstring says a response that
+    # cannot be serialised is "a silent hang from the caller's point of view" - and it was applied
+    # only to the `result` key, which is the RARE path. An op returning a dict, which is nearly all
+    # of them, went to json.dumps untouched.
+    #
+    # What that cost: a NaN anywhere in a response reached the wire as bare `NaN`, which is not
+    # valid JSON. Python's json.loads accepts it, so the Python client never noticed; a strict
+    # parser rejects the whole frame. jsonable already turns a non-finite float into a string and
+    # was simply never asked to.
+    return jsonable(out)
 
 
 # ---------------------------------------------------------------------------

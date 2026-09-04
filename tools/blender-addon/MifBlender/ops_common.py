@@ -39,8 +39,19 @@ def jsonable(value, _depth=0):
 
     A response that cannot be serialised is a silent hang from the caller's
     point of view, so this is defensive on purpose.
+
+    APPLIED TO EVERY RESPONSE from 2026-09-04, not just to the `result` key. server._execute used to
+    call this only on the rare non-dict path, so an op returning a dict - nearly all of them - went
+    to json.dumps untouched. A NaN anywhere in one then reached the wire as bare `NaN`, which is not
+    valid JSON: Python's json.loads accepts it and a strict parser rejects the entire frame.
+
+    THE DEPTH CAP GUARDS AGAINST CYCLES, NOT AGAINST NESTING, and at 8 it was about to start
+    truncating real answers now that every response passes through here - a repr() where the caller
+    expected structure. Raised to 24: deep enough that no node tree, interface or modifier stack
+    reaches it, still shallow enough that a cyclic structure dies quickly rather than eating the
+    stack. The deepest structure this repo records is 4.
     """
-    if _depth > 8:
+    if _depth > 24:
         return repr(value)
     if value is None or isinstance(value, (bool, int, str)):
         return value
@@ -103,9 +114,20 @@ def take_float(params, *names, default=None, required=False):
     if value is None:
         return None
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         raise MifOpError("'%s' must be a number, got %r" % (names[0], value))
+    # NaN AND INFINITY ARE FLOATS, and every guard in this addon let them through. Python's json
+    # module PARSES NaN, Infinity and -Infinity by default, so a caller can send one over the bridge
+    # and float() is perfectly happy with it. Blender is too: a NaN location is accepted, reads back
+    # as nan, and poisons everything that touches the object's bounds - the viewport frames nothing,
+    # physics goes unstable, an exporter writes nan into the file - while every field in the
+    # response agrees the call worked. There is no request a non-finite number is the answer to.
+    if not math.isfinite(number):
+        raise MifOpError("'%s' must be a finite number, got %r. NaN and Infinity are accepted by "
+                         "Blender and poison everything that reads the object's bounds afterwards, "
+                         "silently. NOTHING was changed." % (names[0], value))
+    return number
 
 
 def take_int(params, *names, default=None, required=False):
@@ -117,6 +139,33 @@ def take_int(params, *names, default=None, required=False):
     except (TypeError, ValueError):
         raise MifOpError("'%s' must be an integer, got %r" % (names[0], value))
 
+
+
+def finite_floats(values, key):
+    """Every element as a finite float, or a refusal naming the one that is not.
+
+    THE VECTOR PARSERS BYPASSED take_float. They convert with a bare float(x), so the finiteness
+    check added there did nothing for `location: [NaN, 0, 0]` - which Blender accepts, reads back as
+    nan, and which poisons every later read of the object's bounds while the response agrees the
+    call worked.
+
+    Shared rather than repeated in each parser: the four differ legitimately (2D, 3D, defaults,
+    refusal verb) and the VALIDATION is the part that was identical, exactly as check_axis_dict was.
+    """
+    out = []
+    for i, raw in enumerate(values):
+        try:
+            number = float(raw)
+        except (TypeError, ValueError):
+            raise MifOpError("'%s'[%d] must be a number, got %r. NOTHING was changed."
+                             % (key, i, raw))
+        if not math.isfinite(number):
+            raise MifOpError(
+                "'%s'[%d] must be a finite number, got %r. NaN and Infinity are accepted by Blender "
+                "and poison everything that reads the object's bounds afterwards, silently. "
+                "NOTHING was changed." % (key, i, raw))
+        out.append(number)
+    return out
 
 
 def check_axis_dict(value, key, axes, tail="NOTHING was changed."):

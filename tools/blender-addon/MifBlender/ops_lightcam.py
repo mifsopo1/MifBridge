@@ -27,7 +27,7 @@ import os
 import bpy
 import mathutils
 
-from .ops_common import (check_axis_dict, MifOpError, camera_readback, get_object, light_readback, object_info,
+from .ops_common import (finite_floats, check_axis_dict, MifOpError, camera_readback, get_object, light_readback, object_info,
                          reject_unknown,
                          refuse_unsupported_shadow, rnd, shadow_attr,
                          selection_restore, selection_snapshot, take, take_bool, take_float,
@@ -78,10 +78,10 @@ def _vec3(params, key, default, verb="created"):
         # it was, and every field in the response agreed. Partial dicts stay legal ({"z": 2} is
         # a useful thing to write); a dict that names none of them is a typo, not a request.
         check_axis_dict(v, key, ("x", "y", "z"))
-        return (float(v.get("x", default[0])), float(v.get("y", default[1])),
-                float(v.get("z", default[2])))
+        return tuple(finite_floats([v.get("x", default[0]), v.get("y", default[1]),
+                                    v.get("z", default[2])], key))
     if isinstance(v, (list, tuple)) and len(v) == 3:
-        return tuple(float(x) for x in v)
+        return tuple(finite_floats(v, key))
     raise MifOpError("'%s' must be {x,y,z} or a 3-list, got %r. NOTHING was %s."
                      % (key, v, verb))
 

@@ -28,7 +28,7 @@ object really is left holding the last value written. That is stated rather than
 """
 import bpy
 
-from .ops_common import (check_axis_dict, MifOpError, get_object, reject_unknown, rnd, select_only,
+from .ops_common import (finite_floats, check_axis_dict, MifOpError, get_object, reject_unknown, rnd, select_only,
                          selection_restore, selection_snapshot, take, take_bool, take_float,
                          take_int)
 
@@ -92,9 +92,9 @@ def _vec3(params, key):
         # parser in the addon and the defect was in every one: a dict read with .get(axis,
         # default) turns {"mif":"typo"} into the DEFAULT vector and reports success.
         check_axis_dict(v, key, ("x", "y", "z"))
-        return (float(v.get("x", 0.0)), float(v.get("y", 0.0)), float(v.get("z", 0.0)))
+        return tuple(finite_floats([v.get("x", 0.0), v.get("y", 0.0), v.get("z", 0.0)], key))
     if isinstance(v, (list, tuple)) and len(v) == 3:
-        return tuple(float(x) for x in v)
+        return tuple(finite_floats(v, key))
     raise MifOpError("'%s' must be {x,y,z} or a 3-list, got %r. NOTHING was keyed." % (key, v))
 
 
