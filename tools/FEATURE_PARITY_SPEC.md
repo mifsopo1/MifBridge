@@ -13027,3 +13027,36 @@ out-of-process the way ops_gen already does with gen_status.
 
       B116 asserted the wrong sentence verbatim and went red on the fix, which is the suite working.
       It now asserts the MEANING - that the note says EMPTY and DISAPPEARS - rather than a phrase.
+
+- [x] **boolean_op's solver enum moved at 5.0 and the hardcoded pair was stale both ways** DONE 2026-09-04
+      Measured on all four installs rather than read from release notes:
+
+        3.6.23 / 4.2.17 / 4.4.0    FAST, EXACT
+        5.0.1                      FLOAT, EXACT, MANIFOLD
+
+      FAST was RENAMED to FLOAT and MANIFOLD was added. The guard hardcoded ("FAST", "EXACT"), so
+      solver:'fast' passed it and then died inside RNA with a TypeError on 5.0 - and the assignment
+      sat OUTSIDE the try that cleans up, leaving a live BOOLEAN modifier on the target. An
+      unapplied boolean shows the cut in the viewport and exports the original, which is the exact
+      failure the apply path twenty lines below was written to prevent. In the other direction,
+      solver:'manifold' was refused on the only build that has it.
+
+      Now read off the live enum, third place in the addon to learn this after _valid_light_types
+      and the render-engine alias. fast and float are accepted as each other wherever one exists, so
+      a caller's script is portable across the rename. Verified on 3.6 and 5.0: fast -> FAST and
+      FLOAT respectively, manifold ok on 5.0 and refused on 3.6 naming what 3.6 has, nonsense
+      refused on both, and modifiersLeft=0 on every path INCLUDING the refusals.
+
+- [x] **the boolean fixture had been degenerate since the day it was written** DONE 2026-09-04
+      Found immediately after adding solver:"fast" to the matrix payload, by the value comparison.
+      MifBoolA at [24,0,0] and MifBoolB at [24.5,0,0] are unit cubes offset on ONE axis, so four of
+      their faces are exactly coplanar - the degenerate input every boolean solver is unstable on.
+      Blender 5.0 returned 12 faces on one run and 14 on the next from identical input.
+
+      That would have made the value check flaky, and a check that goes red at random is worse than
+      no check at all - people learn to re-run it. Offset on all three axes now: all four builds
+      return 14 verts and 9 faces, stable across three consecutive full runs, and the cross-build
+      divergence disappeared with it. The divergence was the fixture, not the solver.
+
+      Nothing had ever looked at boolean_op's OUTPUT before, which is why a degenerate fixture
+      survived. Worth checking the other fixtures for the same shape.

@@ -368,10 +368,37 @@ def op_boolean_op(params):
     modifier.operation = operation
     solver = take(params, "solver")
     if solver:
+        # READ OFF THE LIVE ENUM, not a hardcoded pair, and this is the third place in the addon
+        # that has had to learn it - _valid_light_types and the render-engine alias came first.
+        #
+        # WHAT MOVED, measured on 3.6.23, 4.2.17, 4.4.0 and 5.0.1:
+        #   3.6 / 4.2 / 4.4   FAST, EXACT
+        #   5.0               FLOAT, EXACT, MANIFOLD
+        # FAST was RENAMED to FLOAT and MANIFOLD was added. The old pair was stale in both
+        # directions: solver:'fast' raised TypeError from RNA on 5.0, and solver:'manifold' was
+        # refused on the only build that has it.
+        #
+        # THE ASSIGNMENT USED TO SIT OUTSIDE THE try BELOW, so that TypeError escaped as a raw
+        # exception with the BOOLEAN modifier still on the target - an unapplied boolean shows the
+        # cut in the viewport and exports the original, which is the exact failure the apply path
+        # further down was written to prevent. It is refused up front now, and the modifier removed.
+        valid = [i.identifier
+                 for i in modifier.bl_rna.properties["solver"].enum_items]
         wanted = str(solver).strip().upper()
-        if wanted not in ("FAST", "EXACT"):
-            target.modifiers.remove(modifier)
-            raise MifOpError("solver '%s' is not fast or exact. NOTHING was changed." % solver)
+        if wanted not in valid:
+            # FAST AND FLOAT ARE THE SAME SOLVER under two names, so a caller written against
+            # either spelling keeps working on every build rather than breaking at 5.0.
+            alias = {"FAST": "FLOAT", "FLOAT": "FAST"}.get(wanted)
+            if alias in valid:
+                wanted = alias
+            else:
+                target.modifiers.remove(modifier)
+                raise MifOpError(
+                    "solver '%s' does not exist on Blender %s, which has %s. FAST was renamed FLOAT "
+                    "at 5.0 and MANIFOLD was added there, so a solver name is not portable across "
+                    "builds - fast and float are accepted as each other wherever one of them "
+                    "exists. NOTHING was changed."
+                    % (solver, bpy.app.version_string, ", ".join(valid)))
         modifier.solver = wanted
 
     # TAKE WHAT IS NEEDED AS PYTHON VALUES NOW, because modifier_apply FREES the modifier and every

@@ -12,6 +12,10 @@
   "keyframeTotal"
  ],
  [
+  "boolean_op",
+  "solver"
+ ],
+ [
   "compositor_info",
   "availablePasses[]"
  ],

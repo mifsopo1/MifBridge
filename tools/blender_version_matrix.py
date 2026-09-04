@@ -208,8 +208,12 @@ PAYLOADS = {
     "select_edges": {"object": "Cube", "allEdges": True},
     "extrude_skirt": {"object": "MifGrid", "boundaryOnly": True, "depth": 0.1},
     "separate_mesh": {"object": "MifSpare", "mode": "LOOSE"},
+    # solver:"fast" ON PURPOSE. It is the name that stopped existing at 5.0, where the enum
+    # became FLOAT, EXACT, MANIFOLD - so this payload raised TypeError there and left a live
+    # BOOLEAN modifier on the target. The value comparison now watches the solver field, so
+    # the alias resolving to FAST on 3.6/4.2/4.4 and FLOAT on 5.0 is checked every run.
     "boolean_op": {"target": "MifBoolA", "cutter": "MifBoolB", "operation": "DIFFERENCE",
-                   "deleteCutter": False},
+                   "deleteCutter": False, "solver": "fast"},
     # ITS OWN THROWAWAY. Pointed at MifSpare, this MERGED the shared fixture into Cube and every
     # op after it alphabetically that referenced MifSpare - list_modifiers, remove_modifier,
     # separate_mesh, set_material_slots, unlink_objects, list_constraints - then refused for a
@@ -320,7 +324,14 @@ FIXTURES = [
     ("add_shape_key", {"object": "MifKeys", "name": "MifBasis"}),
     ("add_shape_key", {"object": "MifKeys", "name": "MifDent"}),
     ("create_primitive", {"kind": "cube", "name": "MifBoolA", "location": [24, 0, 0]}),
-    ("create_primitive", {"kind": "cube", "name": "MifBoolB", "location": [24.5, 0, 0]}),
+    # OFFSET ON ALL THREE AXES, and that is the whole point of the numbers. At [24.5, 0, 0]
+    # the two unit cubes share EXACTLY COPLANAR faces in y and z - the degenerate case every
+    # boolean solver is unstable on. Blender 5.0's FLOAT solver returned 12 faces on one run
+    # and 14 on the next from identical input, which made the value comparison flaky, and a
+    # check that goes red at random is worse than no check. The fixture was degenerate from
+    # the day it was written; nothing looked at the OUTPUT until now.
+    ("create_primitive", {"kind": "cube", "name": "MifBoolB",
+                          "location": [24.53, 0.31, 0.22]}),
     ("create_action", {"name": "MifMatrixAction"}),
     ("create_primitive", {"kind": "cube", "name": "MifJoinA", "location": [8, 0, 0]}),
     ("create_primitive", {"kind": "cube", "name": "MifJoinB", "location": [8.5, 0, 0]}),
