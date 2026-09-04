@@ -11900,6 +11900,46 @@ out-of-process the way ops_gen already does with gen_status.
       set_color_management is no longer urgent: the correctness bug behind it was the BAKE colour
       space, fixed separately - images.new() defaults to sRGB and every NORMAL/ROUGHNESS/AO/SHADOW
       map written through this bridge carried a gamma curve.
+      DESIGN, written 2026-09-03 rather than implemented in a hurry at the end of a long session.
+      The op is the largest remaining hole and the wrong shape of it is worse than none, because a
+      job that reports a timeout and KEEPS RENDERING leaves a caller who thinks nothing happened
+      while the machine is pinned for ten minutes.
+
+      IT CANNOT BE AN IN-PROCESS OP. server.DEFAULT_JOB_TIMEOUT is 150s and every op runs on
+      Blender's main thread, so an animation render blocks the addon entirely: the socket stops
+      answering, bl_status included, and the MCP gives up at 180s while the render carries on. The
+      timeout ladder is deliberate - Blender gives up FIRST so the failure has a real error rather
+      than an abandoned job - and a long render inverts it.
+
+      SO IT RUNS OUT OF PROCESS, on a saved .blend:
+        1. REQUIRE a saved file. bpy.data.filepath must be set and not dirty, or refuse and point
+           at save_file - which now exists, and is why this became buildable today. Rendering an
+           unsaved session out of process is impossible, and rendering a STALE file silently
+           renders the wrong scene, which is worse.
+        2. Spawn `blender -b <file> -a` (or -s/-e for a range) with subprocess, detached, capturing
+           its stdout to a log beside the output.
+        3. Return immediately with a job id, the output pattern, the frame range and the pid.
+        4. render_status(jobId) reports: process alive or exited, exit code, frames ON DISK so far
+           against frames expected, and the tail of the log.
+
+      THE POSTCONDITION IS PER-FRAME AND MUST BE TAKEN BEFORE THE RENDER. Enumerate
+      scene.render.frame_path(frame=f) for the whole range and stat each one FIRST, recording
+      mtimes. A frame counts as rendered only if its mtime is newer than the job start - the same
+      rule render_still needed, and for the same reason: a leftover file from a previous run passes
+      any existence check. For a container format (FFMPEG) there is ONE path and the frame count
+      inside it is NOT verifiable from the filesystem; say so in the response rather than implying
+      a count that was never checked.
+
+      WHAT TO REFUSE UP FRONT, because all of them waste minutes otherwise: no scene camera (the
+      whole render fails at frame one), an unwritable output directory, a frame range that is empty
+      or inverted, and a file whose in-memory state is dirty. render_info's `blockers` already
+      computes most of that and should be reused rather than reimplemented.
+
+      TRACKING: the job outlives any single request, so the addon needs a module-level dict of
+      {jobId: {popen, paths, started, mtimes}}. It does NOT survive a Blender restart, and
+      render_status must say "unknown job" rather than "not finished" for an id it has never seen -
+      those are different answers and conflating them is how a caller waits forever.
+
       STILL OPEN, and the largest single hole in the surface:
       What makes the tool credible to a film, archviz, mograph or print user, none of whom care
       about UE.
