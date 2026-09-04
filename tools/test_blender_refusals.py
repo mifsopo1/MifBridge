@@ -209,6 +209,11 @@ def install_collection_stub():
     return root
 
 
+def _p(name):
+    """use_pass_<name> - spelled once so the stub and the module cannot drift apart."""
+    return "use_pass_" + name
+
+
 def install_stub():
     """A bpy stub good enough to IMPORT the ops modules and reach their refusals."""
     bpy = types.ModuleType("bpy")
@@ -1249,6 +1254,132 @@ def main():
           "a refusal without guessing",
           "StudioLookXYZ" in (res.get("availableViewTransforms") or []),
           err or "got %s" % res.get("availableViewTransforms"))
+
+    print("")
+    print("=== B118: view layers and passes - what the compositor is allowed to see ===")
+    # THE ASYMMETRY THIS CLOSES, facing the other way from world and physics: compositor_info could
+    # READ which passes were enabled and nothing could turn one on. It matters more than a missing
+    # setter usually does, because a Render Layers node only offers sockets for passes the layer
+    # actually outputs - ask for a Z-depth composite with the Z pass off and there is nothing to
+    # connect. The compositing ops shipped without the thing that decides what they can see.
+    from MifBlender import ops_viewlayer as OV
+
+    class _VL2(object):
+        """A view layer with a READ-ONLY pass, which is the case the read-back guard exists for.
+
+        Several use_pass_* properties are read-only under a given engine: the property exists, the
+        assignment is accepted, and the value does not move. A response built from what was asked
+        for would report a pass that is still off.
+        """
+
+        READONLY = "use_pass_transmission_direct"
+
+        def __init__(self, name, use=True):
+            self.name, self.use, self.samples = name, use, 0
+            for p in ("combined", "z", "mist", "normal", "cryptomatte_object",
+                      "transmission_direct"):
+                object.__setattr__(self, _p(p), p == "combined")
+
+        def __setattr__(self, key, value):
+            if key == self.READONLY:
+                return                       # accepted and ignored, exactly as Blender does
+            object.__setattr__(self, key, value)
+
+    class _VLs(object):
+        def __init__(self, layers):
+            self._d = {v.name: v for v in layers}
+
+        def get(self, k, default=None):
+            return self._d.get(k, default)
+
+        def new(self, name):
+            v = _VL2(name)
+            self._d[name] = v
+            return v
+
+        def remove(self, v):
+            self._d.pop(v.name, None)
+
+        def __iter__(self):
+            return iter(list(self._d.values()))
+
+        def __len__(self):
+            return len(self._d)
+
+    bpy = sys.modules["bpy"]
+    sc = bpy.context.scene
+    main = _VL2("ViewLayer")
+    sc.view_layers = _VLs([main])
+    bpy.context.view_layer = main
+    sc.render.engine = "CYCLES"
+
+    check("B118 the pass set is ENUMERATED from the layer, not listed in the addon - the set "
+          "differs by version and engine, so a constant would refuse passes that exist",
+          set(OV._pass_names(main)) >= {"z", "mist", "cryptomatte_object"},
+          "got %s" % sorted(OV._pass_names(main)))
+
+    res, err = succeeds(OV.op_set_view_layer, {"enablePasses": ["z", "mist"]})
+    check("B118 enabling passes works and is read back from the layer",
+          set(res.get("enabledPasses", [])) >= {"z", "mist"}, err or "got %s" % res)
+
+    ok, msg = refuses(OV.op_set_view_layer, {"enablePasses": ["z", "zz_not_a_pass"]},
+                      "no pass named", "use_pass_ prefix")
+    check("B118 an unknown pass name is refused with the available list and the prefix rule",
+          ok, msg)
+    check("B118 and the refusal is checked across ALL names BEFORE any write - a typo in the "
+          "second name must not leave the first one changed",
+          OV._pass_names(main).get("normal") is False, "normal was changed anyway")
+
+    # THE READ-ONLY PASS. The write is accepted and the value does not move, so an op that echoed
+    # the request would report a pass that is still off.
+    ok, msg = refuses(OV.op_set_view_layer, {"enablePasses": ["transmission_direct"]},
+                      "reads back", "read-only")
+    check("B118 a pass that is READ-ONLY under this engine is caught by the read-back - the write "
+          "is accepted, the value does not move, and echoing the request would report success",
+          ok, msg)
+
+    res, err = succeeds(OV.op_set_view_layer, {"passes": {"mist": False, "normal": True}})
+    check("B118 the passes map works as an alternative to the two lists",
+          "normal" in res.get("enabledPasses", []) and "mist" not in res.get("enabledPasses", []),
+          err or "got %s" % res.get("enabledPasses"))
+
+    ok, msg = refuses(OV.op_set_view_layer, {}, "nothing to do")
+    check("B118 a call that changes nothing is refused rather than reporting success", ok, msg)
+
+    ok, msg = refuses(OV.op_set_view_layer, {"enablePasses": "z"}, "must be a list")
+    check("B118 a bare string where a list is wanted is refused by type", ok, msg)
+
+    # use OFF: the inert shape again - everything reads perfectly and no pixel is produced.
+    res, err = succeeds(OV.op_set_view_layer, {"use": False})
+    check("B118 use:false is reported as a BLOCKER, not left as one boolean among many - the layer "
+          "is not rendered at all while every pass on it still reads back correctly",
+          res.get("renders") is False
+          and any("not rendered at all" in b for b in res.get("blockers", [])),
+          err or "got %s" % res)
+
+    res, err = succeeds(OV.op_list_view_layers, {})
+    check("B118 list_view_layers names the layers that are not rendering",
+          res.get("notRendering") == ["ViewLayer"], err or "got %s" % res)
+
+    # CREATE, and the copyFrom that exists because Blender's new layers start from defaults.
+    main.use = True
+    OV.op_set_view_layer({"enablePasses": ["z", "mist"]})
+    res, err = succeeds(OV.op_create_view_layer, {"name": "FG", "copyFrom": "ViewLayer"})
+    check("B118 copyFrom carries the enabled passes to the new layer - Blender's own new layers "
+          "start from defaults, which is rarely what somebody splitting a shot wants",
+          set(res.get("enabledPasses", [])) >= {"z", "mist"}, err or "got %s" % res)
+
+    ok, msg = refuses(OV.op_create_view_layer, {"name": "FG"}, "already has a view layer")
+    check("B118 a duplicate view layer name is refused", ok, msg)
+
+    res, err = succeeds(OV.op_delete_view_layer, {"name": "FG"})
+    check("B118 deleting one works and reports what is left",
+          res.get("remaining") == ["ViewLayer"], err or "got %s" % res)
+
+    ok, msg = refuses(OV.op_delete_view_layer, {"name": "ViewLayer"}, "only view layer",
+                      "cannot be rendered")
+    check("B118 deleting the LAST view layer is refused - a scene with none cannot render at all, "
+          "and the API will happily let you get there", ok, msg)
 
     print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")

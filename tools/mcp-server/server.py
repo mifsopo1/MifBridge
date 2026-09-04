@@ -5548,6 +5548,33 @@ def bl_list_particles(object: str) -> dict:
 
 
 @mcp.tool()
+def bl_list_view_layers(with_passes: bool = None) -> dict:
+    "Every Blender view layer, what it outputs, and whether it renders at all. `renders` is view_layer.use, and it is the one that decides whether any of the rest happens: with it off, every pass and collection assignment on the layer reads back perfectly and no pixel of it is ever produced, with nothing to warn you."
+    return _blender("list_view_layers", withPasses=with_passes)
+
+
+@mcp.tool()
+def bl_set_view_layer(name: str = None, use: bool = None, enable_passes: list = None,
+                      disable_passes: list = None, passes: dict = None,
+                      samples: int = None) -> dict:
+    "Turn Blender render passes on or off - what decides WHAT THE COMPOSITOR CAN SEE, since a Render Layers node only offers sockets for passes the layer actually outputs. Ask for a Z-depth composite with the Z pass off and there is nothing to connect. Pass names drop the use_pass_ prefix (\"z\", \"normal\", \"mist\", \"cryptomatte_object\") and are validated against THIS layer rather than a list in the addon, because the set depends on the Blender version and render engine - a hard-coded one would refuse passes that exist. Every requested pass is read back individually: several use_pass_* properties are read-only under a given engine, so the write is accepted and the value does not move."
+    return _blender("set_view_layer", name=name, use=use, enablePasses=enable_passes,
+                    disablePasses=disable_passes, passes=passes, samples=samples)
+
+
+@mcp.tool()
+def bl_create_view_layer(name: str, copy_from: str = None, use: bool = None) -> dict:
+    "Add a Blender view layer - a second pass over the same scene with its own collection visibility and its own outputs. copy_from carries the enabled passes across, because Blender's new layers start from defaults, which is rarely what somebody splitting a shot into layers wants."
+    return _blender("create_view_layer", name=name, copyFrom=copy_from, use=use)
+
+
+@mcp.tool()
+def bl_delete_view_layer(name: str) -> dict:
+    "Remove a Blender view layer, refusing to remove the last one - a scene with no view layer cannot be rendered at all, and the API will happily let you get there."
+    return _blender("delete_view_layer", name=name)
+
+
+@mcp.tool()
 def bl_set_compositing(enabled: bool = None, use_compositing: bool = None,
                        use_sequencer: bool = None, with_default_nodes: bool = None) -> dict:
     "Turn the Blender scene compositor on, and the SECOND switch that also has to be on. TWO INDEPENDENT FLAGS decide whether compositing happens: scene.use_nodes (a tree exists and is edited) and scene.render.use_compositing (the render PIPELINE runs it). With the first on and the second off, the whole tree reads perfectly, the compositor backdrop updates, and the rendered file is completely unprocessed - nothing reports it. Both are set and both read back. Wires a default Render Layers -> Composite pair when the tree is empty, because an empty compositor writes nothing at all. Afterwards, address the tree from bl_add_group_node / bl_link_group_nodes / bl_list_group_nodes by passing tree:'scene:compositor'."

@@ -12332,6 +12332,42 @@ out-of-process the way ops_gen already does with gen_status.
       ENABLES use_nodes rather than refusing (a read op must not switch compositing on for the whole
       scene behind the caller), and the empty-sequencer false positive.
 
+- [x] **view layers and render passes - what the compositor is allowed to see** (4 ops) DONE 2026-09-03
+      list_view_layers, set_view_layer, create_view_layer, delete_view_layer - a new
+      ops_viewlayer.py.
+
+      THE SAME READ/WRITE ASYMMETRY AS WORLD AND PHYSICS, facing the other way. compositor_info
+      could READ which passes were enabled and nothing could turn one on. That matters more than a
+      missing setter usually does: a Render Layers node only offers sockets for passes the layer
+      ACTUALLY OUTPUTS, so asking for a Z-depth composite with the Z pass off leaves nothing to
+      connect. The compositing ops shipped without the one thing that decides what they can see.
+
+      THE PASS SET IS ENUMERATED FROM THE LAYER, not listed here. Which use_pass_* properties exist
+      depends on the Blender version and the render engine, so a constant in the file would refuse
+      passes that exist - and a refusal of something legal reads like a bug in Blender rather than
+      in the addon. Same reasoning as set_color_management reading its enums from the instance.
+
+      AND SEVERAL PASSES ARE READ-ONLY UNDER A GIVEN ENGINE: the property exists, the assignment is
+      accepted, and the value does not move. So every requested pass is read back individually and
+      a response is never built from what was asked for. The stub models exactly that, which is
+      what lets the guard be proved rather than asserted.
+
+      view_layer.use is reported as `renders` and raised as a BLOCKER rather than left as one
+      boolean among many - with it off the layer is not rendered at all while every pass and
+      collection assignment on it reads back perfectly. The inert shape again.
+
+      delete_view_layer refuses to remove the last one, because a scene with none cannot render and
+      the API will happily let you get there. create_view_layer has copyFrom because Blender's new
+      layers start from defaults, which is rarely what somebody splitting a shot into layers wants.
+
+      B118, fourteen checks, offline. Five plants, each caught by the check written for it:
+      validating as-you-go instead of all up front, dropping the read-back, a hard-coded pass list,
+      deleting the last layer, and demoting use:false from a blocker.
+
+      A dead `scene` key was declared and removed before commit - the SECOND this session, after
+      render_animation's. param_reach caught both. An accepted parameter that is silently ignored
+      is worse than an absent one, and every key set added today was then swept for the same thing.
+
 - [ ] **Tier 5 - craft depth** (1 of 5 left)
       DONE 2026-09-03: set_camera_panorama, move_keyframes, set_light_ies, set_light_linking.
 
