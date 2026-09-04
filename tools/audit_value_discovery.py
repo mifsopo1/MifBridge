@@ -135,10 +135,16 @@ def probe_payload(endpoint):
 
 
 def live_fields(endpoint, payload=None):
-    """The top-level keys a reader really returns.
+    """(keys, empty_collections) - what a reader really returns, and what it had nothing of.
 
     None  - the bridge is unreachable.
     False - the reader REFUSED, so this says nothing about the field either way.
+
+    THE SECOND HALF EXISTS BECAUSE AN EMPTY WORLD IS NOT A BROKEN MAP. Nested fields are only
+    visible through a row, so a reader that returns `landscapes: []` proves nothing at all about
+    `editLayers` - and reporting that as BROKEN blocked a release for a field that
+    MifBridgeLandscape.cpp sets on every landscape it ever returns. The caller uses the empty
+    collections to answer UNVERIFIED instead of accusing the map.
     """
     try:
         import mifaudit as M
@@ -153,10 +159,13 @@ def live_fields(endpoint, payload=None):
     keys = set(r.keys())
     # Readers that answer per-object nest their rows; look one level in so `editLayers` inside
     # landscape_info's landscapes[] counts as reported.
-    for v in r.values():
+    empty = []
+    for name, v in r.items():
         if isinstance(v, list) and v and isinstance(v[0], dict):
             keys |= set(v[0].keys())
-    return keys
+        elif isinstance(v, list) and not v:
+            empty.append(name)
+    return keys, sorted(empty)
 
 
 def main():
@@ -209,6 +218,16 @@ def main():
         if fields is False:
             skipped.append((k, reader, "the reader refused - needs a fixture this audit could "
                                        "not supply, so the mapping is UNVERIFIED, not wrong"))
+            continue
+        fields, empty = fields
+        if field not in fields and empty:
+            # AN EMPTY WORLD, NOT A BROKEN MAP. A nested field is only visible through a row, so a
+            # reader that returned nothing has told us nothing - and saying BROKEN here blocked a
+            # release for `editLayers`, which every landscape row carries. Named, not swallowed:
+            # this is a to-do with an exact instruction, not a shrug.
+            skipped.append((k, reader,
+                            "returned %s empty, and a nested field is only visible through a row - "
+                            "make one and re-run to check this mapping" % "/".join(empty)))
             continue
         checked += 1
         if field not in fields:
