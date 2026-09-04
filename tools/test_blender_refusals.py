@@ -921,6 +921,96 @@ def main():
           % (before, len(empty.nodes)))
 
     print("")
+    print("=== B115: physics_info - the cache traps and the rigid body that never simulates ===")
+    # PURE DATA AGAIN. Cache state and RigidBodyWorld membership are stored values and a set
+    # comparison; nothing here needs the sim to run. So these assert the DIAGNOSES, which is what
+    # the op exists for - the settings themselves are the part that already read back fine and told
+    # nobody anything useful.
+    from MifBlender import ops_physics as OP
+
+    def _cache(baked, start, end):
+        return types.SimpleNamespace(is_baked=baked, frame_start=start, frame_end=end)
+
+    sc = sys.modules["bpy"].context.scene
+    sc.frame_start, sc.frame_end = 1, 250
+
+    check("B115 no point cache answers None rather than a row of falsehoods",
+          OP._cache_row(None, sc) is None, "not None")
+
+    row = OP._cache_row(_cache(True, 1, 250), sc)
+    check("B115 a baked cache covering the scene range is reported as covering",
+          row["isBaked"] is True and row["coversSceneRange"] is True, "got %s" % row)
+
+    # THE STALE-BAKE TRAP, and the reason this comparison is made in the op rather than left to a
+    # caller: is_baked stays TRUE on a cache baked before the range was extended. It is baked, it is
+    # valid, and it is short, and the frames past its end fall back to the rest state in silence.
+    row = OP._cache_row(_cache(True, 1, 100), sc)
+    check("B115 a cache BAKED BEFORE the range was extended is baked AND short - is_baked stays "
+          "true and the frames past its end silently fall back to the rest state",
+          row["isBaked"] is True and row["coversSceneRange"] is False, "got %s" % row)
+
+    # THE INERT RIGID BODY. Every setting correct, and it hangs in the air because the sim only
+    # acts on objects inside the RigidBodyWorld's collection.
+    rb = types.SimpleNamespace(type="ACTIVE", mass=1.0, friction=0.5, restitution=0.0,
+                               collision_shape="CONVEX_HULL", kinematic=False,
+                               collision_margin=0.04, linear_damping=0.04,
+                               angular_damping=0.1, enabled=True)
+    cube = sys.modules["bpy"].data.objects["Cube"]
+    cube.rigid_body = rb
+    cube.modifiers = []
+    empty_coll = types.SimpleNamespace(objects=[], name="RigidBodyWorld")
+    sc.rigidbody_world = types.SimpleNamespace(
+        collection=empty_coll, enabled=True, substeps_per_frame=10, solver_iterations=10,
+        point_cache=_cache(True, 1, 250))
+
+    res, err = succeeds(OP.op_physics_info, {"object": "Cube"})
+    row = (res.get("objects") or [{}])[0]
+    check("B115 a fully configured rigid body OUTSIDE the RigidBodyWorld collection reports "
+          "inSimulation:false - every field on it reads perfectly and it never falls",
+          row.get("inSimulation") is False, err or "got %s" % row)
+    check("B115 and that is raised as a blocker naming the hang-in-the-air outcome, not left to "
+          "be inferred from a false boolean",
+          any("hangs in the air" in b for b in res.get("blockers", [])),
+          err or "got %s" % res.get("blockers"))
+    check("B115 readyToRender is false while a blocker stands",
+          res.get("readyToRender") is False, err or "got %s" % res.get("readyToRender"))
+
+    sc.rigidbody_world.collection = types.SimpleNamespace(objects=[cube], name="RigidBodyWorld")
+    res, err = succeeds(OP.op_physics_info, {"object": "Cube"})
+    row = (res.get("objects") or [{}])[0]
+    check("B115 putting it in the collection flips inSimulation and clears that blocker",
+          row.get("inSimulation") is True
+          and not any("hangs in the air" in b for b in res.get("blockers", [])),
+          err or "got %s / %s" % (row.get("inSimulation"), res.get("blockers")))
+
+    # ACTIVE + KINEMATIC: the usual accident behind "my keyframed object will not fall".
+    rb.kinematic = True
+    res, err = succeeds(OP.op_physics_info, {"object": "Cube"})
+    check("B115 an ACTIVE rigid body with kinematic ON is called out - it is driven by its "
+          "animation, not the sim, which is why a keyframed object refuses to fall",
+          any("kinematic" in b for b in res.get("blockers", [])),
+          err or "got %s" % res.get("blockers"))
+    rb.kinematic = False
+
+    sc.rigidbody_world.point_cache = _cache(False, 1, 250)
+    res, err = succeeds(OP.op_physics_info, {"object": "Cube"})
+    check("B115 an UNBAKED cache is called out with why it matters - a late frame shows the REST "
+          "state and a render of it is simply wrong",
+          any("NOT baked" in b for b in res.get("blockers", [])),
+          err or "got %s" % res.get("blockers"))
+
+    sc.rigidbody_world.point_cache = _cache(True, 1, 100)
+    res, err = succeeds(OP.op_physics_info, {"object": "Cube"})
+    check("B115 a baked-but-short cache is a DIFFERENT blocker from an unbaked one - conflating "
+          "them would tell somebody to re-bake without saying the range is the problem",
+          any("does NOT cover" in b for b in res.get("blockers", []))
+          and not any("NOT baked" in b for b in res.get("blockers", [])),
+          err or "got %s" % res.get("blockers"))
+
+    del cube.rigid_body
+    del cube.modifiers
+
+    print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
     # THE NEGATIVE CONTROL. Every check above proves something is refused; without this, a guard
     # that refused EVERYTHING would score full marks. Retyping to SPOT while setting spotAngle is

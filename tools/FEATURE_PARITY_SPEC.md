@@ -12239,26 +12239,35 @@ out-of-process the way ops_gen already does with gen_status.
       in both files credited the wrong mechanism and was corrected rather than the check being
       quietly kept as if it guarded more than it does.
 
-- [ ] **physics is a write-only family - four ops that set and nothing that reads** (3 hours)
-      add_rigid_body, add_cloth, add_collision and bake_physics all write, and no op anywhere
-      reports what they wrote. Verified by reading ops_physics (four op_ functions, all setters)
-      and scene_info's return (no physics of any kind), not by scanning names.
+- [x] **physics is a write-only family - four ops that set and nothing that reads** DONE 2026-09-03
+      physics_info. Filed and closed the same day, because the reading needed to file it
+      properly was most of the work.
 
-      So a caller cannot ask what mass or friction a rigid body has, which collision shape it uses,
-      whether an object is kinematic, or whether a cloth modifier is even present. list_modifiers
-      would show a CLOTH modifier, but a rigid body is NOT a modifier - it lives on obj.rigid_body -
-      so it is unreadable by any route.
+      THE FIELD THAT MATTERS IS inSimulation, and it is a MEASUREMENT rather than a
+      setting. An object can carry a fully configured obj.rigid_body - mass, friction,
+      shape, damping, all reading back perfectly - and never move, because the sim is
+      driven by the scene RigidBodyWorld and acts only on objects in ITS COLLECTION.
+      Take it out of that collection and every field stays correct while it hangs in the
+      air. Another entry in the right-looking-and-inert family, and the reason a reader
+      that only echoed the settings back would have been worth nothing.
 
-      THE ONE THAT MATTERS MOST IS WHETHER A CACHE IS BAKED. bake_physics writes a point cache and
-      nothing can confirm it afterwards, which is the postcondition-shaped question: a scene jumped
-      to a late frame shows a rigid body AT REST unless the sim has been stepped or baked, so
-      "did the bake happen" decides whether a render is right or silently wrong.
+      TWO CACHE BLOCKERS, KEPT APART DELIBERATELY. Unbaked means a late frame shows the
+      REST state and a render of it is simply wrong. BAKED-BUT-SHORT is different and
+      quieter: a cache baked before the frame range was extended keeps is_baked true, is
+      perfectly valid, and the frames past its end fall back to rest in silence. Merging
+      them would tell somebody to re-bake without saying the range is the problem, so the
+      coverage comparison is made in the op rather than left to a caller who would have to
+      know to make it. A plant collapsing the two is what proves the distinction holds.
 
-      Wants: per-object rigid body settings, cloth and collision presence with their key
-      parameters, the scene rigidbody_world's existence and its point cache frame range, and
-      pointCacheBaked per cache. Also worth reporting is whether the cache range COVERS the scene
-      frame range - a bake made before the range was extended is stale in a way nothing announces.
+      Also flags ACTIVE + kinematic, the usual accident behind "my keyframed object will
+      not fall", and a sim modifier disabled in the render but not the viewport.
 
+      B115, ten checks, all offline - cache state and collection membership are stored
+      values and a set comparison, so nothing here needs the sim to run. Ground-truthed
+      with three plants, each caught by the check written for it. Seven of the ten failed
+      on first run from an incomplete stub rather than a real defect, and they surfaced as
+      named failures instead of a dead suite because succeeds() had just been added for
+      exactly that.
 - [ ] **Tier 5 - craft depth** (1 of 5 left)
       DONE 2026-09-03: set_camera_panorama, move_keyframes, set_light_ies, set_light_linking.
 

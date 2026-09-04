@@ -269,9 +269,162 @@ def op_bake_physics(params):
                           "simulation to bake. This is a no-op reported as a success by Blender.")}
 
 
+_INFO_KEYS = {"object", "name"}
+
+# The modifier types that carry a simulation. Named explicitly rather than detected by the presence
+# of a point_cache, because DYNAMIC_PAINT has one and is not a physics sim in the sense meant here,
+# and a list is readable where a duck-type is not.
+_SIM_MODIFIERS = ("CLOTH", "SOFT_BODY", "COLLISION", "FLUID", "DYNAMIC_PAINT")
+
+
+def _cache_row(pc, scene):
+    """A point cache described, including whether its range still COVERS the scene's.
+
+    THE STALE-BAKE TRAP. A cache baked before the frame range was extended is baked, valid, and
+    short - is_baked stays true, and the frames past its end silently fall back to the rest state.
+    Nothing announces it, so the coverage comparison is made here rather than left to a caller who
+    would have to know to make it.
+    """
+    if pc is None:
+        return None
+    row = {
+        "isBaked": bool(pc.is_baked),
+        "frameStart": int(pc.frame_start),
+        "frameEnd": int(pc.frame_end),
+    }
+    row["coversSceneRange"] = (pc.frame_start <= scene.frame_start
+                               and pc.frame_end >= scene.frame_end)
+    return row
+
+
+def op_physics_info(params):
+    """What the physics setup IS - the read half of a family that could only write.
+
+    add_rigid_body, add_cloth, add_collision and bake_physics all set, and until 2026-09-03 nothing
+    anywhere reported what they had set. scene_info carries no physics at all. So a caller could not
+    ask what mass a rigid body has, which collision shape it uses, whether an object is kinematic,
+    or - the one that decides whether a render is right - whether the cache is baked.
+
+    A rigid body is NOT a modifier: it lives on obj.rigid_body, so list_modifiers cannot see it and
+    there was no route to it by any op.
+
+    THE INERT STATE THIS EXISTS TO CATCH. An object can carry a fully configured obj.rigid_body -
+    mass, friction, shape, all reading back perfectly - and still not simulate at all, because the
+    simulation is driven by the scene's RigidBodyWorld and only acts on objects in ITS COLLECTION.
+    Remove the object from that collection and every field on it stays correct while it hangs in
+    the air. That is reported as `inSimulation` per object, not inferred from the settings.
+
+    params:
+      object / name (str)   report one object only. Default every object with physics.
+    """
+    reject_unknown(params, _INFO_KEYS, "physics_info")
+    sc = bpy.context.scene
+    only = take(params, "object", "name", kind=str)
+    if only:
+        objects = [get_object(only)]
+    else:
+        objects = list(bpy.data.objects)
+
+    rbw = getattr(sc, "rigidbody_world", None)
+    rbw_names = set()
+    if rbw is not None and getattr(rbw, "collection", None) is not None:
+        rbw_names = {o.name for o in rbw.collection.objects}
+
+    world = {
+        "exists": rbw is not None,
+        "collection": (rbw.collection.name
+                       if rbw is not None and getattr(rbw, "collection", None) else None),
+        "objectCount": len(rbw_names),
+        "enabled": bool(getattr(rbw, "enabled", False)) if rbw is not None else None,
+        "substeps": getattr(rbw, "substeps_per_frame", None) if rbw is not None else None,
+        "solverIterations": getattr(rbw, "solver_iterations", None) if rbw is not None else None,
+        "pointCache": _cache_row(getattr(rbw, "point_cache", None), sc) if rbw is not None else None,
+    }
+
+    rows, blockers = [], []
+    for obj in objects:
+        rb = getattr(obj, "rigid_body", None)
+        mods = [m for m in getattr(obj, "modifiers", []) if m.type in _SIM_MODIFIERS]
+        if rb is None and not mods:
+            continue
+        row = {"object": obj.name, "type": obj.type}
+        if rb is not None:
+            row["rigidBody"] = {
+                "type": rb.type,
+                "mass": round(float(rb.mass), 6),
+                "friction": round(float(rb.friction), 6),
+                "restitution": round(float(rb.restitution), 6),
+                "collisionShape": rb.collision_shape,
+                "kinematic": bool(rb.kinematic),
+                "collisionMargin": round(float(rb.collision_margin), 6),
+                "linearDamping": round(float(rb.linear_damping), 6),
+                "angularDamping": round(float(rb.angular_damping), 6),
+                "enabled": bool(getattr(rb, "enabled", True)),
+            }
+            # THE MEASUREMENT THAT SETTINGS CANNOT GIVE. Membership of the RigidBodyWorld
+            # collection is what decides whether any of the above does anything.
+            row["inSimulation"] = obj.name in rbw_names
+            if not row["inSimulation"]:
+                blockers.append("'%s' has a fully configured rigid body and is NOT in the "
+                                "RigidBodyWorld collection%s, so it will not simulate at all - "
+                                "every setting on it reads back correctly and it hangs in the air."
+                                % (obj.name,
+                                   " (there is no RigidBodyWorld)" if rbw is None else ""))
+            elif rb.type == "ACTIVE" and rb.kinematic:
+                blockers.append("'%s' is an ACTIVE rigid body with kinematic ON, which means it is "
+                                "driven by its animation rather than by the sim - the usual "
+                                "accident when a keyframed object refuses to fall." % obj.name)
+        if mods:
+            row["simModifiers"] = [
+                {"name": m.name, "type": m.type, "showRender": bool(m.show_render),
+                 "showViewport": bool(m.show_viewport),
+                 "pointCache": _cache_row(getattr(m, "point_cache", None), sc)}
+                for m in mods]
+            for m in mods:
+                if not m.show_render:
+                    blockers.append("'%s' on '%s' is disabled in the RENDER, so it is visible in "
+                                    "the viewport and absent from the picture."
+                                    % (m.name, obj.name))
+        rows.append(row)
+
+    # CACHE STATE ACROSS EVERYTHING, which is the question that decides whether a frame is right.
+    caches = []
+    if world["pointCache"] is not None:
+        caches.append(dict(world["pointCache"], kind="rigidbody"))
+    for row in rows:
+        for m in row.get("simModifiers", []):
+            if m["pointCache"] is not None:
+                caches.append(dict(m["pointCache"], kind=m["type"].lower(), object=row["object"]))
+    unbaked = [c for c in caches if not c["isBaked"]]
+    short = [c for c in caches if c["isBaked"] and not c["coversSceneRange"]]
+    if unbaked:
+        blockers.append("%d point cache(s) are NOT baked. Physics is evaluated by stepping forward "
+                        "from the start frame, so jumping straight to a late frame shows the REST "
+                        "state and a render of it is simply wrong. Run bake_physics."
+                        % len(unbaked))
+    if short:
+        blockers.append("%d cache(s) are baked but their range does NOT cover the scene's %d-%d - "
+                        "a bake made before the range was extended stays valid and short, and the "
+                        "frames past its end silently fall back to the rest state."
+                        % (len(short), sc.frame_start, sc.frame_end))
+
+    return {
+        "ok": True,
+        "scene": sc.name,
+        "sceneFrameRange": [sc.frame_start, sc.frame_end],
+        "rigidBodyWorld": world,
+        "objectsWithPhysics": len(rows),
+        "objects": rows,
+        "caches": caches,
+        "cacheCount": len(caches),
+        "blockers": blockers,
+        "readyToRender": not blockers,
+    }
+
 OPS = {
     "add_rigid_body": op_add_rigid_body,
     "add_cloth": op_add_cloth,
     "add_collision": op_add_collision,
     "bake_physics": op_bake_physics,
+    "physics_info": op_physics_info,
 }

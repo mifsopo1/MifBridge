@@ -5490,6 +5490,12 @@ def bl_add_collision(object: str, damping: float = None, friction: float = None,
 
 
 @mcp.tool()
+def bl_physics_info(object: str = None) -> dict:
+    "What the Blender physics setup IS - the read half of a family that could only write. bl_add_rigid_body, bl_add_cloth, bl_add_collision and bl_bake_physics all set and nothing reported what they had set; bl_scene_info carries no physics at all, and a rigid body is NOT a modifier (it lives on obj.rigid_body) so bl_list_modifiers cannot see it either. Catches the inert state that settings cannot reveal: an object can carry a fully configured rigid body - mass, friction, shape, all reading back perfectly - and never simulate, because the sim only acts on objects in the RigidBodyWorld's COLLECTION, so it hangs in the air. Reported as inSimulation. Also flags unbaked caches (a late frame shows the REST state and a render of it is simply wrong) and BAKED-BUT-SHORT ones, where a bake made before the frame range was extended stays valid while the frames past its end silently fall back."
+    return _blender("physics_info", object=object)
+
+
+@mcp.tool()
 def bl_bake_physics(start: float = None, end: float = None, clear: bool = None,
                     type: str = None) -> dict:
     "Bake Blender's physics point caches so a given frame shows the simulated state rather than the rest state. BLOCKS for the length of the bake. Reports which caches actually hold frames, because bake_all returns success even when nothing in the scene has a cache to bake."
