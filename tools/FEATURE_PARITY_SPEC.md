@@ -11608,6 +11608,53 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       lines, which audit_citations cannot catch because it validates engine-source citations only).
       Read them before acting; this file's own rule is that a reading list is not a defect count.
 
+      ALL FOUR READ AND RESOLVED 2026-09-04, by reading only - no build, so Source is untouched and
+      the 5.3 record still covers it. Three confirmed with exact lines, one part-dismissed. They are
+      claims now rather than a reading list, and the fix is a short session whenever the editor frees.
+
+      1. MifBridgeExport.cpp - CONFIRMED, and worse than stated. ignoredOptions tells the caller a
+         flag "had NO effect on this export", and the same response contradicts it FOUR times:
+
+           mesh.lodExported   MifExportEmitStaticMeshFacts(StaticMesh, Out, bAllLODs) is called at
+                              :986, OUTSIDE the if (bIsFbx) block that closes at :982. bAllLODs is
+                              read from the params at :652 regardless of format, so an OBJ export
+                              with levelOfDetail:true reports lodExported "all" beside an
+                              ignoredOptions entry saying it did nothing.
+           three warnings     :1010 if (bForceFrontX), :1016 if (bSourceMesh && StaticMesh), :1023
+                              if (bAllLODs). None is gated on bIsFbx, and each describes in detail
+                              what the flag DID - the third literally says "writes every LOD into
+                              one FBX" on an export that is not FBX.
+
+      2. MifBridgeLandscape.cpp:981 - CONFIRMED, all three differences, from the engine source
+         rather than inference. ALandscapeProxy::AddTargetLayer (UE_5.7 Landscape.cpp:7434-7447):
+
+           Modify()                  called at :7436. EditorLayerSettings.Add on 5.3 does not.
+           replace, not append       TargetLayers is a TMap keyed by FName, so registering the same
+                                     layer name twice REPLACES. The 5.3 TArray::Add appends a
+                                     duplicate. This file's own comment already says TMap; what it
+                                     does not say is that the two branches therefore differ on a
+                                     re-registration, which register_landscape_layer allows.
+           PostEditChangeProperty    called when bPostEditChange, which DEFAULTS TRUE, and MifBridge
+                                     calls the two-argument overload - so it fires.
+
+      3. MifBridgeIntrospect.cpp:1413 - CONFIRMED, and the divergence set is exact.
+         MifResolveVariableScope (:1285) TRIMS and matches case-insensitively; :1413 recomputes
+         bIsLocal from the RAW string with Scope.Equals("local"). They disagree on exactly one
+         class of input: "local" with surrounding whitespace. For those, bScopeLocal is true so a
+         LOCAL variable is created, while bIsLocal is false so the flags take the member path and
+         the "flags ignored under scope=local" warning never fires - which is precisely what the
+         MODE-PARAMS-OK comment three lines above promises cannot happen. The resolver trims because
+         the author expected padded input; :1413 just did not use the answer. One-token fix.
+
+      4. MifBridgeSafety.cpp:98 - TWO CONFIRMED, ONE DISMISSED.
+           MifBridgeCommon.cpp:2110      cited for RunEngineExec, which is at 2344. Stale by 234;
+                                         2110 is JStrAny, an unrelated JSON helper.
+           MifBridgeIntrospect.cpp:2108  cited for run_console, whose handler H_run_console is at
+                                         2498. Stale by 390.
+           MifBridgePIE.cpp:534          ACCURATE. The section comment is at 530 and
+                                         H_run_console_captured at 536, so :534 lands inside the
+                                         right block. Not a defect.
+
 - [x] **the message-endpoints plant covers one arm of three, and aiming it at the newest costs the one that works** (1 hour)
       DONE 2026-09-03, and NOT by moving the plant. The trade named in this item was real: the
       harness plant targets tool_help.json specifically so the tool stays provable while an editor
