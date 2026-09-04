@@ -15149,3 +15149,62 @@ out-of-process the way ops_gen already does with gen_status.
 
       When they are written the baseline goes back to 0, and that is the point of filing them rather
       than leaving the number to look permanent.
+- [x] **an audit ran against a live Blender, and nothing in the output said so** DONE 2026-09-04
+      A probe was pointed at port 8792 believing it had just started the server there. The start had
+      FAILED - the port was already held by a real Blender with a real file open - and the line
+      saying so went to a log nobody was reading. Seventeen read-only ops ran against that session
+      and the audit passed. `select_edges` matched 32 of 38497 edges, so the edge selection may have
+      changed; nothing was saved and no PIE was started.
+
+      THE FAILURE IS NOT THE FAILED START. It is that seventeen ops ran and no output named the
+      process on the other end. Two fixes, in commits 2f2a77f and dacf89c:
+
+        call() ANNOUNCES the answering instance once per process - pid, version, open file, object
+        count, and a marker when it is interactive. Faking the reply shows the line yesterday would
+        have printed before op one:
+          [mif] answering Blender: pid 5488, 5.0.1, file MIF_OilRig.blend, 812 object(s)
+                - 127.0.0.1:8792  <- INTERACTIVE, somebody may be working in it
+
+        call() REFUSES clear_scene, open_file and save_file against any instance that is
+        interactive or has a file open. Read-only is the only reason the real incident was cheap:
+        test_blender_mesh calls clear_scene seven times and clear_scene deletes every object in the
+        file with no confirmation. Reads are labelled, scene-wide writes are refused - the same
+        decision already made twice for ops, applied to the harness.
+
+      TWO THINGS WORTH KEEPING FROM HOW THIS WAS BUILT.
+
+      The banner nearly went into `reachable()`, which every suite calls first and which looked like
+      the obvious home. It would have been SILENT for the exact tool that caused the incident:
+      audit_blender_read_purity has its own connect logic and never calls reachable(). Its own
+      docstring already carried the lesson - extracting a shared helper only helps once the copies
+      are deleted. Only call() is a real chokepoint, and that was then checked rather than assumed:
+      blender_audit_common is the only tool in the repo that opens a socket.
+
+      The banner's first draft asked `bl_status`, on the strength of an addon comment telling
+      operators to "compare it against bl_status's pid". No such endpoint exists or ever did. It
+      would have caught its own exception and printed nothing, forever, while looking installed - a
+      check that cannot fire, added by trusting prose over the registry, which is the same mistake
+      as reading an endpoint name instead of a handler. `ping` already carries every field. The
+      addon comment was corrected in the same commit rather than left to mislead the next reader.
+
+      Both are gated in test_scratch_discrimination, which already asked this question about the UE
+      backend: can a suite tell somebody else's scratch from real content?
+
+- [x] **audit_blender_read_purity probed 4 of 28 read-shaped ops** DONE 2026-09-04
+      Its UE twin covers every read-prefixed endpoint; this one covered five candidates and reached
+      four. Widened to all fifteen argument-free reads - compositor_info, file_info, list_actions,
+      list_cameras, list_collections, list_lights, list_markers, list_materials, list_view_layers,
+      physics_info, render_info, world_info alongside the originals. 17 exercised, every one pure.
+
+      Its "exercised: %d/5" denominator was a hardcoded 5 that stayed 5 when the candidate list
+      grew - the small version of every stale number this file keeps deleting. Now derived.
+
+- [ ] **the ~12 Blender read ops that need an object are still unprobed for purity**
+      face_info, edge_info, vertex_info, uv_info, modifier_info and the rest take a target, so they
+      cannot go in a list of argument-free candidates. They are the reads most likely to touch
+      something - several evaluate a depsgraph or build a BMesh - so the purity question is sharper
+      for them than for the fifteen just cleared, not softer.
+
+      FILED RATHER THAN COUNTED. 17 of 28 is the honest number and the audit prints its own
+      denominator now, so this gap is visible in its output instead of only here. Needs a fixture
+      object built first, which is why it is not folded into the same change.
