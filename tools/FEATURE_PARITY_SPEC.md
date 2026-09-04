@@ -12147,6 +12147,61 @@ out-of-process the way ops_gen already does with gen_status.
       with the sources muted, and report max position/rotation error - because producing the right
       NUMBER of keys while losing the motion is the normal failure when visual keying is off.
 
+- [x] **collections - scene organisation, and the hole underneath set_light_linking** (6 ops) DONE 2026-09-03
+      create_collection, list_collections, link_objects, unlink_objects,
+      set_collection_visibility, delete_collection - a new ops_collection.py.
+
+      FOUND BY ASKING WHAT CONSUMES SOMETHING NOTHING PRODUCES. Before this, the ONLY place in the
+      whole addon that touched bpy.data.collections was a four-line private helper inside
+      set_light_linking, which makes an EMPTY collection when it cannot find one by name. Nothing
+      else could create one, list one, or put an object in one.
+
+      That did not merely leave a feature out - it left a SHIPPED OP UNABLE TO REACH ITS OWN
+      SUCCESS STATE. Light linking restricts a light to the objects inside a receiver collection,
+      so an empty receiver means the light illuminates NOTHING. set_light_linking is honest about
+      it and returns litsNothing:true, which 02_GOTCHAS names as one of its five right-looking-and-
+      inert cases. But the caller had no typed way out: putting an object in the collection was not
+      expressible, so the only escape was run_python - the arbitrary-code switch a user may well
+      have turned off. An op whose only reachable outcome is the broken one is worse than none.
+
+      THE INERT SHAPE REPEATS ONE LEVEL UP, which is why create_collection links by default.
+      bpy.data.collections.new() alone makes a collection in NO scene: its objects are outside the
+      view layer, outside the depsgraph and outside the render, while every field on it reads
+      perfectly. That is the default outcome of the obvious API call. So the postcondition is
+      REACHABILITY from the scene collection, walked, not existence in bpy.data - which would be
+      true for an orphan too.
+
+      AND ONE LEVEL DOWN. An object in zero collections is not deleted: it exists in bpy.data, is
+      in no scene, is invisible everywhere, nothing warns, and it survives the save. unlink_objects
+      REFUSES to create that state unless allowOrphans is passed, computing it across every named
+      object first so the refusal cannot fire partway through a list, and delete_collection rehomes
+      what would otherwise be stranded instead of leaving it.
+
+      THE FOUR MEANINGS OF "HIDDEN" ARE TAKEN BY THEIR REAL NAMES. hide_viewport and hide_render
+      are global properties on the collection; exclude, the eye icon, indirect_only and holdout are
+      PER VIEW LAYER and live on a LayerCollection, a different datablock that exists only for a
+      collection linked into that view layer. Writing the wrong one is a silent no-op that reads
+      back as a perfect success on the property that WAS written, so each is a distinct parameter,
+      each write is verified individually, and a per-layer write on a collection not in the view
+      layer is refused rather than dropped. Exclude is reported separately from hiding because it
+      removes the objects from the depsgraph entirely, which changes constraints, drivers and
+      modifiers that depend on them.
+
+      THE FIRST FAMILY WHOSE POSTCONDITIONS ARE TESTABLE WITH NO BLENDER. Everything else in the
+      addon has effects that live in evaluation - matrices, colour spaces, purge counts, pixels -
+      and stays unverifiable offline. Collection membership is pure data: a name-keyed set of links
+      and a tree of children. So test_blender_refusals B113 asserts real outcomes, 21 checks, and
+      the file's docstring and footer were corrected to stop claiming it proves no postconditions.
+
+      Ground-truthed with four plants: create_collection not linking, move:true ignoring the scene
+      root (the naive implementation - the root is a collection but is NOT in bpy.data.collections,
+      so a partial move reports a false success), unlink skipping the stranding check, and delete
+      not rehoming. The first plant exposed a harness bug rather than being caught cleanly: the
+      op's own postcondition raised straight out of an unwrapped check and KILLED the run, so the
+      suite exited 1 having reported zero failures and the plant looked missed. Fixed with a
+      succeeds() helper beside refuses(), because a harness that dies on the first defect hides the
+      rest - which is exactly what B111 forbids in the ops themselves.
+
 - [ ] **Tier 5 - craft depth** (1 of 5 left)
       DONE 2026-09-03: set_camera_panorama, move_keyframes, set_light_ies, set_light_linking.
 

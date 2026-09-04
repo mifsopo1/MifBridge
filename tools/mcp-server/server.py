@@ -5395,6 +5395,55 @@ def bl_render_status(job_id: str = None, log_lines: int = None) -> dict:
     return _blender("render_status", jobId=job_id, logLines=log_lines)
 
 @mcp.tool()
+def bl_create_collection(name: str, parent: str = None, objects: list = None,
+                         link: bool = None, color_tag: str = None) -> dict:
+    "Create a Blender collection and LINK it into the scene, because bpy.data.collections.new() alone makes one that belongs to no scene - its objects are outside the view layer, outside the depsgraph and outside the render, while every field on it reads perfectly. Before this the only collection creation anywhere in the addon was a private helper inside bl_set_light_linking that made an EMPTY one, so light linking could reach only its broken state (litsNothing) and nothing could fix it without bl_run_python. Pass objects to fill it at birth. The postcondition is REACHABILITY from the scene collection, not existence."
+    return _blender("create_collection", name=name, parent=parent, objects=objects,
+                    link=link, colorTag=color_tag)
+
+
+@mcp.tool()
+def bl_list_collections(view_layer: str = None, with_objects: bool = None) -> dict:
+    "The Blender collection tree with the four different things 'hidden' can mean, kept apart: hideViewport and hideRender are GLOBAL, while exclude and hideInViewLayer (the eye icon, the one people actually click) are PER VIEW LAYER and live on a LayerCollection rather than the collection. A null in a per-layer field means the collection is not in that view layer at all, which is why excluding an orphan does nothing. Also reports orphanCollections and objectsInNoCollection - both invisible everywhere while every field still reads correctly."
+    return _blender("list_collections", viewLayer=view_layer, withObjects=with_objects)
+
+
+@mcp.tool()
+def bl_link_objects(collection: str, objects: list = None, object: str = None,
+                    move: bool = None) -> dict:
+    "Put Blender objects into a collection. An object can be in MANY collections at once, so this ADDS rather than moves - pass move:true to unlink it from every other collection first, including the scene root, which a version that only walked bpy.data.collections would miss. Every name is resolved before anything is linked, so a typo in the fourth name does not leave a half-populated collection. Warns when the target collection is not itself in the scene, since filling an orphan changes nothing anybody can see."
+    return _blender("link_objects", collection=collection, objects=objects, object=object,
+                    move=move)
+
+
+@mcp.tool()
+def bl_unlink_objects(collection: str, objects: list = None, object: str = None,
+                      allow_orphans: bool = None) -> dict:
+    "Take Blender objects out of a collection, REFUSING by default to leave one in no collection at all. An object in zero collections still exists in bpy.data and is in no scene: invisible in the viewport, absent from the render, gone from the outliner, nothing warns, and it survives the save. The check runs across every named object before anything is unlinked, so the refusal cannot fire partway through. Pass allow_orphans to mean it."
+    return _blender("unlink_objects", collection=collection, objects=objects, object=object,
+                    allowOrphans=allow_orphans)
+
+
+@mcp.tool()
+def bl_set_collection_visibility(collection: str, view_layer: str = None,
+                                 hide_viewport: bool = None, hide_render: bool = None,
+                                 exclude: bool = None, hide_in_view_layer: bool = None,
+                                 indirect_only: bool = None, holdout: bool = None) -> dict:
+    "The four meanings of 'hide this Blender collection', taken by their real names because writing the wrong one is a silent no-op that reads back as success on the property that WAS written. hide_viewport/hide_render are global; exclude, hide_in_view_layer (the eye), indirect_only and holdout are per view layer and are refused outright if the collection is not in that view layer, since there is no LayerCollection to write to. EXCLUDE IS NOT HIDING: it removes the collection from the depsgraph entirely, so constraints, drivers and modifiers depending on those objects change behaviour too. Every requested write is verified individually afterwards."
+    return _blender("set_collection_visibility", collection=collection, viewLayer=view_layer,
+                    hideViewport=hide_viewport, hideRender=hide_render, exclude=exclude,
+                    hideInViewLayer=hide_in_view_layer, indirectOnly=indirect_only,
+                    holdout=holdout)
+
+
+@mcp.tool()
+def bl_delete_collection(collection: str, delete_objects: bool = None,
+                         reparent_to: str = None) -> dict:
+    "Delete a Blender collection and say what became of its objects. bpy.data.collections.remove() deletes the collection and leaves the objects alone, which sounds safe and is exactly how objects end up in no collection at all - still in bpy.data, in no scene, invisible, surviving the save. So this decides it explicitly: objects that would be stranded move to the scene root (or reparent_to), or are deleted outright with delete_objects. Objects that are ALSO in another collection are left where they are rather than silently reorganised. Child collections are relinked rather than orphaned."
+    return _blender("delete_collection", collection=collection, deleteObjects=delete_objects,
+                    reparentTo=reparent_to)
+
+@mcp.tool()
 def bl_set_world(color: list = None, strength: float = None, hdri: str = None,
                  rotation: float = None, mist_use: bool = None, mist_start: float = None,
                  mist_depth: float = None, use_as_light: bool = None, name: str = None) -> dict:

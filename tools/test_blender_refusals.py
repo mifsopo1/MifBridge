@@ -17,9 +17,16 @@ WHAT THIS CAN AND CANNOT PROVE, stated plainly because the distinction is the wh
                unknown key is rejected by reject_unknown; a value outside an enum is refused; a
                type mismatch is refused. All of that is real logic and all of it was previously
                unchecked by anything.
-  IT CANNOT    prove any op DOES what it says once Blender is real. Every postcondition -
-               evaluated matrices, purged orphans, colour spaces, motion preserved - needs a live
-               Blender and stays unverified until a suite runs there.
+  IT CANNOT    prove any op DOES what it says once Blender is real, WITH ONE EXCEPTION added
+               2026-09-03. Every postcondition that depends on evaluation - matrices, purged
+               orphans, colour spaces, motion preserved, a rendered frame - needs a live Blender
+               and stays unverified until a suite runs there.
+  THE EXCEPTION is B113. Collection membership is not evaluated: it is a name-keyed set of links
+               and a tree of children, so a stub that models linking honestly answers the real
+               question - is the object IN there afterwards, is the collection reachable from the
+               scene - rather than only whether a refusal fired. Those are genuine postcondition
+               checks and are labelled as such, so nobody reads a green run here as covering the
+               families where the same thing is impossible.
 
 A refusal that fires for the WRONG REASON would pass a naive version of this, so each check asserts
 on the message as well as on the fact of the raise. "It raised" is not "it refused this".
@@ -83,6 +90,123 @@ class _Coll(dict):
 
     def __iter__(self):
         return iter(self.values())
+
+
+class _LinkSet(object):
+    """Blender's CollectionObjects / CollectionChildren: `in` tests by NAME, link raises on a dupe.
+
+    Both details are load-bearing rather than cosmetic. ops_collection asks `obj.name in
+    coll.objects`, which only works because Blender keys these by name, and it guards every link
+    with a membership test because a second link() of the same object RAISES in real Blender. A stub
+    that accepted a duplicate silently would let a bug through that the real API rejects loudly.
+    """
+
+    def __init__(self):
+        self._d = {}
+
+    def link(self, item):
+        if item.name in self._d:
+            raise RuntimeError("Object '%s' already in collection" % item.name)
+        self._d[item.name] = item
+
+    def unlink(self, item):
+        self._d.pop(item.name, None)
+
+    def __contains__(self, key):
+        return (key if isinstance(key, str) else key.name) in self._d
+
+    def __iter__(self):
+        return iter(list(self._d.values()))
+
+    def __len__(self):
+        return len(self._d)
+
+
+class _StubCollection(object):
+    def __init__(self, name):
+        self.name = name
+        self.objects = _LinkSet()
+        self.children = _LinkSet()
+        self.hide_viewport = False
+        self.hide_render = False
+        self.color_tag = "NONE"
+
+
+class _CollData(object):
+    """bpy.data.collections - a name-keyed store with new/remove/get and iteration."""
+
+    def __init__(self):
+        self._d = {}
+
+    def new(self, name):
+        c = _StubCollection(name)
+        self._d[name] = c
+        return c
+
+    def remove(self, coll):
+        self._d.pop(coll.name, None)
+
+    def get(self, name, default=None):
+        return self._d.get(name, default)
+
+    def __iter__(self):
+        return iter(list(self._d.values()))
+
+    def __len__(self):
+        return len(self._d)
+
+
+class _LayerColl(object):
+    """A LayerCollection mirroring the real tree, with the four PER-VIEW-LAYER flags.
+
+    Rebuilt from the collection tree on every access rather than cached, because excluding a
+    collection makes Blender rebuild the layer tree and ops_collection re-fetches for exactly that
+    reason. The flags are held in a dict OUTSIDE the wrapper so they survive the rebuild - which is
+    what makes the read-back check meaningful instead of always seeing what was just written.
+    """
+
+    def __init__(self, coll, flags):
+        self.collection = coll
+        self._flags = flags.setdefault(coll.name, {"exclude": False, "hide_viewport": False,
+                                                   "indirect_only": False, "holdout": False})
+        self._all = flags
+        self.children = [_LayerColl(c, flags) for c in coll.children]
+
+    def __getattr__(self, key):
+        if key in ("exclude", "hide_viewport", "indirect_only", "holdout"):
+            return self._flags[key]
+        raise AttributeError(key)
+
+    def __setattr__(self, key, value):
+        if key in ("exclude", "hide_viewport", "indirect_only", "holdout"):
+            self._flags[key] = value
+        else:
+            object.__setattr__(self, key, value)
+
+
+def install_collection_stub():
+    """Give the bpy stub enough collection machinery to run ops_collection for real."""
+    bpy = sys.modules["bpy"]
+    bpy.data.collections = _CollData()
+    root = _StubCollection("Scene Collection")
+    bpy.context.scene.collection = root
+    flags = {}
+
+    class _VL(object):
+        name = "ViewLayer"
+
+        @property
+        def layer_collection(self):
+            return _LayerColl(root, flags)
+
+        def update(self):
+            pass
+
+    vl = _VL()
+    vl.objects = bpy.data.objects
+    bpy.context.view_layer = vl
+    bpy.context.scene.view_layers = _Coll({"ViewLayer": vl})
+    return root
 
 
 def install_stub():
@@ -198,6 +322,25 @@ def install_stub():
 
     if ADDON not in sys.path:
         sys.path.insert(0, ADDON)
+
+
+def succeeds(fn, params):
+    """Call an op expecting it to WORK, and turn any raise into a failed check, not a dead suite.
+
+    THE SIBLING OF refuses(), and it exists because leaving it out cost a ground-truth probe. B113's
+    checks called their ops directly. Planting a defect that made create_collection fail its own
+    reachability postcondition then raised a MifOpError straight out of the check, which killed the
+    run at that line: the suite exited 1 having reported ZERO failures, so the plant looked like it
+    had not been caught when in fact it had been caught twice over.
+
+    That is the same shape this file forbids in the ops themselves - B111 exists precisely because a
+    crash instead of a refusal reports one problem and hides the rest - and a harness gets no
+    exemption from its own rule. Returns (result, error) so a check can assert on either.
+    """
+    try:
+        return fn(params), None
+    except Exception as exc:                       # noqa: BLE001
+        return {}, "raised %s: %s" % (type(exc).__name__, str(exc)[:110])
 
 
 def refuses(fn, params, *must_contain):
@@ -548,6 +691,130 @@ def main():
             pass
 
     print("")
+    print("=== B113: collections - the first family whose POSTCONDITIONS can be checked offline ===")
+    # WHY THIS BLOCK IS DIFFERENT FROM EVERY OTHER ONE IN THIS FILE. The header says this suite
+    # cannot prove an op DOES what it says, and for lights, cameras, constraints and animation that
+    # stays true - their effects live in the depsgraph, in evaluated matrices and in rendered
+    # pixels, none of which exist without a real Blender.
+    #
+    # COLLECTION MEMBERSHIP IS NOT LIKE THAT. It is pure data: a name-keyed set of links, a tree of
+    # children, and four booleans. Nothing is evaluated, so a stub that models linking honestly can
+    # answer the real question - is the object IN there afterwards, and is the collection reachable
+    # from the scene - rather than only "was the refusal raised". These are the first genuine
+    # postcondition checks in this file, and they are marked as such so nobody generalises from them
+    # to the families where the same thing is impossible.
+    print("      (membership is pure data, so these assert real outcomes - not just refusals)")
+    from MifBlender import ops_collection as OC
+    _bpy = sys.modules["bpy"]
+    bpy_data_collections = lambda: _bpy.data.collections
+    bpy_object = lambda n: _bpy.data.objects[n]
+
+    root = install_collection_stub()
+
+    res, err = succeeds(OC.op_create_collection, {"name": "Lit", "objects": ["Cube"]})
+    check("B113 create_collection LINKS by default - an unlinked collection is invisible and "
+          "renders nothing, and that is what the bare API call produces",
+          res.get("inScene") is True and res.get("objectCount") == 1, err or "got %s" % res)
+    check("B113 and the object is genuinely in it afterwards, measured on the collection",
+          "Cube" in bpy_data_collections().get("Lit").objects, "not linked")
+
+    ok, msg = refuses(OC.op_create_collection, {"name": "Lit"}, "already exists", "link_objects")
+    check("B113 a duplicate name is refused and points at link_objects", ok, msg)
+
+    res, err = succeeds(OC.op_create_collection, {"name": "Orphan", "link": False})
+    check("B113 link:false is honoured AND reported as inScene:false with a note - the inert state "
+          "named rather than left to be discovered at render time",
+          res.get("inScene") is False and "NO scene" in (res.get("note") or ""),
+          err or "got %s" % res)
+
+    ok, msg = refuses(OC.op_create_collection, {"name": "Both", "parent": "Lit", "link": False},
+                      "parent", "not both")
+    check("B113 parent with link:false is refused - an unlinked collection has no parent", ok, msg)
+
+    # LINKING, AND THE move:true CASE THAT HAS TO REACH THE SCENE ROOT TOO. The root collection is
+    # not in bpy.data.collections, so a move that only walked that store would leave the object
+    # linked at the top level while reporting it moved.
+    root.objects.link(bpy_object("Lamp"))
+    res, err = succeeds(OC.op_link_objects, {"collection": "Lit", "object": "Lamp", "move": True})
+    check("B113 move:true unlinks from the SCENE ROOT as well - it is a collection but is not in "
+          "bpy.data.collections, so a partial move would report a false success",
+          "Lamp" not in root.objects and "Lamp" in bpy_data_collections().get("Lit").objects,
+          err or "movedFrom=%s rootHas=%s" % (res.get("movedFrom"), "Lamp" in root.objects))
+
+    res, err = succeeds(OC.op_link_objects, {"collection": "Lit", "object": "Lamp"})
+    check("B113 linking something already there is reported as alreadyPresent, not as a new link "
+          "- and does not raise, which real Blender's link() does on a duplicate",
+          res.get("alreadyPresent") == ["Lamp"] and res.get("linked") == [], err or "got %s" % res)
+
+    ok, msg = refuses(OC.op_link_objects, {"collection": "Lit"}, "objects", "required")
+    check("B113 link_objects with no objects is refused rather than silently doing nothing", ok, msg)
+
+    ok, msg = refuses(OC.op_link_objects, {"collection": "NoSuchColl", "object": "Cube"},
+                      "no collection named")
+    check("B113 an unknown collection is refused and the message lists what exists", ok, msg)
+
+    # THE REFUSAL THIS MODULE EXISTS FOR. An object in zero collections is not deleted - it is in no
+    # scene, invisible everywhere, and it survives the save with nothing to warn anybody.
+    ok, msg = refuses(OC.op_unlink_objects, {"collection": "Lit", "object": "Cube"},
+                      "NO collection", "allowOrphans")
+    check("B113 unlinking the last home of an object is REFUSED - it would exist in no scene, "
+          "invisible and unwarned, and survive the save", ok, msg)
+    check("B113 and the refusal left the object where it was - a refusal must fire before the "
+          "mutation, not partway through the list",
+          "Cube" in bpy_data_collections().get("Lit").objects, "Cube was unlinked anyway")
+
+    res, err = succeeds(OC.op_unlink_objects,
+                        {"collection": "Lit", "object": "Cube", "allowOrphans": True})
+    check("B113 allowOrphans permits it and NAMES what was stranded",
+          res.get("nowInNoCollection") == ["Cube"] and res.get("objectCount") == 1,
+          err or "got %s" % res)
+
+    ok, msg = refuses(OC.op_unlink_objects, {"collection": "Lit", "object": "Cube"},
+                      "not in", "to begin with")
+    check("B113 unlinking something that was never in there is refused, not treated as a no-op",
+          ok, msg)
+
+    # VISIBILITY: four flags in two places, and the per-layer ones need a LayerCollection.
+    ok, msg = refuses(OC.op_set_collection_visibility, {"collection": "Lit"}, "nothing to do")
+    check("B113 set_collection_visibility with no flags is refused", ok, msg)
+
+    ok, msg = refuses(OC.op_set_collection_visibility, {"collection": "Orphan", "exclude": True},
+                      "not in view layer", "LayerCollection")
+    check("B113 a per-view-layer write on a collection that is not IN the view layer is refused - "
+          "there is no LayerCollection to write to, which is why excluding an orphan does nothing",
+          ok, msg)
+
+    res, err = succeeds(OC.op_set_collection_visibility,
+                        {"collection": "Lit", "exclude": True, "hideRender": True})
+    check("B113 a per-layer flag and a global flag land on their DIFFERENT datablocks and both "
+          "read back - writing the wrong one is a silent no-op that looks like success",
+          res.get("exclude") is True and res.get("hideRender") is True
+          and res.get("perViewLayerWrites") == ["exclude"]
+          and res.get("globalWrites") == ["hideRender"], err or "got %s" % res)
+    check("B113 and excluding is called out as leaving the depsgraph, not as hiding",
+          res.get("excludedFromEvaluation") is True and "depsgraph" in (res.get("note") or ""),
+          "got %s" % res.get("note"))
+
+    # DELETION, and the rehoming that stops it stranding anything.
+    succeeds(OC.op_create_collection, {"name": "Doomed", "objects": ["Cam"]})
+    res, err = succeeds(OC.op_delete_collection, {"collection": "Doomed"})
+    check("B113 deleting a collection REHOMES the objects that would otherwise be stranded - "
+          "bpy.data.collections.remove leaves them in no scene at all",
+          res.get("objectsRehomed") == ["Cam"] and "Cam" in root.objects, err or "got %s" % res)
+    check("B113 and it reports nothing left in no collection afterwards",
+          res.get("objectsInNoCollection") == ["Cube"], "got %s" % res.get("objectsInNoCollection"))
+
+    ok, msg = refuses(OC.op_delete_collection, {"collection": "Lit", "reparentTo": "Lit"},
+                      "reparentTo names the collection being deleted")
+    check("B113 reparenting into the collection being deleted is refused", ok, msg)
+
+    res, err = succeeds(OC.op_list_collections, {})
+    check("B113 list_collections names the orphans and the homeless objects - both are invisible "
+          "everywhere while every other field reads perfectly",
+          res.get("orphanCollections") == ["Orphan"] and "Cube" in res.get("objectsInNoCollection"),
+          "got %s" % res)
+
+    print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
     # THE NEGATIVE CONTROL. Every check above proves something is refused; without this, a guard
     # that refused EVERYTHING would score full marks. Retyping to SPOT while setting spotAngle is
@@ -570,8 +837,11 @@ def main():
     for name, detail in FAIL:
         print("  FAILED: %s\n          %s" % (name, detail))
     print("=" * 72)
-    print("Refusal contracts only. NOTHING here proves an op DOES what it says once Blender is")
-    print("real - every postcondition needs a live backend and stays unverified until then.")
+    print("Refusal contracts, plus the ONE family whose postconditions are pure data: B113 asserts")
+    print("real collection membership and reachability, because linking is a name-keyed set with")
+    print("nothing evaluated. Everywhere else the claim stands unchanged - no evaluated matrix, no")
+    print("colour space, no purge count and no rendered frame is verified here, and none of it can")
+    print("be without a live Blender.")
     return 1 if FAIL else 0
 
 
