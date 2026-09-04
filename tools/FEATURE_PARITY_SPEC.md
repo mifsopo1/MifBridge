@@ -12089,6 +12089,26 @@ out-of-process the way ops_gen already does with gen_status.
                                        missing answer - a WRONG one, from an op whose purpose is
                                        verification.
 
+- [ ] **the README badge drifted 72 Blender ops and no pre-commit check said so** (30 min, needs a decision)
+      check_badge EXISTS, WORKS, and is not in --gates. It reported the badge stale the moment it
+      was asked - 68 ops against a real 140, 440 endpoints against 453, 525 MCP tools against 610,
+      168 suites against 180 - and it had been wrong for a full day of heavy work. Nothing said so
+      because it runs at PACKAGING time only, and packaging had not been run.
+
+      That separation was deliberate: make_release refuses to package against a stale badge, and
+      --gates is the pre-commit check. The argument for keeping them apart is that a stale badge is
+      not a correctness defect and gating it makes every op-adding commit also a README commit.
+
+      The argument against is what actually happened. The badge is described in this repo's own
+      source as "the first thing anyone sees", it was wrong by 72 ops, and the only reason it was
+      noticed is that somebody went reading the docs for an unrelated reason. A check that can only
+      fire at a moment nobody reaches is close to a check that does not fire.
+
+      It is cheap - measured, well under a second, since every count is a static parse. So cost is
+      not the deciding factor and the decision is about churn versus accuracy. Worth ASKING rather
+      than changing unilaterally, because the current split is a considered design and not an
+      oversight.
+
 - [ ] **Tier 3 - motion worth rendering** (1 of 11 left)
       DONE 2026-09-03: evaluate_at_frame, edit_fcurve, add_fcurve_modifier, create_action /
       assign_action / list_actions, set_bone_pose, set_shape_key, bake_to_keyframes, markers with

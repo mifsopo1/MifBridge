@@ -13,34 +13,53 @@ Since 0.3.0 this repo ships three things, and only one of them is Unreal:
 |---|---|---|
 | `MifBridge.uplugin`, `Source/` — **the repo root is the plugin** | UE editor plugin (C++) | `<Project>/Plugins/MifBridge/` |
 | `tools/mcp-server/` | The MCP server. Fronts **both** backends. | nowhere; referenced by path from `.mcp.json` |
-| `tools/blender-addon/` | `MifBlender` — the Blender backend. **68 ops across 14 `ops_*` modules** (2026-09-01). Counted from `parity_check.load_addon_ops`, not remembered — this line read "12 ops" for long enough to be misleading. | Blender's addons dir, **via `tools/sync_blender_addon.py`** |
+| `tools/blender-addon/` | `MifBlender` — the Blender backend, one `ops_*` module per family. **The op count is deliberately not written here**: this line said "12 ops", then "68 ops", and was stale within two days each time. `python tools/parity_check.py` prints it. | Blender's addons dir, **via `tools/sync_blender_addon.py`** |
 | `tools/layout_graph.py` | Arranges a blueprint graph and adds comment boxes, entirely from the client — `list_nodes` for the topology, `move_node` and `add_comment` to apply. No C++, no plugin. `--self-test` proves the algorithm offline. | nowhere; run it from `tools/` |
 
 ### The Blender arm's capability families
 
-Added 2026-09-01, when the arm went from 45 ops to 68. Before that it could model, boolean,
-transform and shade — and could not light, aim, animate, simulate or render, so anything past
-modelling had to leave the typed path for `run_python`.
+THE COUNT IS NOT WRITTEN HERE, deliberately, and the reason is this line's own history: it read
+"12 ops" long enough to be misleading, was corrected to "68 ops (2026-09-01)", and was stale again
+within two days when the arm roughly doubled. A number in prose beside a tool that prints the same
+number is a second source of truth, and it is always the prose that rots.
 
-| family | ops | the trap it exists to guard |
-|---|---|---|
-| lights | `create_light` | type-specific settings are REFUSED on the wrong type; Blender would just not have the attribute and the write would vanish |
-| cameras | `create_camera` | a camera faces its local **−Z**; `lookAt` derives the euler, because hand-aiming gets this wrong first |
-| keyframes | `set_keyframe`, `set_frame_range`, `list_keyframes` | a transform is on the object, a light's energy on its **data** — `keyframe_insert` on the wrong one raises about a data path, not about the mistake |
-| geometry nodes | `create_node_group`, `add_group_node`, `link_group_nodes`, `add_group_interface`, `list_group_nodes`, `assign_node_group` | an unlinked Group Output is **not an error** — the modifier passes geometry through unchanged, indistinguishable from one that is broken |
-| particles | `add_particles`, `list_particles` | `renderType: OBJECT` with no instance object renders NOTHING and Blender says nothing |
-| physics | `add_rigid_body`, `add_cloth`, `add_collision`, `bake_physics` | a sim is stepped **forward**; jumping to a late frame shows the rest pose until the cache is baked |
-| rendering | `set_render_settings`, `render_still` | `render()` returns FINISHED whether or not a file appeared, so `wroteFile` is stat'd off disk |
-| world | `set_world` | strength 1.0 with mid-grey is overcast daylight and washes out a dark interior; a dim room wants 0.02–0.1 |
-| viewport | `set_viewport_shading`, `frame_viewport`, `set_viewport_view` | SOLID shading ignores lamps, so a correctly lit scene looks grey — and only **RENDERED** shows a flicker flickering |
+    python tools/parity_check.py          # ops, MCP call sites, endpoints, and any drift between them
+    python tools/blender_version_matrix.py  # what actually runs, on every installed Blender
 
-The ninth family was not on the original gap list. That list was written by asking what the ENGINE
-can do; viewport control is about what the person watching can SEE, and a bridge that can light a
-scene and cannot show it has not finished the job.
+The families below are what the arm can DO. Each row names the trap the family exists to guard,
+because that is the part that does not go stale.
 
-Exercised by `test_blender_anim.py` (32 checks) and `test_blender_scene.py` (49), both across
-3.6/4.2/4.4/5.0 — written **because** a 44-run sweep went green over all of it while calling none
-of it.
+| family | the trap it exists to guard |
+|---|---|
+| **lights** | type-specific settings are REFUSED on the wrong type; Blender would just not have the attribute and the write would vanish. Shadow settings move more than anything else here: `cycles.cast_shadow` is 3.6 only, contact shadows were dropped by EEVEE Next at 4.4, and the jitter group arrived at 4.2 |
+| **cameras** | a camera faces its local **−Z**; `lookAt` derives the euler, because hand-aiming gets this wrong first. A PANO camera could be created and not configured until `set_camera_panorama` — declared-and-unreachable is worse than absent |
+| **animation** | a transform is on the object and a light's energy on its **data**; and an f-curve edit that keeps the right NUMBER of keys while losing the motion is the normal failure, so bakes are judged by the evaluated matrix across the range |
+| **rigging** | a vertex group that exists with every weight at **zero** deforms nothing and reads back identically to a working one, so weights are counted non-zero rather than by membership |
+| **geometry nodes, shaders, compositor** | an unlinked output is **not an error** — the tree passes through unchanged, indistinguishable from one that is broken. The compositor is `scene.node_tree` up to 4.4 and `scene.compositing_node_group` at 5.0, where `CompositorNodeComposite` does not exist at all |
+| **collections & view layers** | a collection not linked into the scene, or an object in no collection, is invisible everywhere while every field on it reads perfectly. "Hidden" is four different properties in two datablocks, two of them per view layer |
+| **materials & UV** | `uv_layers.new()` does not make the new layer active, so a lightmap pass silently repacks the base colour UVs; and a bake written to an sRGB image is a normal map with a gamma curve on it |
+| **queries** | `obj.ray_cast` is LOCAL on both sides, so world coordinates give a plausible WRONG hit; and an AABB overlap test says two objects touch when they do not |
+| **physics** | a sim is stepped **forward**; jumping to a late frame shows the rest pose until the cache is baked, and a cache baked before the range was extended stays valid and short |
+| **rendering & colour** | `render()` returns FINISHED whether or not a file appeared, so `wroteFile` is stat'd off disk. An animation render cannot be in-process under the 150s job ceiling, so it spawns a child and is polled |
+| **file & interchange** | nothing the addon authored survived the process until `save_file`; and a save DESTROYS unused datablocks, which is data loss caused by the successful operation |
+| **world** | strength 1.0 with mid-grey is overcast daylight and washes out a dark interior; a dim room wants 0.02–0.1. A world with `use_nodes` off ignores its whole tree |
+| **viewport** | SOLID shading ignores lamps, so a correctly lit scene looks grey — only **RENDERED** shows what will render |
+
+The viewport family was not on the original gap list. That list was written by asking what the
+ENGINE can do; viewport control is about what the person watching can SEE, and a bridge that can
+light a scene and cannot show it has not finished the job.
+
+**How the arm is verified**, and the distinction matters more than the numbers:
+
+  * `test_blender_refusals.py` runs with **no Blender at all**, against a stub. It proves refusal
+    contracts and the few families whose logic is pure data. It cannot prove an op DOES anything —
+    and worse, it agrees with whatever the author believed, because the same person wrote the stub.
+  * `blender_version_matrix.py` runs **every op on every installed Blender**, headless, in a
+    throwaway `--factory-startup` process. This is what catches version drift. On 2026-09-03 it
+    found three ops that had never worked on ANY build, and the compositor family dead on 5.0 with
+    every static gate green.
+
+Both are in `make_release --gates`.
 
 ### Client-side capability
 
