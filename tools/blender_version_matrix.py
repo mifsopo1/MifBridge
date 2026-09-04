@@ -88,6 +88,10 @@ PAYLOADS = {
     "face_info": {"object": "MifProbe"},
     "ray_cast": {"origin": [32, 0, 5], "direction": [0, 0, -1]},
     "closest_point_on_mesh": {"object": "MifProbe", "point": [32, 0, 5]},
+    # MifProbe is unwrapped by uv_unwrap at 'u'... which is AFTER 's'. So this targets the
+    # layer create_primitive already made: every new mesh has "UVMap", and making it active
+    # is a no-op that still exercises the resolve, the readback and the index report.
+    "set_uv_layer": {"object": "MifProbe", "layer": "UVMap", "active": True},
     "uv_info": {"object": "MifProbe"},
     "mesh_stats": {"object": "MifProbe"},
     "select_faces": {"object": "Cube", "axis": "Z"},

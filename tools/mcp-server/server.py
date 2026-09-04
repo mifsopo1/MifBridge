@@ -4934,6 +4934,14 @@ def bl_remove_modifier(object_name: str, modifier: str) -> dict:
 
 
 @mcp.tool()
+def bl_set_uv_layer(object: str, layer: str, active: bool = None, rename: str = None,
+                    remove: bool = None) -> dict:
+    "Choose the ACTIVE UV layer on a Blender mesh, rename one, or remove one. THE ACTIVE LAYER IS THE ONE EVERYTHING WRITES TO - every UV operator and every bake - and bl_uv_info reported it while the only way to CHANGE it was bl_uv_unwrap, which sets it as a side effect of unwrapping. So selecting a layer meant re-unwrapping it and destroying the UVs it held. REMOVING A LAYER SHIFTS EVERY LATER LAYER'S INDEX: measured on 3.6.23 and 5.0.1, with UVMap, A, B, C, removing A moves B from 2 to 1 and C from 3 to 2. Unreal's lightmap coordinate is an INDEX, not a name, so removing an earlier layer silently repoints what the engine reads on a mesh it has already imported - the layers that moved are named in indicesShifted. Removing the LAST layer is refused: it leaves the mesh unwrappable, and texturing and lightmap baking both fail until it is unwrapped again. A mesh is limited to 8 UV layers, which is why removing junk ones matters at all."
+    return _blender("set_uv_layer", object=object, layer=layer, active=active,
+                    rename=rename, remove=remove)
+
+
+@mcp.tool()
 def bl_uv_info(object_name: str, layer: str = None, max_reported_islands: int = 64) -> dict:
     "Read a Blender mesh's UVs per layer - the verification half of bl_uv_unwrap. bl_uv_unwrap can CREATE a channel and bl_object_info reports only that channels EXIST, so 'did the unwrap produce something Unreal can bake a lightmap into' had"
     return _blender("uv_info", object=object_name, layer=layer,

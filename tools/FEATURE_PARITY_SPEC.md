@@ -13781,7 +13781,30 @@ out-of-process the way ops_gen already does with gen_status.
       that no op currently has (add_nla_strip creates tracks and does not name them for later), so
       it is a small design decision rather than a parameter, and worth doing deliberately.
 
-- [ ] **modelling is the last family in the spec's list that has not had this pass**
+- [x] **modelling is the last family in the spec's list that has not had this pass** DONE 2026-09-04
       materials, UV, rigging, geometry nodes, lighting, cameras, physics, particles, world,
       compositing, rendering and animation have all been diffed read-side against write-side today.
       ops_mesh.py has not, and it is the largest module in the addon.
+
+      DONE, and the family is mostly clean: everything mesh_stats reports has a write path -
+      uvLayers from uv_unwrap, colorAttributes from set_vertex_color, materialSlots from
+      set_material_slots, modifiers from add/remove_modifier, and the counts and boxes are derived.
+
+      ONE GAP, and a consequential one. uv_info reports activeLayer, and the only thing that could
+      CHANGE it was uv_unwrap, which sets it as a side effect of unwrapping - so selecting a layer
+      meant re-unwrapping it and destroying the UVs it held. That is uv_unwrap's own documented trap
+      seen from the other side: its code carries a comment about active_index staying 0 after a
+      layer is created, because every UV operator and every bake writes to the ACTIVE layer.
+
+      REMOVING A LAYER SHIFTS EVERY LATER LAYER'S INDEX, measured on 3.6.23 and 5.0.1: with UVMap,
+      A, B, C, removing A moves B from 2 to 1 and C from 3 to 2. Unreal's lightmap coordinate is an
+      INDEX, not a name, so removing an earlier layer silently repoints what the engine reads on a
+      mesh it has already imported. The layers that moved are named. Removing the LAST layer is
+      refused - it leaves the mesh unwrappable, and both texturing and lightmap baking fail until it
+      is unwrapped again.
+
+      MY OWN NOTE WAS WRONG FIRST. It compared the active layer by NAME before and after, so
+      renaming the active layer read as a switch and the response told the caller the active layer
+      had moved when only its label had. Tracked as an event now, set where the assignment happens.
+
+      Verified on 3.6.23 and 5.0.1 across seven cases, four of them refusals.

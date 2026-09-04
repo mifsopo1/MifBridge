@@ -3297,6 +3297,120 @@ def op_mesh_stats(params):
         out["evaluatedNote"] = "no modifiers, so the evaluated mesh is the base mesh."
     return out
 
+
+_SETUV_KEYS = {"object", "name", "layer", "active", "rename", "remove"}
+
+
+def _uv_layer_map(mesh):
+    """Layer name -> index. The INDEX is what an engine reads, so it is the thing worth watching."""
+    return dict((layer.name, i) for i, layer in enumerate(mesh.uv_layers))
+
+
+def op_set_uv_layer(params):
+    """Choose the ACTIVE UV layer, rename one, or remove one - none of which was possible.
+
+    THE ACTIVE LAYER IS THE ONE EVERYTHING WRITES TO. uv_info reports activeLayer and the only way
+    to change it was uv_unwrap, which sets it as a side effect of unwrapping - so selecting a layer
+    meant re-unwrapping it and destroying the UVs it held. That is the file's own trap seen from the
+    other side: uv_unwrap carries a comment about active_index staying 0 after creating a layer,
+    because every UV operator and every bake writes to the ACTIVE layer, and missing that line makes
+    a lightmap pass silently repack the base colour UVs.
+
+    REMOVING A LAYER SHIFTS EVERY LATER LAYER'S INDEX. Measured on 3.6.23 and 5.0.1: with UVMap, A,
+    B, C, removing A moves B from 2 to 1 and C from 3 to 2. Unreal's lightmap coordinate index is an
+    INDEX, not a name, so removing an earlier layer silently repoints what the engine reads at a
+    mesh it has already imported. The layers that moved are named in the response.
+
+    A MESH IS LIMITED TO 8 UV LAYERS, which is why removing junk ones matters at all.
+
+    params:
+      object / name (str)   required, must be a MESH
+      layer (str)           which layer. Required.
+      active (bool)         make it the active layer
+      rename (str)          a new name; Blender suffixes a clash rather than refusing
+      remove (bool)         delete it - excludes active and rename
+    """
+    reject_unknown(params, _SETUV_KEYS, "set_uv_layer")
+    obj = get_object(take(params, "object", "name", required=True, kind=str), want_mesh=True)
+    mesh = obj.data
+    want = take(params, "layer", required=True, kind=str)
+
+    if not mesh.uv_layers:
+        raise MifOpError("'%s' has NO UV layers at all, so there is none to change - uv_unwrap "
+                         "makes one. NOTHING was changed." % obj.name)
+    layer = mesh.uv_layers.get(str(want))
+    if layer is None:
+        raise MifOpError("'%s' has no UV layer named '%s'. It has: %s. NOTHING was changed."
+                         % (obj.name, want, ", ".join(l.name for l in mesh.uv_layers)))
+
+    remove = take_bool(params, "remove", default=False)
+    rename = take(params, "rename", default=None, kind=str)
+    make_active = params.get("active")
+    if remove and (rename is not None or make_active is not None):
+        raise MifOpError("remove deletes the layer, so making it active or renaming it in the same "
+                         "call is contradictory. NOTHING was changed.")
+    if not remove and rename is None and make_active is None:
+        raise MifOpError("nothing to do - pass active, rename or remove. NOTHING was changed.")
+
+    before_map = _uv_layer_map(mesh)
+    before_active = mesh.uv_layers.active.name if mesh.uv_layers.active else None
+
+    removed, moved, renamed_to = None, {}, None
+    # TRACKED AS AN EVENT, not inferred by comparing NAMES before and after. Renaming the
+    # active layer changes that name, so a name comparison called it a switch and the note
+    # told a caller the active layer had moved when only its label had.
+    switched = False
+    if remove:
+        if len(mesh.uv_layers) == 1:
+            raise MifOpError(
+                "'%s' is the only UV layer on '%s'. Removing it leaves the mesh unwrappable - "
+                "texturing and lightmap baking both fail until it is unwrapped again. Refused "
+                "rather than done quietly. NOTHING was changed." % (want, obj.name))
+        removed = layer.name
+        mesh.uv_layers.remove(layer)
+        after_map = _uv_layer_map(mesh)
+        # WHICH LAYERS MOVED, by name, because an engine reads the INDEX.
+        moved = dict((n, {"was": before_map[n], "now": after_map[n]})
+                     for n in after_map if before_map.get(n) != after_map[n])
+    else:
+        if rename is not None:
+            asked = str(rename)
+            if len(asked) > _ID_NAME_LIMIT:
+                raise MifOpError("the name is %d characters and Blender truncates at %d, so the "
+                                 "layer you get would not be the one you named. NOTHING was "
+                                 "changed." % (len(asked), _ID_NAME_LIMIT))
+            layer.name = asked
+            renamed_to = layer.name
+        if make_active is not None and take_bool(params, "active", default=True):
+            mesh.uv_layers.active = layer
+            switched = True
+
+    after_map = _uv_layer_map(mesh)
+    active_now = mesh.uv_layers.active.name if mesh.uv_layers.active else None
+    return {
+        "ok": True,
+        "object": obj.name,
+        "layers": [{"name": n, "index": i} for n, i in sorted(after_map.items(),
+                                                              key=lambda kv: kv[1])],
+        "layerCount": len(after_map),
+        "activeLayer": active_now,
+        "activeLayerIndex": after_map.get(active_now) if active_now else None,
+        "activeChanged": active_now != before_active,
+        "removed": removed,
+        "renamedTo": renamed_to,
+        "nameWasSuffixed": bool(renamed_to and rename is not None and renamed_to != str(rename)),
+        # THE FIELD THAT MATTERS ON A REMOVE. Named layers whose INDEX moved, because an engine
+        # importing this mesh reads a lightmap coordinate INDEX and will now read a different layer.
+        "indicesShifted": moved or None,
+        "note": (("removing '%s' moved %s. Unreal's lightmap coordinate index is an INDEX, not a "
+                  "name, so anything already importing this mesh now reads a different layer."
+                  % (removed, ", ".join("%s %d->%d" % (n, v["was"], v["now"])
+                                        for n, v in sorted(moved.items()))))
+                 if moved else
+                 ("every UV operator and every bake writes to the ACTIVE layer, which is now '%s'."
+                  % active_now if switched else None)),
+    }
+
 OPS = {
     "import_mesh": op_import_mesh,
     "decimate_mesh": op_decimate_mesh,
@@ -3314,4 +3428,5 @@ OPS = {
     "set_origin": op_set_origin,
     "clean_mesh": op_clean_mesh,
     "uv_info": op_uv_info,
+    "set_uv_layer": op_set_uv_layer,
 }
