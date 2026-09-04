@@ -641,7 +641,11 @@ for name in sorted(table):
 #
 # WHAT IS COUNTED is every bpy.data collection that an op could plausibly add to. A refusal that
 # changes any of them left something in the caller's file after saying it had not.
-_LEAK_SENTINEL = "\x00mif-not-a-value"
+# TWO SENTINELS OF DIFFERENT TYPES. One string was not enough: 28 of 249 cases ACCEPTED it,
+# because a string parameter takes a string and the call simply succeeded - so those refusal
+# paths were never reached at all. A dict is accepted almost nowhere, and the two together
+# push a corrupted value down whichever branch a handler actually has.
+_LEAK_SENTINELS = ("\x00mif-not-a-value", {"mif": "not-a-value"})
 _LEAK_COLLECTIONS = ("objects", "meshes", "materials", "images", "lights", "cameras", "actions",
                      "node_groups", "textures", "lattices", "collections", "armatures", "curves",
                      "particles", "worlds")
@@ -667,8 +671,9 @@ for name in sorted(table):
         continue
     out["leakStats"]["opsCovered"] += 1
     for key in sorted(base):
+      for _sentinel in _LEAK_SENTINELS:
         variant = dict(base)
-        variant[key] = _LEAK_SENTINEL
+        variant[key] = _sentinel
         before = _leak_counts()
         out["leakStats"]["cases"] += 1
         try:

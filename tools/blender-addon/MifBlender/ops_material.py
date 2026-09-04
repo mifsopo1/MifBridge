@@ -308,9 +308,16 @@ def _coerce_socket(sock, prop, val):
     first four already written - while the docstring promised the opposite.
     """
     if prop in COLOR_PROPS or hasattr(sock.default_value, "__len__"):
-        if not hasattr(val, "__len__") or isinstance(val, str):
+        # A LIST OR TUPLE, not merely something with __len__. A DICT has one, so {"mif":"x"} passed
+        # this guard and then [float(x) for x in val] iterated its KEYS and raised ValueError out of
+        # the op - found by the matrix bad-value pass once it gained a dict sentinel, because a
+        # string sentinel is caught by the isinstance check one line up and never reaches here.
+        if not isinstance(val, (list, tuple)):
             raise MifOpError("'%s' takes a colour as [r,g,b] or [r,g,b,a], got %r" % (prop, val))
-        vals = [float(x) for x in val]
+        try:
+            vals = [float(x) for x in val]
+        except (TypeError, ValueError):
+            raise MifOpError("'%s' takes NUMBERS as [r,g,b] or [r,g,b,a], got %r" % (prop, val))
         want = len(sock.default_value)
         if len(vals) == 3 and want == 4:
             vals.append(1.0)          # alpha defaults to opaque rather than to zero

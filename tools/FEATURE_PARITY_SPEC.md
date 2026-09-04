@@ -14111,3 +14111,27 @@ out-of-process the way ops_gen already does with gen_status.
 
       bad_raises now FAILS the run. It is the only pass in this file that sends a corrupted payload,
       so nothing else can catch the next one - and it found five on the first run it reported them.
+
+- [x] **a second sentinel doubled the pass's reach and found two more** DONE 2026-09-04
+      The bad-value pass corrupted each payload value to ONE string sentinel, and 28 of 249 cases
+      ACCEPTED it - a string parameter takes a string, the call succeeded, and that refusal path was
+      never reached. A dict is accepted almost nowhere, so the two together push a corrupted value
+      down whichever branch a handler actually has.
+
+      249 cases -> 498, and judged refusals 216 -> 462 per build. Two more defects, both raw
+      exceptions escaping a handler's contract, and both invisible to the string sentinel:
+
+        set_material_properties   baseColor as a dict. The colour guard tested
+                                  hasattr(val, "__len__") - which a DICT has - so it passed, and
+                                  [float(x) for x in val] then iterated the KEYS. The string
+                                  sentinel could never reach this line: it is caught by the
+                                  isinstance(val, str) check immediately above.
+        set_origin                mode as a dict. .lower() on whatever arrived, AttributeError.
+
+      Both fixed at the parse: an explicit isinstance(list, tuple) with a guarded float conversion,
+      and take(..., kind=str). The whole matrix is 11.4s for four builds, 498 corrupted-payload
+      cases each, on top of everything else it does.
+
+      THE SHAPE WORTH REMEMBERING is that a guard written as hasattr(x, "__len__") admits dicts,
+      strings and every mapping - it is a duck-type where the code meant "a sequence of numbers".
+      This one had an isinstance(val, str) beside it, which is what made it look complete.

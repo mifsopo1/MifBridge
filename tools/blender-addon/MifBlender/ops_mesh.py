@@ -2340,7 +2340,9 @@ def op_set_origin(params):
     """
     reject_unknown(params, ("object", "name", "mode", "location"), "set_origin")
     obj = get_object(take(params, "object", "name", required=True), want_mesh=True)
-    mode = (take(params, "mode", default="geometry") or "geometry").lower()
+    # kind=str, because .lower() on whatever arrived raised AttributeError out of the op for
+    # a dict - take() with kind refuses instead, which is the handler's contract.
+    mode = (take(params, "mode", default="geometry", kind=str) or "geometry").lower()
 
     valid = ("geometry", "bounds", "bottom", "cursor", "world", "point")
     if mode not in valid:
