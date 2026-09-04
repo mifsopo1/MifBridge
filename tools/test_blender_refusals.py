@@ -2053,11 +2053,18 @@ def main():
     ok, msg = refuses(OL.op_set_light_shadow, {"object": "NoSuchLight", "enabled": True},
                       "no object named")
     check("B129 an unknown object is refused", ok, msg)
+    # THE COLLECTION IS GUARDED FIRST, because all([]) is True - an empty _SHADOW_MAP would pass
+    # the shape assertion below while meaning the op can map nothing at all. audit_vacuous_checks
+    # caught this written the naive way, which is what that audit is for.
+    check("B129 the shadow map is populated at all - all([]) is True, so the shape check below "
+          "would pass on an empty table",
+          len(OL._SHADOW_MAP) >= 15, "only %d entries" % len(OL._SHADOW_MAP))
+    _bad_rows = {k: v for k, v in OL._SHADOW_MAP.items()
+                 if not (isinstance(v, tuple) and len(v) == 3 and v[0] in ("light", "cycles")
+                         and isinstance(v[1], str) and isinstance(v[2], str))}
     check("B129 every documented key maps to a real property path and an availability note - the "
           "table is what turns 'this build lacks it' into a sentence naming which builds have it",
-          all(isinstance(v, tuple) and len(v) == 3 and v[0] in ("light", "cycles")
-              for v in OL._SHADOW_MAP.values()),
-          "got %s" % {k: v for k, v in list(OL._SHADOW_MAP.items())[:2]})
+          not _bad_rows and len(OL._SHADOW_MAP) >= 15, "malformed rows: %s" % _bad_rows)
 
     print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
