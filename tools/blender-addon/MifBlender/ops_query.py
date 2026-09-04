@@ -37,6 +37,7 @@ import math
 import bmesh
 import bpy
 import mathutils
+import mathutils.bvhtree
 
 from .ops_common import (MifOpError, get_object, reject_unknown, rnd, take, take_bool,
                          take_float, take_int)
@@ -940,6 +941,210 @@ def op_set_shading(params):
                  "rather than a failure.") if smooth is not None and changed == 0 else None,
     }
 
+_OVERLAP_KEYS = {"a", "b", "objects", "tolerance", "maxSamples", "evaluated"}
+
+_DEFAULT_OVERLAP_SAMPLES = 2000
+
+
+def _world_bvh(obj, depsgraph, use_eval):
+    """(BVHTree, sample points) for an object, both in WORLD space.
+
+    NEVER BVHTree.FromObject, and that is the single most important line in this module.
+
+    FromObject BUILDS THE TREE IN THE OBJECT'S LOCAL SPACE AND SILENTLY IGNORES matrix_world.
+    Measured on 3.6.23, 4.4.0 and 5.0.1: two unit cubes FIVE UNITS APART report 2 overlap pairs
+    through FromObject and 0 through this function. Two trees built that way are in two different
+    coordinate frames, so every answer they give about each other is meaningless - and confidently
+    so, since nothing raises and the pair list looks like a real result.
+
+    FromObject on a NON-MESH object also SEGFAULTS Blender 3.6 outright - no traceback, no Python
+    exception, the process is simply gone. Building from a bmesh avoids that entire failure mode
+    rather than guarding it, which is why the type check below is belt and braces rather than the
+    only thing standing between a caller and a dead process.
+
+    THE SAMPLE POINTS ARE VERTICES *AND* FACE CENTROIDS. Vertices alone are not enough: two cubes
+    overlapping by 0.1 scored 0 of 8 vertices inside on every version, because every vertex of the
+    overlap region sits exactly ON the other surface where the inside test is ambiguous. Centroids
+    sit strictly inside a face and settle it.
+    """
+    source = obj.evaluated_get(depsgraph) if use_eval else obj
+    mesh = source.to_mesh()
+    try:
+        bm = bmesh.new()
+        bm.from_mesh(mesh)
+        # THE TRANSFORM IS THE WHOLE TRICK. to_mesh() returns LOCAL coordinates - vertex 0 of a cube
+        # sitting at x=5 still reads (-1,-1,-1) - so without this both trees describe geometry at
+        # the origin no matter where the objects actually are.
+        bm.transform(obj.matrix_world)
+        tree = mathutils.bvhtree.BVHTree.FromBMesh(bm)
+        points = [v.co.copy() for v in bm.verts]
+        points += [f.calc_center_median().copy() for f in bm.faces]
+        bm.free()
+        return tree, points
+    finally:
+        source.to_mesh_clear()
+
+
+def _is_inside(tree, point, tol):
+    """Is `point` strictly inside the closed surface `tree` describes?
+
+    SIGNED DISTANCE TO THE NEAREST FACE, not ray parity. A parity test re-casts from just past each
+    hit, and with a fixed small offset it silently returns the WRONG answer once geometry is away
+    from the world origin: a 1-unit cube inside a 4-unit cube, both at z=200, scores 6 of 8 vertices
+    inside instead of 8 of 8, because the offset vanishes into float32 at that magnitude. It fails
+    quietly and plausibly, which is the worst way to fail.
+    """
+    location, normal, _index, _distance = tree.find_nearest(point)
+    if location is None:
+        return False
+    return (point - location).dot(normal) < -tol
+
+
+def op_objects_overlap(params):
+    """Do two objects actually intersect - asked of the GEOMETRY, not of their bounding boxes.
+
+    WHY THIS EXISTS. The question was being answered with axis-aligned bounding boxes in Python
+    because there was no way to ask the real thing, and an AABB test says two objects overlap when
+    they do not. Measured on all four builds: a 2m cube rotated 45 degrees about Z and a 1m cube at
+    (1.45, 1.45, 0) have world AABBs that DO intersect, and geometry that does not touch at all -
+    the diamond footprint needs |x|+|y| <= 1.414 and 1.45+1.45 is 2.9. The cheap test returns True;
+    the truth is DISJOINT. This op reports BOTH, so the caller can see when the approximation would
+    have lied.
+
+    FIVE ANSWERS, because "do they overlap" is really several questions:
+
+      DISJOINT       no shared volume and no contact
+      TOUCHING       surfaces meet, no shared volume - two boxes flush against each other
+      INTERSECTING   surfaces cross and volume is shared
+      A_INSIDE_B     A is wholly within B, with no surface contact at all
+      B_INSIDE_A     the same the other way
+
+    CONTAINMENT IS THE CASE A SURFACE TEST CANNOT SEE. overlap() reports FACE-to-FACE intersection
+    only, so a cube entirely inside another returns ZERO pairs - measured on 3.6, 4.4 and 5.0, where
+    the same pair had 14 of 14 sample points inside. Testing len(overlap()) alone calls that
+    DISJOINT, which is the exact opposite of the truth.
+
+    pairCount IS NOT A CONTACT COUNT. overlap() under-reports badly on coincident geometry: two
+    identical cubes at the same location return 2 pairs rather than the 36 a caller might expect.
+    The boolean is sound and the number is not, so it is reported with that said rather than left to
+    be misread.
+
+    params:
+      a (str), b (str)      the two objects. Both must be MESH.
+      objects [a, b]        an alternative spelling of the same pair
+      tolerance (float)     how far inside a point must be to count. Default 1e-5.
+      maxSamples (int)      cap on containment sample points per object. Default 2000.
+      evaluated (bool)      use the MODIFIER RESULT rather than the base mesh. Default true - what
+                            renders and what collides is the evaluated geometry.
+    """
+    reject_unknown(params, _OVERLAP_KEYS, "objects_overlap")
+    pair = params.get("objects")
+    if pair is not None:
+        if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+            raise MifOpError("'objects' must be exactly two object names, got %r." % (pair,))
+        a_name, b_name = str(pair[0]), str(pair[1])
+    else:
+        a_name = take(params, "a", required=True, kind=str)
+        b_name = take(params, "b", required=True, kind=str)
+    if a_name == b_name:
+        raise MifOpError("'%s' was given for both objects. An object always overlaps itself, so "
+                         "the answer would be true and useless." % a_name)
+
+    tol = take_float(params, "tolerance", default=1e-5)
+    if tol < 0.0:
+        raise MifOpError("tolerance cannot be negative, got %g." % tol)
+    max_samples = take_int(params, "maxSamples", default=_DEFAULT_OVERLAP_SAMPLES)
+    if max_samples < 1:
+        raise MifOpError("maxSamples must be at least 1, got %d." % max_samples)
+    use_eval = take_bool(params, "evaluated", default=True)
+
+    obj_a, obj_b = get_object(a_name), get_object(b_name)
+    # BOTH TYPE CHECKS BEFORE EITHER MESH READ. Interleaved, a non-MESH `b` goes unreported
+    # whenever `a` has anything odd about its data - and the type check is the one guarding against
+    # a class of object this op must never hand to a BVH builder.
+    for obj in (obj_a, obj_b):
+        if obj.type != "MESH":
+            raise MifOpError("'%s' is a %s. Only meshes have a surface to intersect."
+                             % (obj.name, obj.type))
+    for obj in (obj_a, obj_b):
+        if not obj.data.polygons:
+            raise MifOpError("'%s' has no faces, so it encloses nothing and cannot overlap "
+                             "anything." % obj.name)
+
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    tree_a, pts_a = _world_bvh(obj_a, depsgraph, use_eval)
+    tree_b, pts_b = _world_bvh(obj_b, depsgraph, use_eval)
+
+    # SUBSAMPLED BY STRIDE, NOT BY TRUNCATION. Taking the first N points of a mesh samples one
+    # corner of it, which on a large object is a different question from the one that was asked.
+    # A stride covers the whole surface and is deterministic, so two runs agree.
+    def _stride(points):
+        if len(points) <= max_samples:
+            return points, 1
+        step = (len(points) + max_samples - 1) // max_samples
+        return points[::step], step
+
+    sam_a, stride_a = _stride(pts_a)
+    sam_b, stride_b = _stride(pts_b)
+
+    pairs = tree_a.overlap(tree_b)
+    a_in = sum(1 for p in sam_a if _is_inside(tree_b, p, tol))
+    b_in = sum(1 for p in sam_b if _is_inside(tree_a, p, tol))
+
+    if pairs:
+        verdict = "INTERSECTING" if (a_in or b_in) else "TOUCHING"
+    elif b_in == len(sam_b):
+        verdict = "B_INSIDE_A"
+    elif a_in == len(sam_a):
+        verdict = "A_INSIDE_B"
+    elif a_in or b_in:
+        # NO FACE PAIRS AND YET POINTS INSIDE. A shallow intersection whose faces cross outside the
+        # sampled set - reported as intersecting rather than forced into a cleaner-sounding answer.
+        verdict = "INTERSECTING"
+    else:
+        verdict = "DISJOINT"
+
+    # THE CHEAP TEST, REPORTED ALONGSIDE. This is the answer an AABB implementation would have
+    # given, so a caller can see the disagreement rather than take it on faith that the expensive
+    # path was worth taking.
+    def _aabb(obj):
+        corners = [obj.matrix_world @ mathutils.Vector(c) for c in obj.bound_box]
+        return ([min(c[i] for c in corners) for i in range(3)],
+                [max(c[i] for c in corners) for i in range(3)])
+
+    lo_a, hi_a = _aabb(obj_a)
+    lo_b, hi_b = _aabb(obj_b)
+    aabb_overlap = all(lo_a[i] <= hi_b[i] and lo_b[i] <= hi_a[i] for i in range(3))
+    truth = verdict != "DISJOINT"
+
+    return {
+        "ok": True,
+        "a": obj_a.name,
+        "b": obj_b.name,
+        "overlapping": truth,
+        "verdict": verdict,
+        "space": "WORLD",
+        "geometry": "evaluated" if use_eval else "base",
+        # A BOOLEAN-GRADE SIGNAL, NOT A CONTACT COUNT - overlap() returns 2 pairs for two identical
+        # coincident cubes rather than 36. Said here rather than left to be misread.
+        "facePairs": len(pairs),
+        "facePairsNote": ("the number of intersecting face pairs is unreliable - overlap() "
+                          "under-reports badly on coincident geometry. Use it as yes/no."),
+        "samplesInsideOther": {"aInB": a_in, "bInA": b_in},
+        "samplesTested": {"a": len(sam_a), "b": len(sam_b), "strideA": stride_a,
+                          "strideB": stride_b},
+        "aabbSaysOverlap": aabb_overlap,
+        # THE HEADLINE WHEN THEY DISAGREE. An AABB test is what this was being approximated with,
+        # and this is the case that made it worth replacing.
+        "aabbWouldHaveLied": aabb_overlap != truth,
+        "note": ("the bounding boxes intersect and the GEOMETRY does not - an axis-aligned box "
+                 "around a rotated object covers space the object does not occupy, which is the "
+                 "false positive this op exists to remove.")
+        if (aabb_overlap and not truth) else
+        (("the geometry overlaps and the bounding-box test agrees, so the cheap answer would have "
+          "been right here too.") if aabb_overlap and truth else None),
+    }
+
 OPS = {
     "ray_cast": op_ray_cast,
     "closest_point_on_mesh": op_closest_point,
@@ -947,4 +1152,5 @@ OPS = {
     "select_faces": op_select_faces,
     "bisect_plane": op_bisect_plane,
     "set_shading": op_set_shading,
+    "objects_overlap": op_objects_overlap,
 }

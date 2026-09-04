@@ -338,6 +338,29 @@ def install_stub():
     mu.Matrix = lambda *a, **k: None
     sys.modules["mathutils"] = mu
 
+    # mathutils.bvhtree MUST BE REGISTERED AS A SUBMODULE, not hung off mu as an attribute.
+    # `import mathutils.bvhtree` resolves through sys.modules, so an attribute gives
+    # "No module named 'mathutils.bvhtree'; 'mathutils' is not a package" - which is the EXACT
+    # failure already written up a few lines above for bpy.props, hit a second time and for the
+    # same reason. The suite's crash backstop reported it as "51 checks had already PASSED" rather
+    # than a bare traceback, which is how it took a minute instead of a round.
+    bvh = types.ModuleType("mathutils.bvhtree")
+
+    class BVHTree(object):
+        @staticmethod
+        def FromBMesh(*a, **k):
+            raise NotImplementedError("no real geometry offline - blender_version_matrix covers "
+                                      "the BVH paths on four real Blenders")
+
+        @staticmethod
+        def FromObject(*a, **k):
+            raise AssertionError("nothing in this addon may call BVHTree.FromObject - it ignores "
+                                 "matrix_world and segfaults Blender 3.6 on a non-mesh")
+
+    bvh.BVHTree = BVHTree
+    mu.bvhtree = bvh
+    sys.modules["mathutils.bvhtree"] = bvh
+
     if ADDON not in sys.path:
         sys.path.insert(0, ADDON)
 
@@ -1901,6 +1924,35 @@ def main():
     ok, msg = refuses(OM.op_create_collision_hull, {"object": "Cube", "collection": "NoSuchColl"},
                       "no collection named")
     check("B125 an unknown collection is refused before anything is built", ok, msg)
+
+    print("")
+    print("=== B126: objects_overlap - the guards, and never BVHTree.FromObject ===")
+    # THE VERDICTS THEMSELVES need real geometry and are exercised by blender_version_matrix on
+    # every build. What is checkable here is the guard set - and one of these guards is standing
+    # between a caller and a DEAD BLENDER, not just a bad answer: BVHTree.FromObject on a non-mesh
+    # SEGFAULTS 3.6 outright, no traceback and no exception. This op never calls FromObject at all,
+    # which removes that failure mode rather than guarding it, and refuses non-meshes besides.
+    from MifBlender import ops_query as OQ3
+
+    ok, msg = refuses(OQ3.op_objects_overlap, {"a": "Cube"}, "'b' is required")
+    check("B126 one object is refused - overlap needs a pair", ok, msg)
+    ok, msg = refuses(OQ3.op_objects_overlap, {"a": "Cube", "b": "Cube"},
+                      "both objects", "true and useless")
+    check("B126 the same object twice is refused, and the message says why the answer would be "
+          "useless rather than just declining", ok, msg)
+    ok, msg = refuses(OQ3.op_objects_overlap, {"a": "Cube", "b": "Lamp"},
+                      "is a LIGHT", "surface to intersect")
+    check("B126 a non-MESH is refused - and this op never calls BVHTree.FromObject, which would "
+          "segfault Blender 3.6 on exactly this input", ok, msg)
+    ok, msg = refuses(OQ3.op_objects_overlap, {"objects": ["Cube"]}, "exactly two")
+    check("B126 an objects list of the wrong length is refused", ok, msg)
+    ok, msg = refuses(OQ3.op_objects_overlap, {"a": "Cube", "b": "Cam", "tolerance": -1},
+                      "cannot be negative")
+    check("B126 a negative tolerance is refused", ok, msg)
+    ok, msg = refuses(OQ3.op_objects_overlap, {"a": "Cube", "b": "Cam", "maxSamples": 0},
+                      "at least 1")
+    check("B126 a zero sample cap is refused - it would test nothing and answer confidently",
+          ok, msg)
 
     print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")

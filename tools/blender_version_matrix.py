@@ -66,6 +66,7 @@ PAYLOADS = {
     "select_faces": {"object": "Cube", "axis": "Z"},
     "ray_cast": {"origin": [0, 0, 5], "direction": [0, 0, -1]},
     "closest_point_on_mesh": {"object": "Cube", "point": [0, 0, 5]},
+    "objects_overlap": {"a": "Cube", "b": "MifCutter"},
     "set_shading": {"object": "Cube", "smooth": True},
     "bisect_plane": {"object": "Cube", "planeCo": [0, 0, 0], "axis": "Z"},
     "uv_info": {"object": "Cube"},

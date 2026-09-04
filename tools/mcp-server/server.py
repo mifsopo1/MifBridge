@@ -5876,6 +5876,14 @@ def bl_set_shading(object: str, smooth: bool = None, indices: list = None,
 
 
 @mcp.tool()
+def bl_objects_overlap(a: str, b: str, tolerance: float = None, max_samples: int = None,
+                       evaluated: bool = None) -> dict:
+    "Do two Blender objects actually intersect - asked of the GEOMETRY rather than of their bounding boxes, which is what this was being approximated with. An AABB test says two objects overlap when they do not: measured on 3.6, 4.4 and 5.0, a 2m cube rotated 45 degrees about Z and a 1m cube at (1.45,1.45,0) have world AABBs that DO intersect and geometry that never touches. Both answers are returned, so aabbWouldHaveLied shows you the disagreement. FIVE VERDICTS, because 'do they overlap' is several questions: DISJOINT, TOUCHING (surfaces meet, no shared volume), INTERSECTING, A_INSIDE_B and B_INSIDE_A. CONTAINMENT IS THE CASE A SURFACE TEST CANNOT SEE - overlap() reports face-to-face intersection only, so a cube entirely inside another returns ZERO pairs and len(overlap()) alone calls it DISJOINT, the exact opposite of the truth. Trees are built in WORLD space from a transformed bmesh, never BVHTree.FromObject, which silently ignores matrix_world - two cubes FIVE UNITS APART report 2 overlap pairs through it - and which segfaults Blender 3.6 outright on a non-mesh object. facePairs is a yes/no signal and NOT a contact count: two identical coincident cubes return 2 pairs, not 36."
+    return _blender("objects_overlap", a=a, b=b, tolerance=tolerance, maxSamples=max_samples,
+                    evaluated=evaluated)
+
+
+@mcp.tool()
 def bl_ray_cast(origin: list, direction: list = None, target: list = None, object: str = None,
                 distance: float = None, evaluated: bool = None) -> dict:
     "Fire a ray into a Blender scene and report what it hits. Chosen by COUNTING escapes, not from a wishlist: 13 of 21 bl_run_python escapes in one day's real work were ray casts - it is what answers 'what is at this point', 'what is under it', 'is anything across this edge', which every layout, level and hard-surface job is built on. WORLD COORDINATES IN AND OUT: obj.ray_cast is LOCAL on both sides, so handing it world coordinates gives a miss or a plausible WRONG hit with nothing to say so, and a moved or rotated object is the normal case - the conversion happens in the addon. Normals come back through the inverse transpose, not the object matrix, which is only correct under uniform scale. With no object it casts against the whole scene through the depsgraph, so it hits what is actually there - subdivided, displaced, mirrored, geometry-nodes output. With an object it uses that object's BASE mesh unless evaluated:true, and says so when the object has modifiers that make those differ. Pass target instead of direction to cast towards a point."

@@ -12625,6 +12625,41 @@ out-of-process the way ops_gen already does with gen_status.
       The UCX_<RenderMesh>_## convention itself is ENGINE-SIDE and is not verified here - everything
       else in the response was measured on this Blender, and the response says which half is which.
 
+- [x] **a non-destructive overlap query between two objects** DONE 2026-09-03
+      objects_overlap. Item 8 of the measured gap list: the question was being answered with
+      axis-aligned bounding boxes in Python because there was no way to ask the real geometry.
+
+      THE AABB LIES, AND HERE IS THE MEASUREMENT. A 2m cube rotated 45 degrees about Z and a 1m cube
+      at (1.45, 1.45, 0) have world AABBs that DO intersect and geometry that never touches - the
+      diamond footprint needs |x|+|y| <= 1.414 and 1.45+1.45 is 2.9. Verified on 3.6.23, 4.4.0 and
+      5.0.1. Both answers are returned, so aabbWouldHaveLied shows the disagreement rather than
+      asking anyone to take the expensive path on faith.
+
+      NEVER BVHTree.FromObject, and this is the single most important line in the module. It builds
+      the tree in the object's LOCAL space and silently ignores matrix_world: two unit cubes FIVE
+      UNITS APART report 2 overlap pairs through it and 0 through a world-space tree. Verified on
+      all three builds. It also SEGFAULTS Blender 3.6 outright on a non-mesh object - no traceback,
+      no exception, the process is gone - so building from a transformed bmesh removes that failure
+      mode entirely rather than guarding it.
+
+      FIVE VERDICTS, because the question is really several: DISJOINT, TOUCHING, INTERSECTING,
+      A_INSIDE_B, B_INSIDE_A. CONTAINMENT IS WHAT A SURFACE TEST CANNOT SEE - overlap() reports
+      face-to-face intersection only, so a cube entirely inside another returns ZERO pairs while 14
+      of 14 sample points sit inside. len(overlap()) alone calls that DISJOINT, the exact opposite
+      of the truth. All five verdicts verified on 3.6, 4.4 and 5.0.
+
+      Sample points are vertices AND face centroids: vertices alone scored 0 of 8 inside on a real
+      0.1-deep intersection, because every vertex of the overlap region sits exactly ON the other
+      surface where the test is ambiguous. Containment uses signed distance to the nearest face
+      rather than ray parity, which fails quietly once geometry is far from the origin.
+
+      facePairs is reported as a yes/no signal with that said outright - overlap() returns 2 pairs
+      for two identical coincident cubes rather than 36, so the boolean is sound and the number is
+      not.
+
+      Subsampling is by STRIDE rather than truncation: taking the first N points samples one corner
+      of a large mesh, which is a different question from the one asked.
+
 - [ ] **Tier 5 - craft depth** (1 of 5 left)
       DONE 2026-09-03: set_camera_panorama, move_keyframes, set_light_ies, set_light_linking.
 
