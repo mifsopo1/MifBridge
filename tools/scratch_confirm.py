@@ -290,7 +290,7 @@ if __name__ == "__main__":
         ({"path": "/Game/_MifDT/T", "other": "/Game/Real/Thing"}, "one real path among scratch ones"),
         ({"path": "/Game/_MifDT/T", "save": True}, "save has no exemption"),
         ({"nested": {"deep": ["/Game/Real/Thing"]}}, "a real path buried in a nested structure"),
-        ({"path": "/DDS2Casino/Asset/Thing"}, "another mount point entirely"),
+        ({"path": "/AcmeContent/Asset/Thing"}, "another mount point entirely"),
         ({"nodeGuid": "6A1F-DEAD", "graphId": "9C2E-BEEF"},
          "remove_node/rename_event WITHOUT graphId as a real path - a bare guid proves nothing"),
         ({"nodeGuid": "6A1F-DEAD", "graphId": "/Game/Real/BP_1.BP_1::EventGraph"},

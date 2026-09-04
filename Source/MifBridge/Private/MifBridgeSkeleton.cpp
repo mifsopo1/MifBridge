@@ -654,7 +654,8 @@ namespace MifBridge
 			: TEXT("skin weights are GPU-only on this asset - the CPU copy was discarded, which "
 				   "happens when a mesh was imported without bAllowCPUAccess. A per-vertex split is "
 				   "NOT possible here; the section boundaries reported above are. Measured across 40 "
-				   "DDS2 meshes this was rare - all 40 kept CPU access - so treat it as a property of "
+				   "the meshes measured for this - all 40 of them kept CPU access - it was rare, so treat "
+			"it as a property of "
 				   "the asset rather than of being cooked."));
 
 		Out->SetStringField(TEXT("verdict"), Sections.Num() <= 1

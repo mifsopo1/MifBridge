@@ -29,7 +29,8 @@ namespace MifBridge
 	{
 		Fail(Out, TEXT(
 			"create_editable_child is unavailable: it needs CreateEditableBlueprintCopy from "
-			"Engine/Source/Editor/Kismet, which exists only in the DDS2 engine FORK and in no "
+			"Engine/Source/Editor/Kismet, which exists only in the ENGINE FORK this was built "
+			"against and in no "
 			"stock Unreal of any version. This is not a plugin you can enable and not something "
 			"a newer engine adds - stock UE does not expose the editable-copy path outside the "
 			"editor's own right-click menu. On a stock engine, duplicate an UNCOOKED blueprint "

@@ -4,8 +4,11 @@
  "succeeded": true,
  "inconclusive": false,
  "why": "",
- "head": "d4514f363d044c6ab393840bec2e6ea0eaa63acc",
+ "head": "962aabe07db4736ec0fe2de4e9270ea87d8a7a68",
  "sourceCommit": "d4514f363d044c6ab393840bec2e6ea0eaa63acc",
  "sourceCommitDate": "2026-09-04T19:44:18-04:00",
- "sourceDirty": []
+ "sourceDirty": [
+  "ource/MifBridge/Private/MifBridgeReconstruct.cpp",
+  "Source/MifBridge/Private/MifBridgeSkeleton.cpp"
+ ]
 }

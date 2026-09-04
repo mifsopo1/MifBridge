@@ -96,6 +96,12 @@ FAB_EXCLUDE_PATTERNS = (
     # Excluded under --fab only: the audit trail is plausibly interesting to someone reading the
     # public repo, and is merely noise to someone who paid.
     re.compile(r"^docs/audit/"),
+    # 2.8 MB OF SOMEBODY ELSE'S WORKING SESSION. blender-showcase holds renders and lab scripts
+    # from the days these features were built - lab_preview.png, t_before/t_after, a .blend - and
+    # it shipped to buyers only because the allow-list above governs TOP-LEVEL tools/ files, so a
+    # subdirectory falls through to these patterns and nothing named it. make_demo.py, which
+    # GENERATES a demo, is kept; the output of past runs is not a product.
+    re.compile(r"^tools/blender-showcase/"),
 )
 
 # KEPT UNDER --fab NO MATTER WHAT, because a pattern above would otherwise catch them and the buyer
