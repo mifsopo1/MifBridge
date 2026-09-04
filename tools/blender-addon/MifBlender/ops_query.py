@@ -39,8 +39,8 @@ import bpy
 import mathutils
 import mathutils.bvhtree
 
-from .ops_common import (MifOpError, finite_floats, get_object, reject_unknown, rnd, take,
-                         take_bool, take_float, take_int)
+from .ops_common import (MifOpError, edit_mode_stale, finite_floats, get_object, reject_unknown,
+                         rnd, take, take_bool, take_float, take_int)
 
 _RAY_KEYS = {"origin", "direction", "target", "object", "name", "distance", "evaluated"}
 # NO "name" ALIAS HERE. object is required and unambiguous, and param_reach flagged the alias
@@ -275,6 +275,9 @@ def op_closest_point(params):
         out["note"] = ("no point within %g units of the query point." % distance if distance
                        else "closest_point_on_mesh found nothing, which for an unlimited search "
                             "means the mesh has no usable surface.")
+    # A READ IN EDIT MODE IS STALE, not refused - see ops_common.edit_mode_stale. Measured:
+    # deleting a face in edit mode left face_info reporting 6 of them while the live mesh had 5.
+    out.update(edit_mode_stale(obj))
     return out
 
 
@@ -462,6 +465,9 @@ def op_face_info(params):
                                 "assign_material_to_faces leaves behind when the wrong slot index "
                                 "was used, and it is invisible from the material list, which shows "
                                 "the slot as present." % ", ".join(str(s) for s in empty))
+    # A READ IN EDIT MODE IS STALE, not refused - see ops_common.edit_mode_stale. Measured:
+    # deleting a face in edit mode left face_info reporting 6 of them while the live mesh had 5.
+    out.update(edit_mode_stale(obj))
     return out
 
 
@@ -667,6 +673,9 @@ def op_select_faces(params):
         out["boxNote"] = ("a face is inside the box when its CENTRE is, so a large face straddling "
                           "the boundary is decided by its middle. That is what makes 'the faces in "
                           "this room' work and is not the same as 'entirely inside'.")
+    # A READ IN EDIT MODE IS STALE, not refused - see ops_common.edit_mode_stale. Measured:
+    # deleting a face in edit mode left face_info reporting 6 of them while the live mesh had 5.
+    out.update(edit_mode_stale(obj))
     return out
 
 
@@ -841,6 +850,21 @@ def op_set_shading(params):
     obj = get_object(want)
     if obj.type != "MESH":
         raise MifOpError("'%s' is a %s and has no shading to set." % (obj.name, obj.type))
+    # THE MODE CHECK, WRITTEN OUT RATHER THAN TAKEN FROM want_mesh=True. This wrote poly.use_smooth
+    # straight onto mesh.polygons, which is STALE in edit mode - the live geometry is in the edit
+    # BMesh and the write is discarded the moment edit mode is left. Measured on 5.0.1: called in
+    # EDIT mode it reported ok with a facesChanged count and every polygon was still flat; the same
+    # call from OBJECT mode worked. A silent no-op reporting success.
+    #
+    # get_object(want_mesh=True) does both checks and would have been shorter, but its type message
+    # is the generic "is a %s, not a MESH" and this op's own is better - it says what is missing
+    # rather than what the object is not. test_blender_refusals B123 asserts that wording, and it
+    # was right to.
+    if obj.mode != "OBJECT":
+        raise MifOpError("'%s' is in %s mode. Shading is written onto the mesh data, which Blender "
+                         "keeps in a separate edit BMesh while you are in edit mode - the write "
+                         "would be discarded on the way out. Leave edit mode first. NOTHING was "
+                         "changed." % (obj.name, obj.mode))
     mesh = obj.data
 
     smooth = params.get("smooth")

@@ -414,6 +414,56 @@ def main():
     check("C199 (cleanup) no MifC_* object is left behind",
           not [n for n in survivors if str(n).startswith("MifC_")], survivors)
 
+    # ------------------------------------------------------------------
+    # C110  A STALE READ IS A WRONG ANSWER, AND IT IS NOW LABELLED
+    # ------------------------------------------------------------------
+    # Blender keeps live edits in a separate BMesh, so mesh.polygons answers with the state from the
+    # last time OBJECT mode was left. face_info read it and reported that number as current:
+    # measured on 5.0.1, deleting a face in edit mode left it saying 6 while the live mesh had 5.
+    #
+    # NOT REFUSED, unlike the WRITE path - set_shading in edit mode is refused outright because a
+    # write there is silently discarded on the way out. A read stays available and says what it is,
+    # because this addon drives a LIVE editor where somebody may simply be in edit mode on
+    # something else, and refusing every query for the duration would remove a capability to
+    # prevent a mistake the caller can now see.
+    print("")
+    print("=== C110: face_info says when its figures are the last OBJECT-mode state ===")
+    B.call("create_primitive", {"kind": "cube", "name": "MifC_Stale", "size": 2})
+    clean = B.call("face_info", {"object": "MifC_Stale"})
+    check("C110 face_info in OBJECT mode does NOT claim staleness - the negative control, without "
+          "which a flag that was always on would pass this whole section",
+          not clean.get("editModeStale"), json.dumps(clean)[:200])
+
+    # EDIT MODE AND A REAL EDIT. Entering it is the one thing no op does - deliberately, since
+    # every mesh op requires OBJECT mode - so this needs run_python, and skips politely without it,
+    # the same way A101's aim check does.
+    edit = B.call("run_python", {"code": (
+        "import bpy, bmesh\n"
+        "ob = bpy.data.objects['MifC_Stale']\n"
+        "bpy.context.view_layer.objects.active = ob\n"
+        "ob.select_set(True)\n"
+        "bpy.ops.object.mode_set(mode='EDIT')\n"
+        "bm = bmesh.from_edit_mesh(ob.data)\n"
+        "bm.faces.ensure_lookup_table()\n"
+        "bmesh.ops.delete(bm, geom=[bm.faces[0]], context='FACES')\n"
+        "bmesh.update_edit_mesh(ob.data)\n"
+        "result = len(bmesh.from_edit_mesh(ob.data).faces)\n")})
+    if edit.get("ok") is False:
+        check("C110 (skipped) the stale-read check needs run_python, which is disabled here",
+              True, str(edit.get("error"))[:120])
+    else:
+        live = edit.get("result")
+        dirty = B.call("face_info", {"object": "MifC_Stale"})
+        B.call("run_python", {"code": "import bpy\nbpy.ops.object.mode_set(mode='OBJECT')\n"})
+        check("C110 face_info in EDIT mode flags editModeStale and says the figures are the last "
+              "OBJECT-mode state - the count really is wrong (%s live vs %s reported), so the flag "
+              "is the only thing between the caller and a confident wrong answer"
+              % (live, dirty.get("faceCount")),
+              bool(dirty.get("editModeStale"))
+              and "OBJECT mode was last left" in (dirty.get("staleNote") or "")
+              and dirty.get("faceCount") != live,
+              json.dumps(dirty)[:220])
+
     print("")
     print("=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))

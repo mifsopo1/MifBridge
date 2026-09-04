@@ -1817,6 +1817,17 @@ def main():
     ok, msg = refuses(OQ2.op_set_shading, {"object": "Lamp", "smooth": True}, "no shading to set")
     check("B123 set_shading on a non-MESH is refused", ok, msg)
 
+    # EDIT MODE, and this one was a silent no-op rather than a refusal until 2026-09-04. set_shading
+    # writes poly.use_smooth onto mesh.polygons, which Blender keeps STALE while the live geometry
+    # sits in a separate edit BMesh - so the call reported ok with a facesChanged count and every
+    # polygon stayed flat. Measured on 5.0.1 before the fix; the same call from OBJECT mode worked.
+    _obj.mode = "EDIT"
+    ok, msg = refuses(OQ2.op_set_shading, {"object": "Cube", "smooth": True},
+                      "EDIT mode", "discarded")
+    check("B123 set_shading in EDIT mode is refused, saying the write would be discarded - it "
+          "used to report success and change nothing", ok, msg)
+    _obj.mode = "OBJECT"
+
     print("")
     print("=== B124: the compositor on BLENDER 5.0, where scene.node_tree does not exist ===")
     # THIS BLOCK EXISTS BECAUSE THE SHIPPED CODE WAS DEAD ON 5.0 AND EVERY GATE WAS GREEN. A live

@@ -345,6 +345,34 @@ def get_object(name, want_mesh=False):
     return obj
 
 
+def edit_mode_stale(obj):
+    """A response fragment warning that this object's mesh data is not what the caller can see.
+
+    WHY A READ NEEDS THIS AND A WRITE DOES NOT. A write in edit mode is refused outright by
+    get_object(want_mesh=True), because the live geometry lives in the edit BMesh and anything
+    written to mesh.polygons is discarded on the way out. A READ has the mirror problem and no
+    guard: mesh.polygons still holds the state from the last time OBJECT mode was entered, so the
+    answer is confidently wrong rather than lost.
+
+    Measured on 5.0.1: delete a face in edit mode and face_info still reports 6 of them while the
+    live mesh has 5. Nothing in the response said which number it was.
+
+    NOT REFUSED, unlike the write path, and the difference is deliberate. This addon drives a LIVE
+    editor where a person may well be in edit mode on something unrelated, and refusing every query
+    for the duration would remove a capability to prevent a mistake the caller can now see. A read
+    stays available and says what it is.
+    """
+    if getattr(obj, "mode", "OBJECT") == "OBJECT":
+        return {}
+    return {
+        "editModeStale": True,
+        "objectMode": obj.mode,
+        "staleNote": ("'%s' is in %s mode, so these figures are the mesh as it was when OBJECT "
+                      "mode was last left - Blender keeps live edits in a separate BMesh. Leave "
+                      "edit mode and call again for the current state." % (obj.name, obj.mode)),
+    }
+
+
 def local_bounds(obj):
     """The LOCAL-space bounding box, read from the VERTEX DATA, not obj.bound_box.
 
