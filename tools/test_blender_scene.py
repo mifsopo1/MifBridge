@@ -235,6 +235,45 @@ def main():
     except OSError:
         pass
 
+    # ---------------------------------------------------------------- S105 constraints
+    print("")
+    print("=== S105: a constraint, and the invalid one that looks identical ===")
+    con = B.call("add_constraint", {"object": "S_Cam", "type": "TRACK_TO",
+                                    "target": "S_Crate", "constraintName": "S_Track"})
+    check("S105 adding a TRACK_TO constraint succeeds", con.get("ok") is not False,
+          json.dumps(con)[:220])
+    # MEASURED THROUGH THE DEPSGRAPH. A constraint does not touch obj.matrix_world, so the ONLY
+    # evidence it does anything is the evaluated matrix moving. A camera at (5,-5,4) aimed at a
+    # crate is a real rotation, so this must be non-zero - and if this assertion ever passes
+    # trivially it means the op went back to reading the base object.
+    check("S105 and it MOVED the camera - measured on the evaluated matrix, which is the only "
+          "place a constraint is visible at all",
+          con.get("hadEffect") is True, json.dumps(con)[:220])
+    check("S105 the constraint reads back as valid",
+          ((con.get("constraint") or {}).get("isValid")) is True, json.dumps(con)[:220])
+
+    lc = B.call("list_constraints", {"object": "S_Cam"})
+    check("S105 list_constraints finds it", (lc.get("count") or 0) == 1, json.dumps(lc)[:220])
+    check("S105 and reports none invalid while the target exists",
+          lc.get("invalidCount") == 0 and lc.get("invalid") == [], json.dumps(lc)[:220])
+
+    # THE SILENT FAILURE THIS FIELD EXISTS FOR. Delete the target and the constraint STAYS, with
+    # its type, influence and target name all still reading fine. is_valid is the only tell, and
+    # Blender surfaces it nowhere an API caller can reach.
+    B.call("delete_object", {"object": "S_Crate"})
+    lc2 = B.call("list_constraints", {"object": "S_Cam"})
+    check("S105 with the target DELETED the constraint is still on the stack",
+          (lc2.get("count") or 0) == 1, json.dumps(lc2)[:220])
+    check("S105 and it is now reported INVALID - the whole reason invalidCount exists, because "
+          "every other field still looks healthy",
+          lc2.get("invalidCount") == 1 and "S_Track" in (lc2.get("invalid") or []),
+          json.dumps(lc2)[:220])
+
+    rm = B.call("remove_constraint", {"object": "S_Cam", "constraintName": "S_Track"})
+    check("S105 removing it counts the stack rather than trusting the call",
+          rm.get("countsAgree") is True and rm.get("constraintCountAfter") == 0,
+          json.dumps(rm)[:220])
+
     # ---------------------------------------------------------------- cleanup
     print("")
     for n in ("S_Ground", "S_Crate", "S_Mote", "S_Cam", "S_Sun"):

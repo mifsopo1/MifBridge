@@ -5020,6 +5020,27 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_add_constraint(object: str, type: str, bone: str = None, target: str = None,
+                      subtarget: str = None, influence: float = None,
+                      constraint_name: str = None) -> dict:
+    "Add an object or bone constraint in Blender, and MEASURE that it moves the thing. Constraints are how camera and light rigs are actually built - a Track To on an empty stays correct as the target moves, which a one-shot bl_aim_object cannot - and nothing here could create one. THE MEASUREMENT IS THE DESIGN: a constraint does NOT touch obj.matrix_world, it is applied by the depsgraph at evaluation, so reading the object's own transform reports no change for every constraint that works perfectly. This samples the EVALUATED world matrix before and after and reports movedDistance and turnedRadians. hadEffect false is not automatically wrong - a Copy Location onto something already in place moves nothing - so read it beside isValid: valid and inert means nothing to do, INVALID and inert means a target that does not resolve. Call mif_help(\"bl_add_constraint\") first."
+    return _blender("add_constraint", object=object, type=type, bone=bone, target=target,
+                    subtarget=subtarget, influence=influence, constraintName=constraint_name)
+
+
+@mcp.tool()
+def bl_list_constraints(object: str, bone: str = None) -> dict:
+    "Every constraint on a Blender object or one of its pose bones, with each one's validity. invalidCount is the field to read: a constraint whose target has been DELETED stays in the stack, contributes nothing, and is indistinguishable from a working one everywhere except is_valid - Blender shows it red in the UI and reports it nowhere else an API caller can reach. Also reports influence, mute, target and subtarget per constraint, and how many are muted. Call mif_help(\"bl_list_constraints\") first."
+    return _blender("list_constraints", object=object, bone=bone)
+
+
+@mcp.tool()
+def bl_remove_constraint(object: str, constraint_name: str, bone: str = None) -> dict:
+    "Remove a Blender constraint by name, and report where the object went when it came off. Removing a constraint moves the object back to its own transform, and THAT movement is the proof the constraint was doing something - measured through the evaluated depsgraph for the same reason adding one is. The response counts constraints before and after with countsAgree, because constraints.remove() returns None either way. Call mif_help(\"bl_remove_constraint\") first."
+    return _blender("remove_constraint", object=object, constraintName=constraint_name, bone=bone)
+
+
+@mcp.tool()
 def bl_list_markers() -> dict:
     "Every timeline marker in the Blender scene, and which CAMERA each one cuts to. Camera binding is the reason markers matter beyond being labels: a marker with a camera bound makes the scene switch to it at that frame, which is how a multi-camera edit is done in Blender and is invisible from everywhere else in this addon - bl_list_cameras reports which camera is active NOW, this reports which one each part of the timeline uses. sceneCutsBetweenCameras says outright whether the scene changes camera mid-render, in which case scene.camera only describes the frames before the first binding. No parameters. Call mif_help(\"bl_list_markers\") first."
     return _blender("list_markers")
