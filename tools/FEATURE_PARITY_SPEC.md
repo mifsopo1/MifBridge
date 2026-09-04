@@ -12995,7 +12995,7 @@ out-of-process the way ops_gen already does with gen_status.
       gravity - wrong, and only ruled out by testing it rather than reasoning about it. It moved to
       TEARDOWN anyway, because it does move the shared Cube and the next fixture would have paid.
 
-- [ ] **the temp-path normalisation silently did nothing for a while**
+- [x] **the temp-path normalisation silently did nothing for a while** DONE 2026-09-04
       _TMP is stored forward-slashed so it can be substituted into payloads, but ops return whatever
       the OS hands back, so every returned path failed to normalise and read as a cross-build diff.
       Fixed by also replacing the os.sep spelling. Worth a look for the same shape elsewhere: a
@@ -13435,3 +13435,16 @@ out-of-process the way ops_gen already does with gen_status.
       Verified on 3.6.23 and 5.0.1, four cases: the first call creates; a second call with inputs
       REUSES and applies them to the same modifier; reuse:false adds a second; and a different group
       adds a third.
+
+      LOOKED, as that entry asked, and the sweep of other .replace() calls found nothing: the rest
+      are os.path.relpath output normalised for display or for use as a dict key, and they all fire.
+      So the answer to "does this shape exist elsewhere" is no, today.
+
+      What was worth building instead is a guard against the SHAPE rather than the instance. The
+      inner script now reports the temp directory it used, and the outer fails if any digest value
+      still contains it in EITHER spelling - which is exactly what a normalisation that matched
+      nothing would leave behind. There is no failure to see when this breaks, which is why it
+      survived; now there is.
+
+      MUTATION-TESTED by reverting the fix: the guard reports 20 leaked values across the four
+      builds and exits 1, and reports none once the fix is back.

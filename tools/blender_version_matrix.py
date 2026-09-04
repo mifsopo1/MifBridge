@@ -469,7 +469,7 @@ import json, sys, traceback
 sys.path.insert(0, r"%(addon_parent)s")
 import bpy
 
-out = {"version": bpy.app.version_string, "results": {}}
+out = {"version": bpy.app.version_string, "results": {}, "tmp": None}
 try:
     from MifBlender import server as S
     from MifBlender.ops_common import MifOpError
@@ -481,6 +481,7 @@ except Exception:
 
 import os, tempfile
 _TMP = tempfile.mkdtemp(prefix="mifmatrix_").replace("\\", "/")
+out["tmp"] = _TMP
 
 def _sub(value):
     if isinstance(value, str):
@@ -786,6 +787,32 @@ def main():
             if len({json.dumps(x, sort_keys=True, default=str) for x in seen.values()}) > 1:
                 value_diffs.append((op, field, seen))
 
+    # DID THE TEMP-PATH NORMALISATION ACTUALLY FIRE? _TMP is stored forward-slashed so it can be
+    # substituted into payloads, but ops return whatever the OS hands back - so for a while the
+    # substitution in _digest matched NOTHING and every returned path read as a cross-build
+    # difference. It looked exactly like a normalisation with nothing to normalise, which is why it
+    # survived: there is no failure to see.
+    #
+    # This is the guard against that shape rather than against that instance. Any digest value still
+    # holding the run's own temp directory, in either spelling, means the normaliser missed it.
+    leaked = []
+    for r in reports:
+        tmp = r.get("tmp")
+        if not tmp:
+            continue
+        spellings = {tmp, tmp.replace("/", os.sep), tmp.replace(os.sep, "/")}
+        for op, entry in sorted(r.get("results", {}).items()):
+            for field, value in sorted((entry.get("value") or {}).items()):
+                if isinstance(value, str) and any(s in value for s in spellings):
+                    leaked.append((r.get("version", "?"), op, field, value[:60]))
+    if leaked:
+        print("")
+        print("TEMP PATH LEAKED INTO %d DIGEST VALUE(S) - the normalisation in _digest did not"
+              % len(leaked))
+        print("match these, so they will read as cross-build differences forever:")
+        for v, op, field, value in leaked[:20]:
+            print("  %-12s %-26s %-24s %s" % (v, op, field, value))
+
     try:
         with io.open(VALUE_BASELINE, encoding="utf-8") as fh:
             accepted = {tuple(row) for row in json.load(fh)}
@@ -844,7 +871,7 @@ def main():
     print("A refusal is NOT a finding - an op declining because the default scene has no armature")
     print("is the op working. Raw exceptions and divergences are the findings; REACH is how much of")
     print("the table those findings actually cover.")
-    return 1 if (raised or fatal or suspect or new_diffs) else 0
+    return 1 if (raised or fatal or suspect or new_diffs or leaked) else 0
 
 
 if __name__ == "__main__":
