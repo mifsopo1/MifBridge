@@ -33,9 +33,35 @@ directory.
   `python tools/report_watch.py`.
 
   **It auto-starts.** A Windows scheduled task, `MifBridge report watcher`, launches it at Andre's
-  logon and restarts it every 5 minutes if it dies. So it is probably already running before you do
-  anything — check with `Get-Process python` rather than starting a second one, and remove the task
-  with `Unregister-ScheduledTask "MifBridge report watcher"` if you need it gone.
+  logon, retries every 30 minutes, and restarts up to 3 times if it dies. So it is probably already
+  running before you do anything.
+
+  **Do not check with `Get-Process python` — it runs as `pythonw.exe`** and that lookup finds
+  nothing. This paragraph said `python` until 2026-09-04, which fails in the worst direction:
+  you conclude it is dead and start a SECOND one, and `report_watch.py` has no self-lock, so two
+  watchers both poll and can both escalate the same report. The task's `MultipleInstances: IgnoreNew`
+  is the only thing preventing that.
+
+  **Ask instead:**
+
+  ```
+  python tools/report_watch_health.py
+  ```
+
+  It answers whether a watcher is running, what the task's last run actually returned, whether `gh`
+  and `claude` are reachable, and — the useful one — whether anything is open right now that should
+  have been picked up and has not. Exit 0 means the loop is genuinely working, not merely present.
+
+  **Do not judge it by the log.** Idle polls write nothing on purpose, so a log line hours old is the
+  NORMAL state of a healthy watcher.
+
+  Remove the task with `Unregister-ScheduledTask "MifBridge report watcher"` if you need it gone.
+
+  **This paragraph also used to claim it "restarts every 5 minutes if it dies", and that was not
+  true when written** — the task had no restart configuration at all and its only trigger was logon.
+  It is true now. Left visible rather than quietly corrected, because a claim that was aspirational
+  and read as fact is part of why nobody ever checked whether the loop was running, and it was not:
+  it failed on every run it ever made, and reports #1, #2 and #3 were all found by hand.
 
   **Two modes, and which one is live matters to you.** Without `--dry-run` it spawns an agent that
   fixes the report — which BUILDS, and therefore closes the editor. With `--dry-run` it fetches,

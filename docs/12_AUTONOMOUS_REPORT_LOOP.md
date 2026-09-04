@@ -287,6 +287,25 @@ Setting it up remains a deliberate act rather than something a script does for y
 configuration on Andre's machine and a standing grant of unattended editor operation to whoever is on
 the trust list. That should be a decision, not a side effect.
 
+### Asking whether it is actually working
+
+Every failure above was checkable and nothing checked it. The task reported `State: Ready` throughout
+the weeks it was failing, which is what "looks fine" looks like.
+
+```
+python tools/report_watch_health.py
+```
+
+Five questions, in the order a failure bites: is a watcher running, does the task exist and what did
+its last run really return, can it reach GitHub, can it spawn an agent, and is anything open RIGHT
+NOW that it should have taken. The last one is the one that would have caught this outright - #3 sat
+open and unseen for hours while every other signal looked ordinary.
+
+It decodes task result codes rather than printing them, because a bare number in that field is
+exactly what hid the original bug: `2147942402` sat there for weeks meaning FILE_NOT_FOUND. And it
+repeats, every run, that the log is not a liveness signal - idle polls write nothing by design, so a
+stale log is the healthy state and "the log looks old" is a false alarm every time.
+
 ### What wakes it, which is more than it used to be
 
 **A new issue, and now a REPLY.** `poll()` originally asked only for open issues and tracked them by
