@@ -519,6 +519,29 @@ def op_bake_texture(params):
         raise MifOpError("'%s' has no faces, so there is nothing to bake. NOTHING was baked."
                          % obj.name)
 
+    # THE COLOUR SPACE IS RESOLVED HERE, before anything is created. This used to test availability
+    # by assigning to a live image, so it could only run once the image, a generated material and
+    # the use_nodes flips existed - and then refused, leaving all of them behind. The enum lives on
+    # ColorManagedInputColorspaceSettings itself, so the question is answerable with nothing built.
+    #
+    # Named by the OCIO config rather than remembered: 'Non-Color' on stock Blender, but a studio
+    # config may spell it differently, and silently leaving sRGB is the bug this is here to stop.
+    # DIFFUSE, COMBINED, EMIT and GLOSSY are radiometric colour and stay sRGB. The split is by
+    # what the channel MEANS, which is why it is a table rather than a rule about scalars.
+    _NON_COLOUR_BAKES = {"NORMAL", "ROUGHNESS", "AO", "SHADOW"}
+    non_colour_space = None
+    if bake_type in _NON_COLOUR_BAKES:
+        offered = {i.identifier for i in bpy.types.ColorManagedInputColorspaceSettings
+                   .bl_rna.properties["name"].enum_items}
+        non_colour_space = next((w for w in ("Non-Color", "Non-Colour", "Raw", "Generic Data")
+                                 if w in offered), None)
+        if non_colour_space is None:
+            raise MifOpError(
+                "a %s bake must not be written with an sRGB transfer, and this Blender's colour "
+                "config offers none of Non-Color/Non-Colour/Raw/Generic Data to say so. Writing it "
+                "anyway would produce a map that is wrong in every engine while looking correct. "
+                "NOTHING was baked." % bake_type)
+
     # PRE-FLIGHT, even though the operator raises for this itself. Its message names the object;
     # this one names the fix.
     uv_name = take(params, "uvLayer")
@@ -586,24 +609,11 @@ def op_bake_texture(params):
     #
     # DIFFUSE, COMBINED, EMIT and GLOSSY are radiometric colour and stay sRGB. The split is by what
     # the channel MEANS, which is why it is a table rather than a rule about scalars.
-    _NON_COLOUR_BAKES = {"NORMAL", "ROUGHNESS", "AO", "SHADOW"}
     colour_space = None
-    if bake_type in _NON_COLOUR_BAKES:
-        # Named by the OCIO config, not remembered: 'Non-Color' on stock Blender, but a studio
-        # config may spell it differently, and silently leaving sRGB is the bug being fixed.
-        for want in ("Non-Color", "Non-Colour", "Raw", "Generic Data"):
-            try:
-                image.colorspace_settings.name = want
-                colour_space = want
-                break
-            except (TypeError, ValueError):
-                continue
-        if colour_space is None:
-            raise MifOpError(
-                "a %s bake must not be written with an sRGB transfer, and this Blender's colour "
-                "config offers none of Non-Color/Non-Colour/Raw/Generic Data to say so. Writing it "
-                "anyway would produce a map that is wrong in every engine while looking correct. "
-                "NOTHING was baked." % bake_type)
+    if non_colour_space is not None:
+        # Resolved above, against the config's own list. Nothing here can refuse.
+        image.colorspace_settings.name = non_colour_space
+        colour_space = non_colour_space
     else:
         colour_space = image.colorspace_settings.name
     if image.name != image_name:

@@ -234,18 +234,19 @@ def op_render_still(params):
         raise MifOpError("there is no scene camera, so there is nothing to render from. Create one "
                          "with create_camera (makeActive defaults true). NOTHING was rendered.")
 
-    applied = _apply_common(sc, params)
-    frame = take_float(params, "frame", default=None)
-    if frame is not None:
-        sc.frame_set(int(frame))
-
+    # THE TARGET IS RESOLVED BEFORE ANYTHING IS WRITTEN. This used to assign sc.render.filepath and
+    # then check whether a path existed, so the settings _apply_common had already applied and the
+    # frame it had already stepped to were left behind by a refusal reading "NOTHING was rendered".
+    # True of the render and silent about the scene, which is the distinction the audit draws.
     out_path = take(params, "filePath", "output", default=None, kind=str)
-    if out_path:
-        sc.render.filepath = bpy.path.abspath(str(out_path))
-    target = bpy.path.abspath(sc.render.filepath)
+    target = bpy.path.abspath(str(out_path)) if out_path else bpy.path.abspath(sc.render.filepath)
     if not target:
         raise MifOpError("no output path is set - pass filePath, or set one with "
                          "set_render_settings. NOTHING was rendered.")
+
+    # The directory too: it needs the target and the filesystem, nothing from the scene, and below
+    # the settings write it was refusing "NOTHING was rendered" with the render settings and the
+    # current frame already moved.
     parent = os.path.dirname(target)
     if parent and not os.path.isdir(parent):
         try:
@@ -253,6 +254,13 @@ def op_render_still(params):
         except OSError as exc:
             raise MifOpError("cannot create the output directory %s: %s. NOTHING was rendered."
                              % (parent, exc))
+
+    applied = _apply_common(sc, params)
+    frame = take_float(params, "frame", default=None)
+    if frame is not None:
+        sc.frame_set(int(frame))
+    if out_path:
+        sc.render.filepath = target
 
     write_still = take_bool(params, "writeStill", default=True)
 
