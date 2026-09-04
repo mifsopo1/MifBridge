@@ -12561,22 +12561,39 @@ out-of-process the way ops_gen already does with gen_status.
       3.6, 4.2, 4.4 and 5.0. It had been refusing for a bad payload and never reaching that line,
       which is exactly the argument for measuring reach rather than counting green.
 
-- [ ] **nothing in the addon creates a VERTEX GROUP or a SHAPE KEY** (3 hours)
-      Found by the three ops the matrix still cannot reach. list_vertex_groups, normalize_weights
-      and transfer_weights all operate on vertex groups, and list_shape_keys and set_shape_key on
-      shape keys - and grepping the whole addon for vertex_groups.new and shape_key_add returns
-      NOTHING. Same consume-but-cannot-produce shape as collections, empties, curves and armatures
-      before them, and the fourth time that question has paid.
+- [x] **nothing in the addon created a VERTEX GROUP or a SHAPE KEY** DONE 2026-09-03
+      set_vertex_weights and add_shape_key. Found by the three ops blender_version_matrix could not
+      reach: five ops consumed vertex groups and shape keys and grepping the whole addon for
+      vertex_groups.new and shape_key_add returned NOTHING. Fourth time the consume-but-cannot-
+      produce question has paid, after collections, empties and armatures.
 
-      So a rig imported with weights can be normalised and transferred, and one built here cannot be
-      weighted at all; a mesh with shape keys can have them driven, and one without cannot be given
-      any. transfer_weights refuses rather than producing an unskinned result, which is the op being
-      honest about a hole it cannot fill.
+      THE POSTCONDITION IS THE WEIGHTS, NOT THE GROUP. A group that exists with every weight at zero
+      deforms nothing and reads back identically to a working one, so the response carries
+      verticesWithNonZeroWeight and says so outright when every weight written was zero. Membership
+      and a zero weight are distinguished, because vg.weight() RAISES for a vertex outside the group
+      rather than returning 0 - and a vertex outside the group cannot be normalised or transferred
+      at all.
 
-      Wants create_vertex_group (with an optional vertex list and weights), assign_vertex_weights,
-      and add_shape_key (from the current mesh or as a copy of another key). The postcondition for
-      the weight ops is the DEFORMED result, not the group's existence - a group that exists with
-      every weight at zero deforms nothing and reads back perfectly.
+      The first shape key on a bare mesh is the BASIS - the rest position, which moves nothing - so
+      basisCreated reports that separately rather than letting it look like the key that was asked
+      for. Verified on 3.6, 4.4 and 5.0.
+
+      AND REACHING THE THREE OPS IMMEDIATELY FOUND TWO MORE DEFECTS.
+
+      transfer_weights passed layers_select_src="ALL", and use_reverse_transfer SWAPS WHICH ENUM
+      VALIDATES WHICH ARGUMENT - so "ALL" was checked against the destination enum
+      (ACTIVE|NAME|INDEX) and raised TypeError on all four builds. It had NEVER WORKED. Swapped, it
+      returns FINISHED and the destination gains real weights on every build.
+
+      Then its own success test was wrong: `transferred` was
+      `len(dst.vertex_groups) > groups_before or weighted > 0`, and the OR made the group COUNT
+      sufficient - so a first transfer that created the group and wrote every weight as 0.0
+      reported success. Measured with a half-weighted source on 4.4 and 5.0: transferred:True,
+      weighted 0 of 8, which is precisely the unskinned result that op's own docstring says would be
+      worse than refusing. It now requires a non-zero weight, and the refusal says a group may have
+      been created and deform nothing.
+
+      Reach is now 117 of 119 runnable ops on every build, from 72 this morning.
 
 - [x] **a second UV channel + lightmap pack - it already worked, and nothing could tell** DONE 2026-09-03
       Item 6 of the measured gap list, and the premise turned out to be wrong. uv_unwrap with

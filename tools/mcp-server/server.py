@@ -4876,6 +4876,23 @@ def bl_clean_mesh(object_name: str, merge_distance: float = None, remove_loose: 
 
 
 @mcp.tool()
+def bl_set_vertex_weights(object: str, group: str, vertices: list = None, weight: float = None,
+                          weights: list = None, mode: str = None, create: bool = None,
+                          remove: bool = None) -> dict:
+    "Create a Blender vertex group and put weights in it - which NOTHING in the addon could do. bl_list_vertex_groups, bl_normalize_weights and bl_transfer_weights all operate on vertex groups and nothing created one, so a rig imported with weights could be normalised and a rig built here could not be weighted at all. THE POSTCONDITION IS THE WEIGHTS, NOT THE GROUP: a group that exists with every weight at zero deforms nothing and reads back identically to a working one in bl_list_vertex_groups, so this reports verticesWithNonZeroWeight - the number that decides whether anything actually moves - and says so outright when every weight written was zero. Membership and a zero weight are DIFFERENT states and are distinguished: vg.weight() raises for a vertex outside the group rather than returning 0, so a vertex not in the group at all cannot be normalised or transferred. A duplicate group name gives the NEW group a .001 suffix and leaves the incumbent alone, uniformly on every build - unlike object renaming, which reverses across the 3.6/4.x line - and it is reported rather than refused."
+    return _blender("set_vertex_weights", object=object, group=group, vertices=vertices,
+                    weight=weight, weights=weights, mode=mode, create=create, remove=remove)
+
+
+@mcp.tool()
+def bl_add_shape_key(object: str, name: str = None, from_mix: bool = None, value: float = None,
+                     slider_min: float = None, slider_max: float = None) -> dict:
+    "Add a Blender shape key - the other thing several ops consumed and nothing produced. bl_set_shape_key drives a key's value and bl_list_shape_keys reports them; nothing could CREATE one, so a mesh without shape keys could never be given any. THE FIRST KEY IS THE BASIS AND IT IS NOT A SHAPE: Blender makes the first key added to a mesh the rest position and stores every later key RELATIVE to it (verified on 3.6, 4.4 and 5.0), so a caller adding one key to a bare mesh gets something that holds the shape the mesh already has and moves nothing. basisCreated reports that separately rather than letting it look like the key you asked for. from_mix captures the current evaluated mix instead of the rest shape - how a corrective key is made - and is OFF by default, because a key silently capturing whatever the sliders happened to be set to is a surprise rather than a convenience."
+    return _blender("add_shape_key", object=object, name=name, fromMix=from_mix, value=value,
+                    sliderMin=slider_min, sliderMax=slider_max)
+
+
+@mcp.tool()
 def bl_normalize_weights(object_name: str, max_influences: int = None,
                          normalize: bool = True, groups: list = None) -> dict:
     "Make every vertex's bone weights sum to 1 in Blender, and cap how many bones influence one vertex."

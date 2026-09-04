@@ -66,6 +66,11 @@ def _bone_dict(bone):
     }
 
 
+# Blender truncates ID and group names here on 3.6 through 4.4. Measured on all four builds:
+# a 100-character vertex group name comes back at 63 characters on every one of them.
+_ID_NAME_LIMIT = 63
+
+
 def op_list_bones(params):
     """The rest-pose bone hierarchy of an Armature object - Blender's name for what UE calls a
     Skeleton's ReferenceSkeleton."""
@@ -414,8 +419,19 @@ def op_transfer_weights(params):
             use_reverse_transfer=True,
             data_type="VGROUP_WEIGHTS",
             vert_mapping=mapping,
-            layers_select_src="ALL",
-            layers_select_dst="NAME",
+            # SWAPPED, BECAUSE use_reverse_transfer SWAPS WHICH ENUM VALIDATES WHICH ARGUMENT.
+            # layers_select_src normally takes ACTIVE|ALL|BONE_SELECT|BONE_DEFORM and
+            # layers_select_dst takes ACTIVE|NAME|INDEX - but with reverse on, "ALL" passed to
+            # _src is checked against the DST enum and raises
+            #   TypeError: enum "ALL" not found in ('ACTIVE', 'NAME', 'INDEX')
+            # so this op had NEVER WORKED on any Blender. Measured on 3.6, 4.2, 4.4 and 5.0: as
+            # shipped it raises on all four; swapped it returns FINISHED and the destination gains
+            # the group on all four.
+            #
+            # Found by blender_version_matrix once set_vertex_weights existed to give the source a
+            # group - before that this op refused for "no vertex groups" and never reached the call.
+            layers_select_src="NAME",
+            layers_select_dst="ALL",
             mix_mode="REPLACE",
         )
     finally:
@@ -448,14 +464,31 @@ def op_transfer_weights(params):
         "destinationGroupsAfter": len(dst.vertex_groups),
         "destinationVertices": len(dst.data.vertices),
         "destinationVerticesWeighted": weighted,
-        "transferred": len(dst.vertex_groups) > groups_before or weighted > 0,
+        # A NON-ZERO WEIGHT, AND NOTHING ELSE. This was
+        #     len(dst.vertex_groups) > groups_before or weighted > 0
+        # and the OR made the group COUNT sufficient - so a first transfer that created the group
+        # and wrote every weight as 0.0 reported transferred:True with weighted 0 of 8. Measured on
+        # 4.4.0 and 5.0.1 with a half-weighted source: exactly the unskinned result the docstring
+        # above says would be worse than refusing, reported as a success.
+        #
+        # The comment above added `weighted > 0` to rescue the SECOND-transfer case, where the group
+        # already exists so the count cannot move. That was right; keeping the count as an
+        # alternative was not. A group is not evidence - a group whose every weight is zero exists,
+        # reads back perfectly in list_vertex_groups, and deforms nothing.
+        "transferred": weighted > 0,
+        "destinationGroupCountMoved": len(dst.vertex_groups) > groups_before,
     }
     if not out["transferred"]:
         raise MifOpError(
-            "the transfer ran and '%s' still has no weighted vertices (%d groups before, %d after). "
-            "The usual cause is the two meshes being far apart in world space - a nearest-surface "
-            "mapping needs them roughly coincident. NOTHING usable was produced."
-            % (dst.name, groups_before, len(dst.vertex_groups)))
+            "the transfer ran and '%s' still has NO WEIGHTED VERTICES (%d groups before, %d "
+            "after%s). Two usual causes: the meshes are far apart in world space, since a "
+            "nearest-surface mapping needs them roughly coincident; or the source vertices nearest "
+            "the destination are themselves unweighted, which a partially weighted source does "
+            "quietly. Either way the group may now EXIST on '%s' and deform nothing, which is why "
+            "this refuses instead of reporting the group it made. NOTHING usable was produced."
+            % (dst.name, groups_before, len(dst.vertex_groups),
+               " - a group WAS created" if len(dst.vertex_groups) > groups_before else "",
+               dst.name))
     if weighted < len(dst.data.vertices):
         out["coverageNote"] = (
             "%d of %d destination vertices carry no weight - the mapping found nothing near them. "
@@ -1049,6 +1082,258 @@ def op_set_shape_key(params):
     }
 
 
+_VGROUP_KEYS = {"object", "name", "group", "vertices", "weight", "weights", "mode", "create",
+                "remove"}
+_SHAPEKEY_KEYS = {"object", "name", "key", "fromMix", "value", "sliderMin", "sliderMax"}
+
+_VGROUP_MODES = ("REPLACE", "ADD", "SUBTRACT")
+
+
+def op_set_vertex_weights(params):
+    """Create a vertex group and put weights in it - which nothing in this addon could do.
+
+    THE HOLE THIS CLOSES, found by asking what the addon consumes and cannot produce - the fourth
+    time that question has paid, after collections, empties and armatures. list_vertex_groups,
+    normalize_weights and transfer_weights all operate on vertex groups, and grepping the whole
+    addon for vertex_groups.new returned NOTHING. So a rig imported with weights could be
+    normalised and transferred, and a rig built here could not be weighted at all. transfer_weights
+    refuses rather than producing an unskinned result, which is that op being honest about a hole it
+    could not fill.
+
+    THE POSTCONDITION IS THE WEIGHTS, NOT THE GROUP. A vertex group that exists with every weight at
+    zero deforms nothing and reads back perfectly - it has a name, an index, and it appears in
+    list_vertex_groups exactly like a working one. So this reads the stored weight back for every
+    vertex it touched and reports the range, and reports how many vertices ended up with a NON-ZERO
+    weight, which is the number that decides whether anything will actually move.
+
+    vg.weight(i) RAISES RuntimeError for a vertex that is not in the group rather than returning 0,
+    on every build, so the read-back catches per vertex rather than assuming membership.
+
+    params:
+      object (str)              required, must be a MESH
+      group / name (str)        the vertex group. Created if absent unless create:false.
+      vertices (list[int])      which vertices. Omit to create an empty group.
+      weight (float)            one weight for all of them. Default 1.0.
+      weights (list[float])     a weight per vertex, parallel to `vertices`. Excludes `weight`.
+      mode (str)                REPLACE (default) | ADD | SUBTRACT
+      create (bool)             create the group if it does not exist. Default true.
+      remove (bool)             REMOVE the listed vertices from the group instead of weighting them
+    """
+    reject_unknown(params, _VGROUP_KEYS, "set_vertex_weights")
+    src = take(params, "object", required=True, kind=str)
+    group_name = take(params, "group", "name", required=True, kind=str)
+    if len(str(group_name)) > _ID_NAME_LIMIT:
+        raise MifOpError("the group name is %d characters and Blender truncates at %d on every "
+                         "build, so the group you get would not be the one you named. NOTHING was "
+                         "changed." % (len(str(group_name)), _ID_NAME_LIMIT))
+    mode = str(take(params, "mode", default="REPLACE", kind=str)).upper()
+    if mode not in _VGROUP_MODES:
+        raise MifOpError("mode must be one of %s, got '%s'. NOTHING was changed."
+                         % (", ".join(_VGROUP_MODES), mode))
+    create = take_bool(params, "create", default=True)
+    remove = take_bool(params, "remove", default=False)
+
+    raw_verts = params.get("vertices")
+    if raw_verts is not None and not isinstance(raw_verts, (list, tuple)):
+        raise MifOpError("'vertices' must be a list of vertex indices, got %s. NOTHING was changed."
+                         % type(raw_verts).__name__)
+    raw_weights = params.get("weights")
+    single = take_float(params, "weight", default=None)
+    if raw_weights is not None and single is not None:
+        raise MifOpError("pass weight OR weights, not both - one is a value for every vertex and "
+                         "the other is a value per vertex, and they cannot both win. NOTHING was "
+                         "changed.")
+    if raw_weights is not None:
+        if not isinstance(raw_weights, (list, tuple)):
+            raise MifOpError("'weights' must be a list of numbers, got %s. NOTHING was changed."
+                             % type(raw_weights).__name__)
+        if raw_verts is None or len(raw_weights) != len(raw_verts):
+            raise MifOpError("'weights' has %d entries and 'vertices' has %s - they are parallel "
+                             "lists and must match. NOTHING was changed."
+                             % (len(raw_weights), len(raw_verts) if raw_verts is not None else 0))
+    if remove and (raw_weights is not None or single is not None):
+        raise MifOpError("remove:true takes vertices OUT of the group, so a weight has nothing to "
+                         "apply to. NOTHING was changed.")
+
+    obj = get_object(src, want_mesh=True)
+    mesh = obj.data
+    verts = []
+    if raw_verts is not None:
+        try:
+            verts = [int(i) for i in raw_verts]
+        except (TypeError, ValueError):
+            raise MifOpError("'vertices' must be whole numbers. NOTHING was changed.")
+        highest = len(mesh.vertices) - 1
+        bad = sorted(i for i in verts if i < 0 or i > highest)
+        if bad:
+            raise MifOpError("vertex index %d is out of range - '%s' has %d vertice(s), so the "
+                             "highest index is %d. NOTHING was changed."
+                             % (bad[0], obj.name, len(mesh.vertices), highest))
+
+    group = obj.vertex_groups.get(group_name)
+    created = False
+    if group is None:
+        if not create:
+            known = [g.name for g in obj.vertex_groups][:25]
+            raise MifOpError("'%s' has no vertex group named '%s' and create:false was given. "
+                             "Groups: %s. NOTHING was changed."
+                             % (obj.name, group_name, ", ".join(known) if known else "<none>"))
+        if remove:
+            raise MifOpError("'%s' has no vertex group named '%s', so there is nothing to remove "
+                             "vertices from. NOTHING was changed." % (obj.name, group_name))
+        group = obj.vertex_groups.new(name=str(group_name))
+        created = True
+        # A DUPLICATE NAME GIVES THE NEW GROUP A .001 SUFFIX and leaves the incumbent alone -
+        # uniform on 3.6, 4.4 and 5.0, unlike OBJECT renaming which reverses across the 3.6/4.x
+        # line. It is reported rather than refused because a second group is a legitimate thing to
+        # want, but a caller who then looks for their name by string needs to know.
+        if group.name != str(group_name):
+            created = True
+
+    weights_before = {}
+    for i in verts:
+        try:
+            weights_before[i] = round(group.weight(i), 6)
+        except RuntimeError:
+            weights_before[i] = None      # not in the group at all - a distinct state from 0.0
+
+    if verts:
+        if remove:
+            group.remove(verts)
+        elif raw_weights is not None:
+            for index, w in zip(verts, raw_weights):
+                group.add([index], float(w), mode)
+        else:
+            group.add(verts, 1.0 if single is None else single, mode)
+
+    # READ BACK PER VERTEX. vg.weight() raises for a vertex outside the group rather than returning
+    # zero, so membership and a zero weight are distinguishable - and they are different states: one
+    # deforms nothing, the other is not in the group to be normalised or transferred at all.
+    after, nonzero, missing = {}, 0, []
+    for i in verts:
+        try:
+            value = round(group.weight(i), 6)
+            after[i] = value
+            if value > 0.0:
+                nonzero += 1
+        except RuntimeError:
+            after[i] = None
+            missing.append(i)
+    if verts and not remove and missing:
+        raise MifOpError("%d of %d vertices are NOT in group '%s' after the write: %s. The group "
+                         "exists and those vertices are outside it, which deforms nothing."
+                         % (len(missing), len(verts), group.name, missing[:10]))
+
+    total_in_group = 0
+    for v in mesh.vertices:
+        try:
+            group.weight(v.index)
+            total_in_group += 1
+        except RuntimeError:
+            pass
+    values = [w for w in after.values() if w is not None]
+    return {
+        "ok": True,
+        "object": obj.name,
+        "group": group.name,
+        "groupIndex": group.index,
+        "created": created,
+        "requestedName": str(group_name),
+        "nameWasSuffixed": group.name != str(group_name),
+        "mode": mode if not remove else "REMOVE",
+        "verticesTouched": len(verts),
+        # THE NUMBER THAT DECIDES WHETHER ANYTHING MOVES. A group full of zero weights is a group
+        # that exists and deforms nothing, and it reads back exactly like a working one.
+        "verticesWithNonZeroWeight": nonzero,
+        "verticesInGroup": total_in_group,
+        "weightRange": [min(values), max(values)] if values else None,
+        "weightsBefore": weights_before if len(weights_before) <= 32 else None,
+        "note": ("every weight written is 0, so this group exists and deforms NOTHING - which reads "
+                 "back identically to a working one in list_vertex_groups.")
+        if (values and not nonzero and not remove) else
+        (("the group name was taken, so Blender created '%s' instead of '%s' - the existing group "
+          "was left alone. Anything looking this up by name needs the new one."
+          % (group.name, group_name)) if group.name != str(group_name) else None),
+    }
+
+
+def op_add_shape_key(params):
+    """Add a shape key - the other thing five ops could consume and nothing could produce.
+
+    set_shape_key drives a key's value and list_shape_keys reports them, and nothing anywhere could
+    CREATE one, so a mesh without shape keys could never be given any.
+
+    THE FIRST KEY IS THE BASIS AND IT IS NOT A SHAPE. Blender names the first key added on a mesh
+    'Basis' and every later key is stored RELATIVE to it - verified on 3.6, 4.4 and 5.0, where the
+    second key came back with relative_key 'Basis'. A caller adding one key to a bare mesh gets the
+    rest position and nothing that can move, which is why this reports basisCreated separately
+    rather than counting it as the key that was asked for.
+
+    fromMix TAKES THE CURRENT EVALUATED MIX rather than the rest shape, which is how a corrective
+    key is made. Off by default: a key silently capturing whatever the sliders happened to be set
+    to is a surprise, not a convenience.
+
+    params:
+      object (str)         required, must be a MESH
+      name / key (str)     the key's name. Default 'Key'.
+      fromMix (bool)       capture the current mix instead of the rest shape. Default false.
+      value (float)        the key's influence, 0-1
+      sliderMin / sliderMax (float)
+    """
+    reject_unknown(params, _SHAPEKEY_KEYS, "add_shape_key")
+    src = take(params, "object", required=True, kind=str)
+    name = str(take(params, "name", "key", default="Key", kind=str))
+    if len(name) > _ID_NAME_LIMIT:
+        raise MifOpError("the key name is %d characters and Blender truncates at %d. NOTHING was "
+                         "created." % (len(name), _ID_NAME_LIMIT))
+    from_mix = take_bool(params, "fromMix", default=False)
+    value = take_float(params, "value", default=None)
+    smin = take_float(params, "sliderMin", default=None)
+    smax = take_float(params, "sliderMax", default=None)
+    if smin is not None and smax is not None and smax < smin:
+        raise MifOpError("sliderMax %g is below sliderMin %g. NOTHING was created." % (smax, smin))
+
+    obj = get_object(src, want_mesh=True)
+    existing = obj.data.shape_keys
+    had = list(existing.key_blocks.keys()) if existing else []
+    if name in had:
+        raise MifOpError("'%s' already has a shape key named '%s'. Blender would create '%s.001' "
+                         "beside it, which is rarely what somebody adding a named key wants - pick "
+                         "another name or drive the existing one with set_shape_key. NOTHING was "
+                         "created." % (obj.name, name, name))
+
+    basis_created = not had
+    key = obj.shape_key_add(name=name, from_mix=from_mix)
+    if key is None:
+        raise MifOpError("shape_key_add returned None for '%s' - Blender reports failure that way "
+                         "rather than raising. NOTHING was created." % name)
+    if value is not None:
+        key.value = value
+    if smin is not None:
+        key.slider_min = smin
+    if smax is not None:
+        key.slider_max = smax
+
+    blocks = obj.data.shape_keys.key_blocks
+    return {
+        "ok": True,
+        "object": obj.name,
+        "key": key.name,
+        "keyCount": len(blocks),
+        "keys": list(blocks.keys()),
+        # THE FIRST KEY ON A BARE MESH IS THE REST POSITION. Reported so a caller who asked for one
+        # key and got 'Basis' can see why nothing moves.
+        "basisCreated": basis_created,
+        "relativeTo": key.relative_key.name if getattr(key, "relative_key", None) else None,
+        "value": round(float(key.value), 6),
+        "sliderRange": [round(float(key.slider_min), 6), round(float(key.slider_max), 6)],
+        "fromMix": from_mix,
+        "note": ("this was the FIRST key on the mesh, so Blender made it the BASIS - the rest "
+                 "position. It holds the shape the mesh already has and moves nothing. Add a "
+                 "second key and edit its data to get something that deforms.")
+        if basis_created else None,
+    }
+
 OPS = {
     "set_bone_pose": op_set_bone_pose,
     "set_shape_key": op_set_shape_key,
@@ -1057,6 +1342,8 @@ OPS = {
     "list_vertex_groups": op_list_vertex_groups,
     "list_modifiers": op_list_modifiers,
     "normalize_weights": op_normalize_weights,
+    "set_vertex_weights": op_set_vertex_weights,
+    "add_shape_key": op_add_shape_key,
     "transfer_weights": op_transfer_weights,
     "add_modifier": op_add_modifier,
     "remove_modifier": op_remove_modifier,

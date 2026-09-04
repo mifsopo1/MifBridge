@@ -186,10 +186,13 @@ PAYLOADS = {
     # missing object. A mutating sweep needs throwaways of its own, not shared ones.
     "join_objects": {"target": "MifJoinA", "objects": ["MifJoinB"]},
     "transfer_weights": {"source": "MifCutter", "destination": "Cube"},
+    "set_vertex_weights": {"object": "Cube", "group": "MifSweepGroup",
+                           "vertices": [0], "weight": 0.25},
+    "add_shape_key": {"object": "MifCutter", "name": "MifSweepKey"},
     "normalize_weights": {"object": "Cube"},
     "rename_bones": {"object": "MifRig", "map": {"tip": "tip_renamed"}},
     "set_bone_pose": {"object": "MifRig", "bone": "root", "location": [0, 0, 0.1]},
-    "set_shape_key": {"object": "Cube", "name": "MifKey", "value": 0.5},
+    "set_shape_key": {"object": "Cube", "shapeKey": "MifDent", "value": 0.5},
     "set_custom_property": {"object": "Cube", "key": "mif_probe2", "value": 2},
     "list_collections": {},
     "list_view_layers": {},
@@ -245,6 +248,17 @@ FIXTURES = [
     ("add_modifier", {"object": "MifSpare", "type": "SUBSURF"}),
     ("add_constraint", {"object": "MifSpare", "type": "TRACK_TO", "target": "Camera"}),
     ("set_custom_property", {"object": "Cube", "key": "mif_probe", "value": 1}),
+    # THE THREE OPS THE MATRIX COULD NOT REACH needed these, and nothing could make
+    # either until set_vertex_weights and add_shape_key existed.
+    ("set_vertex_weights", {"object": "Cube", "group": "MifWeights",
+                            "vertices": [0, 1, 2, 3], "weight": 0.5}),
+    # ALL EIGHT, not two. A partially weighted source makes transfer_weights produce a group with
+    # every weight at zero - which the op now refuses, correctly - so a half-weighted fixture would
+    # test the refusal rather than the transfer.
+    ("set_vertex_weights", {"object": "MifCutter", "group": "MifWeights",
+                            "vertices": [0, 1, 2, 3, 4, 5, 6, 7], "weight": 1.0}),
+    ("add_shape_key", {"object": "Cube", "name": "MifBasis"}),
+    ("add_shape_key", {"object": "Cube", "name": "MifDent"}),
     ("create_action", {"name": "MifMatrixAction"}),
     ("create_primitive", {"kind": "cube", "name": "MifJoinA", "location": [8, 0, 0]}),
     ("create_primitive", {"kind": "cube", "name": "MifJoinB", "location": [8.5, 0, 0]}),

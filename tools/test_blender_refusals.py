@@ -1994,6 +1994,43 @@ def main():
     check("B127 mesh_stats with no object is refused", ok, msg)
 
     print("")
+    print("=== B128: set_vertex_weights and add_shape_key - the last consume-only pair ===")
+    # FOUND BY THE MATRIX, not by reading: three ops could never be reached because nothing in the
+    # addon created a vertex group or a shape key, though five ops consumed them. Fourth time that
+    # question has paid, after collections, empties and armatures.
+    from MifBlender import ops_rig as OR
+
+    ok, msg = refuses(OR.op_set_vertex_weights, {"object": "Cube"}, "'group' is required")
+    check("B128 weights with no group named is refused", ok, msg)
+    ok, msg = refuses(OR.op_set_vertex_weights, {"object": "Cube", "group": "G", "mode": "MULT"},
+                      "mode must be one of")
+    check("B128 an unknown weight mode is refused with the valid set", ok, msg)
+    ok, msg = refuses(OR.op_set_vertex_weights,
+                      {"object": "Cube", "group": "G", "weight": 1.0, "weights": [1.0]},
+                      "not both", "cannot both win")
+    check("B128 weight AND weights together is refused - one is a value for every vertex and the "
+          "other a value per vertex", ok, msg)
+    ok, msg = refuses(OR.op_set_vertex_weights,
+                      {"object": "Cube", "group": "G", "vertices": [0, 1], "weights": [1.0]},
+                      "parallel lists")
+    check("B128 mismatched vertices and weights lengths are refused", ok, msg)
+    ok, msg = refuses(OR.op_set_vertex_weights,
+                      {"object": "Cube", "group": "G", "vertices": [0], "remove": True,
+                       "weight": 1.0}, "nothing to apply to")
+    check("B128 remove with a weight is refused - removal takes vertices OUT, so a weight has "
+          "nothing to apply to", ok, msg)
+    ok, msg = refuses(OR.op_set_vertex_weights, {"object": "Cube", "group": "Q" * 80},
+                      "truncates")
+    check("B128 an over-long group name is refused, because Blender truncates it on every build "
+          "and the group you get is not the one you named", ok, msg)
+
+    ok, msg = refuses(OR.op_add_shape_key, {"object": "Cube", "name": "K" * 80}, "truncates")
+    check("B128 an over-long shape key name is refused", ok, msg)
+    ok, msg = refuses(OR.op_add_shape_key,
+                      {"object": "Cube", "sliderMin": 1.0, "sliderMax": 0.0}, "below")
+    check("B128 an inverted slider range is refused", ok, msg)
+
+    print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
     # THE NEGATIVE CONTROL. Every check above proves something is refused; without this, a guard
     # that refused EVERYTHING would score full marks. Retyping to SPOT while setting spotAngle is
