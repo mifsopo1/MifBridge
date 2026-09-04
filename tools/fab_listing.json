@@ -1,0 +1,42 @@
+{
+  "_readme": [
+    "The declared state of the Fab listing. tools/fab_readiness.py measures the built package",
+    "against this, so a field left null is reported as an OPEN DECISION rather than silently",
+    "passing. Nothing here is filled in on anyone's behalf: every null below is a question only",
+    "Andre can answer, and answering it in this file is what makes it checkable afterwards.",
+    "Clause numbers refer to the Fab Distribution Agreement of 23 February 2026."
+  ],
+
+  "listingPrice": null,
+  "_listingPrice": "1(d): your complete discretion, but it must be $0.00 or >= $0.99.",
+
+  "createdWithAI": null,
+  "createdWithAIReason": null,
+  "_createdWithAI": [
+    "18(k)(ii): REQUIRED where 'a material portion of the Content is generated with Generative AI",
+    "Programs'. Not a preference. A material portion of this plugin was written by a generative",
+    "model, so the honest answer is almost certainly true - but 'material' is a human judgement and",
+    "this file will not make it for you. If you set false, say why in createdWithAIReason."
+  ],
+
+  "publishedCommit": null,
+  "_publishedCommit": "The git commit the live Fab listing was built from. 3(b) parity is measured against it.",
+
+  "otherChannels": [],
+  "_otherChannels": [
+    "3(b): 'If your Content is made available to end users through channels other than the",
+    "Marketplaces, you will provide any Updates to Epic no later than you provide them to any other",
+    "third party.' List every channel that reaches an END USER. A private repo only you can pull",
+    "from is not one; a private repo three collaborators pull from is. So is an SDK installer that",
+    "bundles the plugin."
+  ],
+
+  "licenceInPayload": null,
+  "_licenceInPayload": [
+    "3(f)(v): 'content distributed through Fab is licensed only under the Fab End User License",
+    "Agreement, which is not superseded by custom licenses included in Content's distributed files'.",
+    "The repo's LICENSE is MIT and the repo is public, so every version pushed so far is MIT to",
+    "everyone who has it - irrevocably. That cannot be undone, only changed going forward. What CAN",
+    "be fixed is the copy inside the Fab package, which must not tell a buyer they have MIT rights."
+  ]
+}
