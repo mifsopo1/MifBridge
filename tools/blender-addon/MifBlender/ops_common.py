@@ -98,6 +98,10 @@ def take(params, *names, default=None, required=False, kind=None):
     return default
 
 
+_TRUE_WORDS = ("1", "true", "yes", "on")
+_FALSE_WORDS = ("0", "false", "no", "off")
+
+
 def take_bool(params, *names, default=False):
     value = take(params, *names, default=default)
     if isinstance(value, bool):
@@ -105,7 +109,20 @@ def take_bool(params, *names, default=False):
     if isinstance(value, (int, float)):
         return bool(value)
     if isinstance(value, str):
-        return value.strip().lower() in ("1", "true", "yes", "on")
+        word = value.strip().lower()
+        if word in _TRUE_WORDS:
+            return True
+        # A WORD THIS DOES NOT KNOW IS A TYPO, NOT A FALSE. The test used to be
+        # `word in _TRUE_WORDS`, so everything else - "ture", "flase", an empty string, a NUL -
+        # came back False and the op carried on as though the caller had asked for it. Found by
+        # sending sentinels to the parameters no payload covers: makeActive took a garbage string
+        # and quietly meant "no". A false is a decision; a typo is not.
+        if word in _FALSE_WORDS:
+            return False
+        raise MifOpError("'%s' must be a boolean - got %r. Accepted as text: %s for true, %s for "
+                         "false. An unrecognised word is a typo rather than a no, so it is refused "
+                         "instead of quietly meaning false."
+                         % (names[0], value, "/".join(_TRUE_WORDS), "/".join(_FALSE_WORDS)))
     raise MifOpError("'%s' must be a boolean" % names[0])
 
 
