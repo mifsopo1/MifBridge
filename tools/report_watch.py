@@ -79,6 +79,19 @@ POLL_SECONDS = 45
 BUDGET_USD = "5.00"
 
 
+# NO FLASHING CONSOLES. This runs under pythonw.exe so the watcher itself has no window to be closed
+# or clicked into - and the moment it did, every console child it launches started creating a window
+# of its own, because there is no console for them to inherit. With a 45 second poll calling gh, that
+# is a window appearing and vanishing every 45 seconds. Andre saw exactly that.
+#
+# Applied through one constant rather than five literals: the flash is the ONLY symptom - the watcher
+# works either way - so a sixth call site added later would reintroduce it and nothing but the
+# annoyance would say so.
+#
+# 0 on any non-Windows platform, where the flag does not exist and nothing needs it.
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
 def log(msg):
     """Write one line to stdout and the log file. NEITHER may take the watcher down.
 
@@ -140,7 +153,7 @@ def poll():
            "--json", "number,title,author,createdAt,comments", "--limit", "20"]
     try:
         out = subprocess.run(cmd, cwd=HERE, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                             stdin=subprocess.DEVNULL, timeout=120)
+                             stdin=subprocess.DEVNULL, timeout=120, creationflags=NO_WINDOW)
     except Exception as exc:
         log("  gh failed to run: %s" % exc)
         return None
@@ -159,7 +172,7 @@ def run(script, *args):
     cmd = [sys.executable, "-u", os.path.join(HERE, script)] + list(args)
     try:
         out = subprocess.run(cmd, cwd=HERE, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                             stdin=subprocess.DEVNULL, timeout=1800)
+                             stdin=subprocess.DEVNULL, timeout=1800, creationflags=NO_WINDOW)
     except Exception as exc:
         return False, str(exc)
     text = ((out.stdout or "") + (out.stderr or "")).strip()
@@ -257,7 +270,7 @@ def self_login():
         try:
             out = subprocess.run(["gh", "api", "user", "--jq", ".login"], cwd=HERE,
                                  capture_output=True, text=True, encoding="utf-8",
-                                 errors="replace", stdin=subprocess.DEVNULL, timeout=60)
+                                 errors="replace", stdin=subprocess.DEVNULL, timeout=60, creationflags=NO_WINDOW)
             _SELF[0] = (out.stdout or "").strip() or None
         except Exception:                                           # noqa: BLE001
             _SELF[0] = None
@@ -359,7 +372,7 @@ def escalate(issue, push, dry_run):
     log("  spawning agent for %s (budget $%s, push=%s)" % (head, BUDGET_USD, push))
     try:
         out = subprocess.run(cmd, cwd=os.path.dirname(HERE), capture_output=True,
-                             text=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, timeout=5400)
+                             text=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, timeout=5400, creationflags=NO_WINDOW)
         tail = ((out.stdout or "") + (out.stderr or "")).strip()[-2000:]
         log("  agent exited %d" % out.returncode)
         for l in tail.splitlines()[-25:]:
@@ -392,7 +405,7 @@ def escalate_comment(issue, comment, push, dry_run):
     try:
         out = subprocess.run(cmd, cwd=os.path.dirname(HERE), capture_output=True,
                              text=True, encoding="utf-8", errors="replace",
-                             stdin=subprocess.DEVNULL, timeout=5400)
+                             stdin=subprocess.DEVNULL, timeout=5400, creationflags=NO_WINDOW)
         tail = ((out.stdout or "") + (out.stderr or "")).strip()[-2000:]
         log("  agent exited %d" % out.returncode)
         for l in tail.splitlines()[-25:]:
