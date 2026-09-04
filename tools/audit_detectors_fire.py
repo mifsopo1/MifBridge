@@ -918,10 +918,31 @@ def plant_mutate_then_deny(text):
         '    raise MifOpError("that combination is not supported. NOTHING was changed.")',
     )))
 
+
+def plant_stale_count(text):
+    """A count in the README that disagrees with the tool that computes it.
+
+    The defect that produced audit_stale_counts four times in one working day: a badge figure
+    typed by hand beside a sentence claiming it was not typed by hand.
+
+    998 is chosen because it cannot be a real Blender op count at any point in this project's
+    life - if a restore ever fails, the leftover is unmistakable rather than believable.
+    """
+    import re as _re
+    m = _re.search(r"\*\*(\d+) Blender ops\*\*", text)
+    if not m:
+        return None
+    return text[:m.start(1)] + "998" + text[m.end(1):]
+
 PLANTS = {
     # THE ADDON AUDITS BUILT ON 2026-09-03/04. They were listed under "no plant is defined for
     # these, so their green means nothing here" - and leaving them there because they are recent
     # and were hand-tested once is exactly the reasoning that listing exists to refuse.
+    # PLANTS INTO README.md - a file a person edits by hand, so the restore matters more here than
+    # in a source file nobody is reading mid-run. The harness asserts the bytes come back
+    # identical, which is the only reason planting into it is acceptable at all.
+    "audit_stale_counts.py": (os.path.join(ROOT, "README.md"), plant_stale_count,
+                              "says 998, actually"),
     "audit_mutate_then_deny.py": (_ADDON_OPS, plant_mutate_then_deny, "op_mifplant_denies"),
     "audit_created_name_reported.py": (_ADDON_OPS, plant_unreported_created_name,
                                        "op_mifplant_unreported"),
@@ -1096,6 +1117,7 @@ ARGS = {"audit_vacuous_checks.py": ["--all"],
         # These three REPORT and exit 0 without --check, which is how make_release runs them
         # (make_release.py:518,525,532). Run bare, the harness would plant a real defect, watch the
         # tool describe it, see exit 0 and call the tool asleep for doing its job.
+        "audit_stale_counts.py": ["--check"],
         "audit_mutate_then_deny.py": ["--check"],
         "audit_created_name_reported.py": ["--check"],
         "audit_output_paths.py": ["--check"],

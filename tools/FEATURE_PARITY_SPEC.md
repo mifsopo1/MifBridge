@@ -15258,7 +15258,38 @@ out-of-process the way ops_gen already does with gen_status.
       one tool whose job is catching claims that stopped being true. Now derived from the list of
       rule functions that actually run.
 
-- [ ] **audit_detectors_fire proves ONE rule per multi-rule tool**
+- [x] **audit_detectors_fire proves ONE rule per multi-rule tool** DONE 2026-09-04
+      A PLANTS value may now be a single entry or a list of them - backwards compatible, because
+      mechanically rewriting thirty working entries would have been the risky half. audit_vacuous_
+      checks carries five plants, one per rule; the row label shows the marker so five rows read as
+      five results rather than one repeated.
+
+      Five of the six tools listed under "no plant is defined for these, so their green means
+      nothing here" now have one: created_name_reported, output_paths, unguarded_numbers,
+      mutate_then_deny, stale_counts. Five of those six were built in this session and verified
+      once, by hand, on the day they were written - and leaving them unplanted because they were
+      recent and I remembered testing them is the exact reasoning that listing exists to refuse.
+
+      TWO OF THE SIX NEW PLANTS ACCUSED A WORKING DETECTOR ON THEIR FIRST RUN, which is the part
+      worth keeping:
+
+        rule 5's marker was the string the planted code PRINTS. Rule 5 reports the field name -
+        "RULE 5 'matchedCount' is printed and never compared" - and never echoes the print, so the
+        harness called a rule ASLEEP for a defect it had correctly found.
+
+        mutate_then_deny's plant wrote obj.location[0], a SUBSCRIPT. That tool's own REACH line
+        says 8 ops are unjudged because they "write through a subscript on a datablock" - the
+        plant had landed squarely in a blind spot the tool declares in its own output.
+
+      This file already warns that "the plant did not land" and "the detector is blind" are
+      indistinguishable without care. Both times the care needed was reading the tool's own output
+      beside the 0, not changing the tool.
+
+- [ ] **audit_mutate_then_deny_ue is the last detector with no plant**
+      It plants into Source/, and the harness skips every Source/ plant while an editor holds the
+      tree - so this one cannot be PROVEN right now rather than merely being unwritten. Writing it
+      unverified would be guessing: two of the six plants written today were wrong on their first
+      run, and both looked reasonable. Needs one pass when the editor is free.
       Its plant table is keyed by filename, so audit_vacuous_checks - which now has five rules - is
       represented by a single plant exercising rule 4. Rules 1, 2, 3 and 5 have no standing proof
       that they still fire; each was hand-verified when written and nothing re-checks them.
