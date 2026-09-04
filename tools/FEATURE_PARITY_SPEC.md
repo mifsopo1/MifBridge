@@ -13317,3 +13317,26 @@ out-of-process the way ops_gen already does with gen_status.
       reports 26 -> 8 evaluated vertices and evaluatedChanged:true; removing an inert SHRINKWRAP
       reports 8 -> 8 and false - which tells a caller who removed something hoping to fix a problem
       that it was contributing nothing in the first place. Verified on 4.4 with both cases.
+
+- [x] **the modifier read side was a second hand-written table, and I had just made it wrong** DONE 2026-09-04
+      _MODIFIER_FIELDS listed the same seven types _MODIFIER_WRITES did. Adding fourteen types to
+      the write side an hour earlier made the two disagree immediately: every new setting was
+      writable and unreadable, which is exactly the read/write asymmetry this repo treats as a
+      defect class. I introduced it while fixing a different one.
+
+      Two tables that must agree will not, so there is now ONE table and the other is computed from
+      it. _generated_fields derives a getter per entry whose target is a plain RNA name; the handful
+      with callable setters (MIRROR's use_axis indices) keep their hand-written getters, which win.
+      A datablock reports the NAME of what it points at.
+
+      NODES could never have been in either table, because its settings are not RNA properties -
+      they are per-group inputs addressed by IDENTIFIER (Socket_2) inside the modifier. So
+      list_modifiers reported a geometry-nodes modifier as a bare name and type: which GROUP it
+      held was invisible, two assign_node_group calls stacking two modifiers were
+      indistinguishable from one, and nothing could read back an input that assign_node_group had
+      written. It now reports group, every input by socket NAME, and outputConnected.
+
+      Verified on 3.6.23 and 5.0.1, identical on both: a SHRINKWRAP reports target 'Terrain' and
+      offset 0.25 alongside wrapMethod and wrapMode; the NODES modifier reports group 'G' with
+      inputs {Amount: 3.5, Which: 'Terrain'} - the Object pointer resolved to its name - and
+      outputConnected false.

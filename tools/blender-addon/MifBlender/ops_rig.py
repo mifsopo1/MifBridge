@@ -192,6 +192,43 @@ _MODIFIER_FIELDS = {
 }
 
 
+def _read_modifier_attr(mod, attr):
+    """One modifier property as something JSON can carry, whatever kind it is."""
+    value = getattr(mod, attr)
+    if value is None:
+        return None
+    if hasattr(value, "name") and not isinstance(value, str):
+        return value.name                       # a datablock pointer - report what it points AT
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, float):
+        return round(float(value), 6)
+    if isinstance(value, int):
+        return int(value)
+    if hasattr(value, "__len__") and not isinstance(value, str):
+        return [round(float(v), 6) for v in value]
+    return str(value)
+
+
+def _generated_fields(mod_type):
+    """The read side, DERIVED from the write table rather than typed out again.
+
+    WHY THIS IS GENERATED. _MODIFIER_FIELDS was a second hand-written table listing the same seven
+    types _MODIFIER_WRITES did, and the moment fourteen types were added to the write side the two
+    disagreed - every new setting was writable and unreadable, which is precisely the read/write
+    asymmetry this repo treats as a defect class. Two tables that must agree will not, so there is
+    one table and the other is computed from it.
+
+    Only entries whose target is a plain RNA name are generated; the handful with callable setters
+    (MIRROR's use_axis indices) keep their hand-written getters in _MODIFIER_FIELDS, which wins.
+    """
+    out = []
+    for key, (target, _coerce) in sorted(_MODIFIER_WRITES.get(mod_type, {}).items()):
+        if isinstance(target, str):
+            out.append((key, lambda m, a=target: _read_modifier_attr(m, a)))
+    return tuple(out)
+
+
 def _modifier_dict(mod):
     row = {
         "name": mod.name,
@@ -199,7 +236,7 @@ def _modifier_dict(mod):
         "showViewport": bool(mod.show_viewport),
         "showRender": bool(mod.show_render),
     }
-    fields = _MODIFIER_FIELDS.get(mod.type)
+    fields = _MODIFIER_FIELDS.get(mod.type) or _generated_fields(mod.type)
     if fields:
         settings = {}
         for key, getter in fields:
@@ -209,6 +246,38 @@ def _modifier_dict(mod):
                                 # some modifier sub-state must not take the whole row down with it
                 settings[key] = None
         row["settings"] = settings
+
+    # NODES IS NOT IN EITHER TABLE AND CANNOT BE, because its settings are not RNA properties -
+    # they are per-group inputs addressed by IDENTIFIER (Socket_2) inside the modifier itself.
+    #
+    # Until this was added, list_modifiers reported a geometry-nodes modifier as a bare name and
+    # type: which GROUP it held was invisible, so two assign_node_group calls stacking two
+    # modifiers were indistinguishable from one, and there was no way to see what any of their
+    # inputs had been set to. assign_node_group could write them and nothing could read them back.
+    if mod.type == "NODES":
+        tree = getattr(mod, "node_group", None)
+        row["group"] = tree.name if tree is not None else None
+        inputs = {}
+        if tree is not None:
+            if hasattr(tree, "interface"):
+                items = [it for it in tree.interface.items_tree
+                         if getattr(it, "item_type", "SOCKET") == "SOCKET" and it.in_out == "INPUT"]
+            else:
+                items = list(tree.inputs)
+            for it in items:
+                try:
+                    held = mod[it.identifier]
+                except (KeyError, TypeError):
+                    inputs[it.name] = None
+                    continue
+                inputs[it.name] = (held.name if hasattr(held, "name") and not isinstance(held, str)
+                                   else (round(float(held), 6) if isinstance(held, float)
+                                         else (list(held) if hasattr(held, "__len__")
+                                               and not isinstance(held, str) else held)))
+        row["inputs"] = inputs
+        row["outputConnected"] = (
+            any(l.to_node.bl_idname == "NodeGroupOutput" for l in tree.links)
+            if tree is not None else None)
     return row
 
 
