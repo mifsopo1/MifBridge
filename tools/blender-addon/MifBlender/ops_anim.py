@@ -28,7 +28,7 @@ object really is left holding the last value written. That is stated rather than
 """
 import bpy
 
-from .ops_common import (MifOpError, get_object, reject_unknown, rnd, select_only,
+from .ops_common import (check_axis_dict, MifOpError, get_object, reject_unknown, rnd, select_only,
                          selection_restore, selection_snapshot, take, take_bool, take_float,
                          take_int)
 
@@ -91,14 +91,7 @@ def _vec3(params, key):
         # AT LEAST ONE OF x/y/z, AND NOTHING ELSE - see ops_create for why. Fifth copy of this
         # parser in the addon and the defect was in every one: a dict read with .get(axis,
         # default) turns {"mif":"typo"} into the DEFAULT vector and reports success.
-        _axes = {"x", "y", "z"}
-        _unknown = sorted(set(v) - _axes)
-        if _unknown or not (set(v) & _axes):
-            raise MifOpError(
-                "'%s' as an object takes x, y and/or z - got %r. %s NOTHING was changed."
-                % (key, v,
-                   ("Unrecognised: %s." % ", ".join(_unknown)) if _unknown
-                   else "It names none of them."))
+        check_axis_dict(v, key, ("x", "y", "z"))
         return (float(v.get("x", 0.0)), float(v.get("y", 0.0)), float(v.get("z", 0.0)))
     if isinstance(v, (list, tuple)) and len(v) == 3:
         return tuple(float(x) for x in v)

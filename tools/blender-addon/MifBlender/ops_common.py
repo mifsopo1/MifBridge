@@ -117,6 +117,31 @@ def take_int(params, *names, default=None, required=False):
         raise MifOpError("'%s' must be an integer, got %r" % (names[0], value))
 
 
+
+def check_axis_dict(value, key, axes, tail="NOTHING was changed."):
+    """A {x,y,z}-style dict names at least one real axis and nothing else, or it is refused.
+
+    WHY THIS IS SHARED AND THE PARSERS ARE NOT. Six places in this addon read a vector from a dict
+    and they legitimately differ - two axes for a node location, four for a quaternion, list or
+    tuple returns, defaults that are sometimes zero and sometimes the object's current value.
+    Forcing those into one function needs five parameters and is worse than the duplication.
+
+    The VALIDATION is identical in all six, and on 2026-09-04 the same defect was in all six: a dict
+    read with .get(axis, default) turned {"mif":"typo"} into the DEFAULT vector - the origin, or
+    wherever the object already was - and reported success. In set_bone_pose a mistyped quaternion
+    became a ZERO quaternion, which is not a rotation at all.
+
+    A PARTIAL DICT STAYS LEGAL. {"z": 2} is a useful thing to write and the other axes keep their
+    defaults; a dict that names NONE of them is a typo rather than a request.
+    """
+    unknown = sorted(set(value) - set(axes))
+    if unknown or not (set(value) & set(axes)):
+        raise MifOpError(
+            "'%s' as an object takes %s - got %r. %s %s"
+            % (key, "/".join(axes), value,
+               ("Unrecognised: %s." % ", ".join(unknown)) if unknown
+               else "It names none of them.", tail))
+
 def reject_unknown(params, accepted, endpoint):
     """Fail loudly on a key we do not understand.
 

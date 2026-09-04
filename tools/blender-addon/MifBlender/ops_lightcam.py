@@ -27,7 +27,7 @@ import os
 import bpy
 import mathutils
 
-from .ops_common import (MifOpError, camera_readback, get_object, light_readback, object_info,
+from .ops_common import (check_axis_dict, MifOpError, camera_readback, get_object, light_readback, object_info,
                          reject_unknown,
                          refuse_unsupported_shadow, rnd, shadow_attr,
                          selection_restore, selection_snapshot, take, take_bool, take_float,
@@ -77,14 +77,7 @@ def _vec3(params, key, default, verb="created"):
         # success - a misspelled key silently placed the object at the origin, or left it where
         # it was, and every field in the response agreed. Partial dicts stay legal ({"z": 2} is
         # a useful thing to write); a dict that names none of them is a typo, not a request.
-        _axes = {"x", "y", "z"}
-        _unknown = sorted(set(v) - _axes)
-        if _unknown or not (set(v) & _axes):
-            raise MifOpError(
-                "'%s' as an object takes x, y and/or z - got %r. %s NOTHING was changed."
-                % (key, v,
-                   ("Unrecognised: %s." % ", ".join(_unknown)) if _unknown
-                   else "It names none of them."))
+        check_axis_dict(v, key, ("x", "y", "z"))
         return (float(v.get("x", default[0])), float(v.get("y", default[1])),
                 float(v.get("z", default[2])))
     if isinstance(v, (list, tuple)) and len(v) == 3:

@@ -29,7 +29,8 @@ way out.
 """
 import bpy
 
-from .ops_common import MifOpError, get_object, reject_unknown, take, take_bool, take_float
+from .ops_common import (MifOpError, check_axis_dict, get_object, reject_unknown, take,
+                         take_bool, take_float)
 
 _CREATE_KEYS = {"name", "type", "withGroupIO"}
 _ADDNODE_KEYS = {"group", "tree", "type", "nodeType", "name", "location", "inputs", "label",
@@ -329,11 +330,8 @@ def op_add_group_node(params):
     if isinstance(loc, dict):
         # TWO AXES HERE, not three - a node location is 2D. Same defect as the vector parsers:
         # {"mif":"typo"} put the node at the origin and reported success.
-        _axes = {"x", "y"}
-        _unknown = sorted(set(loc) - _axes)
-        if _unknown or not (set(loc) & _axes):
-            raise MifOpError("'location' as an object takes x and/or y - got %r. The node "
-                             "WAS added as '%s'." % (loc, node.name))
+        check_axis_dict(loc, "location", ("x", "y"),
+                        "The node WAS added as '%s'." % node.name)
         node.location = (float(loc.get("x", 0.0)), float(loc.get("y", 0.0)))
     elif isinstance(loc, (list, tuple)) and len(loc) >= 2:
         node.location = (float(loc[0]), float(loc[1]))

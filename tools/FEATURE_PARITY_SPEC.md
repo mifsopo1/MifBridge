@@ -14169,7 +14169,7 @@ out-of-process the way ops_gen already does with gen_status.
       raise instead of refusing, and was a mapping accepted where a value belongs. Between them they
       found sixteen defects today in code that was green under every other check in this repo.
 
-- [ ] **six hand-rolled copies of one vector parser, and ops_common already exists**
+- [x] **six hand-rolled copies of one vector parser, and ops_common already exists** DONE 2026-09-04
       Filed rather than done, because the fix is five modules wide and the behaviour is now guarded.
       The {x,y,z}-or-[x,y,z] parse exists six times - ops_create, ops_lightcam, ops_anim,
       ops_viewport, ops_nodes and a closure in ops_rig - and the same defect was in all six, which
@@ -14177,3 +14177,22 @@ out-of-process the way ops_gen already does with gen_status.
       ops_common already hosts take/take_bool/take_int/take_float; one _vec3 belongs beside them.
       The variants are real (2D for a node location, 4-component for a quaternion, differing
       defaults) so it needs reading rather than sed.
+
+      DONE, and NOT the way the item proposed. Consolidating the PARSERS would have been wrong: they
+      differ for real reasons - two axes for a node location, four components for a quaternion, list
+      versus tuple returns, defaults that are sometimes zero and sometimes the object's current
+      value. One function taking five parameters to cover that is worse than six short ones.
+
+      THE VALIDATION IS WHAT WAS DUPLICATED, and I had just written the same eight lines SIX TIMES
+      in one session while complaining about parallel implementations. check_axis_dict lives in
+      ops_common now, beside take/take_bool/take_int/take_float, and all six call it: which keys are
+      legal, refuse an unrecognised one, refuse a dict that names none of them. The shapes stayed
+      where they were.
+
+      Verified on 3.6.23 and 5.0.1 across all four shapes: a 3D vector, a 2D node location and a
+      w/x/y/z quaternion each refuse naming their own axes, and a PARTIAL dict is still legal -
+      {"z": 3} places the object at z=3, which is a useful thing to be able to write.
+
+      The distinction worth keeping: what varies is the SHAPE, what repeats is the RULE. Sharing the
+      rule cost nine lines and removed six copies; sharing the shape would have cost more than it
+      saved.

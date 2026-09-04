@@ -43,7 +43,7 @@ pipeline wants and is NOT how you place a second object next to a first.
 """
 import bpy
 
-from .ops_common import (MifOpError, get_object, mesh_counts, object_info, reject_unknown,
+from .ops_common import (check_axis_dict, MifOpError, get_object, mesh_counts, object_info, reject_unknown,
                          rnd, selection_restore, selection_snapshot, take, take_bool,
                          take_float, take_int)
 
@@ -105,14 +105,7 @@ def _vec3(params, key, default):
         # success - a misspelled key silently placed the object at the origin, or left it where
         # it was, and every field in the response agreed. Partial dicts stay legal ({"z": 2} is
         # a useful thing to write); a dict that names none of them is a typo, not a request.
-        _axes = {"x", "y", "z"}
-        _unknown = sorted(set(val) - _axes)
-        if _unknown or not (set(val) & _axes):
-            raise MifOpError(
-                "'%s' as an object takes x, y and/or z - got %r. %s NOTHING was changed."
-                % (key, val,
-                   ("Unrecognised: %s." % ", ".join(_unknown)) if _unknown
-                   else "It names none of them."))
+        check_axis_dict(val, key, ("x", "y", "z"))
         return [float(val.get("x", 0.0)), float(val.get("y", 0.0)),
                 float(val.get("z", 0.0))]
     if hasattr(val, "__len__") and not isinstance(val, str):
