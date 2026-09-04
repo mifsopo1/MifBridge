@@ -516,6 +516,13 @@ def check_static_audits():
                        # That was found as an untracked ".exr" in this repo, by a stray line in
                        # `git status` rather than by any check. This is the check.
                        ("audit_output_paths.py", ["--check"]),
+                       # AND THE NAME A CREATE ACTUALLY GOT, gated 2026-09-04 at zero. Blender
+                       # renames on collision rather than failing, so a caller retrying a timed-out
+                       # create gets "Foo.001" and believes it holds "Foo"; assign_node_group by the
+                       # name it asked for then finds the wrong group. Eight ops did this, measured
+                       # by calling every create op twice. The addon had already chosen the fix four
+                       # times and nothing checked that the next op used it.
+                       ("audit_created_name_reported.py", ["--check"]),
                        # TWO SUITES THAT NEED NO EDITOR, joined 2026-09-03. Both were found by
                        # asking which suites have NO record in suite_results.json at all - five did,
                        # and these two turned out to be static, so they had never been run for no
