@@ -28,7 +28,8 @@ object really is left holding the last value written. That is stated rather than
 """
 import bpy
 
-from .ops_common import (MifOpError, get_object, reject_unknown, rnd, take, take_bool, take_float)
+from .ops_common import (MifOpError, get_object, reject_unknown, rnd, select_only,
+                         selection_restore, selection_snapshot, take, take_bool, take_float)
 
 _KEY_KEYS = {
     "object", "name", "frame", "location", "rotation", "scale",
@@ -1078,7 +1079,147 @@ def op_assign_action(params):
     }
 
 
+def _sample_world(obj, frames):
+    """Evaluated world matrices at frames, as (loc, quat) pairs. The measurement bake_to_keyframes
+    is judged by - see its docstring for why a key COUNT is not one."""
+    sc = bpy.context.scene
+    out = []
+    for f in frames:
+        sc.frame_set(int(f))
+        dg = bpy.context.evaluated_depsgraph_get()
+        mw = obj.evaluated_get(dg).matrix_world
+        out.append((mw.to_translation().copy(), mw.to_quaternion().copy()))
+    return out
+
+
+def op_bake_to_keyframes(params):
+    """Bake evaluated motion into real keyframes, and PROVE the motion survived.
+
+    WHY THIS MATTERS MORE THAN IT SOUNDS. bake_physics bakes POINT CACHES, and no exporter reads
+    them - not FBX, not glTF, not Alembic through this addon. So a rigid-body simulation authored
+    through this bridge could be rendered here and handed to NOTHING. Constraints and drivers have
+    the same problem one step removed: they evaluate correctly in Blender and export as a static
+    object, because an exporter writes keyframes and a constraint is not one.
+
+    params:
+      object (str, required)
+      frameStart / frameEnd (int)   defaults to the scene range
+      step (int)                    default 1
+      visualKeying (bool)           default TRUE. Off, the bake records the object's OWN transform
+                                    and throws away everything a constraint or simulation was
+                                    contributing - which is the normal way this goes wrong.
+      clearConstraints (bool)       default False. Removes the constraints after baking; without
+                                    this they keep evaluating ON TOP of the new keys.
+      clearParents (bool)           default False.
+      removeRigidBody (bool)        default False. A baked object whose rigid body is still active
+                                    is still driven by the sim, and the keys are ignored.
+
+    THE POSTCONDITION IS THE MOTION, NOT THE KEY COUNT. Producing the right NUMBER of keyframes
+    while losing the motion is the normal failure when visual keying is off, and a key count cannot
+    see it. So the evaluated world matrix is sampled across the range BEFORE the bake, again after,
+    and the maximum position and rotation error between them is reported. A bake that kept the keys
+    and lost the movement shows up as a large error rather than as a success.
+    """
+    reject_unknown(params, {"object", "name", "frameStart", "frameEnd", "step", "visualKeying",
+                            "clearConstraints", "clearParents", "removeRigidBody"},
+                   "bake_to_keyframes")
+    obj = get_object(take(params, "object", "name", required=True))
+    sc = bpy.context.scene
+    f0 = int(take_float(params, "frameStart", default=sc.frame_start))
+    f1 = int(take_float(params, "frameEnd", default=sc.frame_end))
+    if f1 < f0:
+        raise MifOpError("frameEnd (%d) is before frameStart (%d). NOTHING was baked." % (f1, f0))
+    step = int(take_float(params, "step", default=1))
+    if step < 1:
+        raise MifOpError("step must be at least 1, got %d. NOTHING was baked." % step)
+    visual = take_bool(params, "visualKeying", default=True)
+
+    # THE PROBE FRAMES, spread across the range rather than taken from one end - a bake that loses
+    # the motion often still matches at the first frame, where the object has not moved yet.
+    span = f1 - f0
+    probes = sorted({f0 + int(round(span * t / 6.0)) for t in range(7)}) if span else [f0]
+    started_on = sc.frame_current
+    try:
+        before = _sample_world(obj, probes)
+    finally:
+        sc.frame_set(started_on)
+
+    had_constraints = len(obj.constraints)
+    had_rigid = getattr(obj, "rigid_body", None) is not None
+
+    snap = selection_snapshot()
+    try:
+        select_only(obj)
+        try:
+            bpy.ops.nla.bake(frame_start=f0, frame_end=f1, step=step,
+                             only_selected=True, visual_keying=visual,
+                             clear_constraints=take_bool(params, "clearConstraints",
+                                                         default=False),
+                             clear_parents=take_bool(params, "clearParents", default=False),
+                             bake_types={"OBJECT"})
+        except RuntimeError as exc:
+            raise MifOpError("Blender's bake refused: %s. NOTHING was baked." % exc)
+    finally:
+        selection_restore(snap)
+
+    if take_bool(params, "removeRigidBody", default=False) and had_rigid:
+        # Unlinked from the rigid body world's collection rather than through
+        # bpy.ops.rigidbody.object_remove, whose context override differs between versions; the
+        # data path is stable and does the same thing.
+        try:
+            sc.rigidbody_world.collection.objects.unlink(obj)
+        except (AttributeError, RuntimeError, ReferenceError, KeyError):
+            pass
+
+    curves = _fcurves(obj)
+    keys = sum(len(fc.keyframe_points) for fc in curves)
+    if keys == 0:
+        raise MifOpError("the bake produced NO keyframes on '%s'. Nothing was captured - check the "
+                         "frame range and that the object actually moves." % obj.name)
+
+    try:
+        after = _sample_world(obj, probes)
+    finally:
+        sc.frame_set(started_on)
+
+    max_pos = 0.0
+    max_rot = 0.0
+    for (lb, qb), (la, qa) in zip(before, after):
+        max_pos = max(max_pos, (la - lb).length)
+        try:
+            max_rot = max(max_rot, qb.rotation_difference(qa).angle)
+        except (AttributeError, ValueError):
+            pass
+
+    return {
+        "object": obj.name,
+        "frameStart": f0,
+        "frameEnd": f1,
+        "step": step,
+        "visualKeying": visual,
+        "curveCount": len(curves),
+        "keyframeTotal": keys,
+        "probeFrames": probes,
+        # THE MEASUREMENT. Small means the baked keys reproduce what the scene was doing; large
+        # means the keys exist and the motion is gone, which is what visual_keying=False does and
+        # what a key count cannot see.
+        "maxPositionError": round(float(max_pos), 6),
+        "maxRotationErrorRadians": round(float(max_rot), 6),
+        "motionPreserved": max_pos < 1e-3 and max_rot < 1e-3,
+        "hadConstraints": had_constraints,
+        "hadRigidBody": had_rigid,
+        "exportNote": ("This is why the op exists: bake_physics writes POINT CACHES and no "
+                       "exporter reads them, and a constraint or driver exports as a static "
+                       "object because an exporter writes keyframes and a constraint is not one. "
+                       "These are real keyframes and will travel."),
+        "stillDrivenNote": ("A source left in place keeps evaluating ON TOP of the new keys - "
+                            "constraints unless clearConstraints, and an active rigid body unless "
+                            "removeRigidBody. hadConstraints/hadRigidBody say what was there."),
+    }
+
+
 OPS = {
+    "bake_to_keyframes": op_bake_to_keyframes,
     "set_keyframe": op_set_keyframe,
     "set_frame_range": op_set_frame_range,
     "list_keyframes": op_list_keyframes,

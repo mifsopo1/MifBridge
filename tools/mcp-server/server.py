@@ -5020,6 +5020,18 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_bake_to_keyframes(object: str, frame_start: int = None, frame_end: int = None,
+                         step: int = None, visual_keying: bool = None,
+                         clear_constraints: bool = None, clear_parents: bool = None,
+                         remove_rigid_body: bool = None) -> dict:
+    "Bake evaluated motion into REAL keyframes that an exporter will carry. This matters more than it sounds: bl_bake_physics bakes POINT CACHES and no exporter reads them, so a rigid-body simulation authored through this bridge could be rendered here and handed to NOTHING. Constraints and drivers have the same problem one step removed - they evaluate correctly in Blender and export as a static object, because an exporter writes keyframes and a constraint is not one. THE POSTCONDITION IS THE MOTION, NOT THE KEY COUNT: the evaluated world matrix is sampled across the range before the bake and again after, and maxPositionError / maxRotationErrorRadians / motionPreserved report whether the movement survived. Producing the right NUMBER of keys while losing the motion is the normal failure when visual keying is off, and a key count cannot see it. Sources left in place keep evaluating ON TOP of the new keys - clear_constraints and remove_rigid_body exist for that, and hadConstraints/hadRigidBody say what was there. Call mif_help(\"bl_bake_to_keyframes\") first."
+    return _blender("bake_to_keyframes", object=object, frameStart=frame_start,
+                    frameEnd=frame_end, step=step, visualKeying=visual_keying,
+                    clearConstraints=clear_constraints, clearParents=clear_parents,
+                    removeRigidBody=remove_rigid_body)
+
+
+@mcp.tool()
 def bl_set_bone_pose(object: str, bone: str, location: list = None, rotation: list = None,
                      quaternion: list = None, scale: list = None) -> dict:
     "Pose a bone on a Blender armature. Character animation had zero coverage here - bones could be listed and renamed and nothing else - and this was unreachable through bl_set_keyframe until the same day, because its dotted-path walk stripped subscripts so pose.bones[\"x\"].location resolved to the bone COLLECTION. rotation (euler) and quaternion are refused against the bone's actual rotation_mode rather than silently ignored, and refused together. THE READ-BACK IS EVALUATED through the depsgraph: a bone with an IK chain, a Copy Rotation or a Limit does not end up where you put it, and pose_bone.matrix is the raw value. The response reports `written` and `evaluated*` separately - if they differ, that is the constraint working, not a fault. Call mif_help(\"bl_set_bone_pose\") first."
