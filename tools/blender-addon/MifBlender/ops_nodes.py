@@ -33,7 +33,8 @@ from .ops_common import MifOpError, get_object, reject_unknown, take, take_bool,
 
 _CREATE_KEYS = {"name", "type", "withGroupIO"}
 _ADDNODE_KEYS = {"group", "tree", "type", "nodeType", "name", "location", "inputs", "label",
-                 "operation", "dataType", "domain", "mode", "nodeGroup"}
+                 "operation", "dataType", "domain", "mode", "nodeGroup",
+                 "properties"}
 _LINK_KEYS = {"group", "tree", "fromNode", "fromSocket", "toNode", "toSocket"}
 _LIST_KEYS = {"group", "tree"}
 _IFACE_KEYS = {"group", "tree", "name", "socketType", "inOut", "default", "min", "max"}
@@ -189,6 +190,80 @@ _GROUP_NODE_TYPES = ("GeometryNodeGroup", "ShaderNodeGroup", "CompositorNodeGrou
                      "TextureNodeGroup")
 
 
+# PROPERTIES THAT ARE NOT A NODE'S BUSINESS TO SET THROUGH THIS PARAMETER. name and label have
+# their own arguments and setting them twice is ambiguous; location likewise; node_tree has
+# nodeGroup, which carries the recursion read-back. The rest are Blender's own bookkeeping.
+_PROPERTY_DENY = {"name", "label", "location", "node_tree", "parent", "select", "width",
+                  "height", "bl_idname", "bl_label", "type", "internal_links"}
+
+
+def _write_node_property(node, key, value):
+    """Write one RNA property on a node, chosen by the property's OWN declared type.
+
+    THE FOUR-KNOB PROBLEM. This op could set exactly `operation`, `dataType`, `domain` and `mode`,
+    each hardcoded and each uppercased as a string. Blender ships hundreds of node types and most
+    of what makes a node do a particular thing is a property rather than a socket - a Math node's
+    clamp, a Noise texture's dimensions, a Map Range's interpolation, a Mix node's blend type. All
+    of it was unreachable, and a curated list of four was never going to catch up.
+
+    DISPATCHED ON prop.type, so an enum is validated against ITS OWN items rather than uppercased
+    and hoped for. Uppercasing worked for the four that happened to be SCREAMING_CASE enums and
+    would have quietly mangled a string property.
+    """
+    rna = node.bl_rna.properties.get(key)
+    if rna is None or key in _PROPERTY_DENY or key.startswith("bl_"):
+        # bl_* IS THE NODE CLASS'S OWN METADATA - bl_description, bl_width_max and the rest
+        # are RNA-writable and are not node settings. Listing them buried the four or five
+        # names somebody actually wants under a dozen that do nothing useful, which makes a
+        # refusal that names the options no better than one that does not.
+        writable = sorted(p.identifier for p in node.bl_rna.properties
+                          if not p.is_readonly and p.identifier not in _PROPERTY_DENY
+                          and not p.identifier.startswith("bl_"))
+        raise MifOpError(
+            "node '%s' (%s) has no writable property '%s'. It has: %s. The node WAS added."
+            % (node.name, node.bl_idname, key, ", ".join(writable) or "(none)"))
+    if rna.is_readonly:
+        raise MifOpError("'%s' is read-only on a %s - it reports state rather than setting it. "
+                         "The node WAS added." % (key, node.bl_idname))
+
+    kind = rna.type
+    if kind == "ENUM":
+        valid = [i.identifier for i in rna.enum_items]
+        want = str(value).upper()
+        match = [v for v in valid if v.upper() == want]
+        if not match:
+            raise MifOpError("'%s' is not a valid %s for a %s on Blender %s. Available: %s. The "
+                             "node WAS added."
+                             % (value, key, node.bl_idname, bpy.app.version_string,
+                                ", ".join(valid)))
+        setattr(node, key, match[0])
+    elif kind == "BOOLEAN":
+        setattr(node, key, bool(value))
+    elif kind == "INT":
+        setattr(node, key, int(value))
+    elif kind == "FLOAT":
+        if hasattr(value, "__len__") and not isinstance(value, str):
+            setattr(node, key, [float(v) for v in value])
+        else:
+            setattr(node, key, float(value))
+    elif kind == "STRING":
+        setattr(node, key, str(value))
+    elif kind == "POINTER":
+        raise MifOpError(
+            "'%s' on a %s holds a datablock, which this parameter does not resolve. nodeGroup "
+            "covers the Group-node case; anything else needs its own handling rather than a name "
+            "written as a string, which Blender stores and ignores. The node WAS added."
+            % (key, node.bl_idname))
+    else:
+        raise MifOpError("'%s' on a %s is a %s, which this op does not write. The node WAS added."
+                         % (key, node.bl_idname, kind))
+    # READ BACK. Several node properties clamp, and an enum set from a case-insensitive match
+    # should be reported as the identifier Blender actually stored.
+    got = getattr(node, key)
+    return (list(got) if hasattr(got, "__len__") and not isinstance(got, str)
+            else (round(float(got), 6) if isinstance(got, float) else got))
+
+
 def op_add_group_node(params):
     """Add a node to a group and optionally set its input defaults.
 
@@ -264,6 +339,17 @@ def op_add_group_node(params):
                 "directly or through another group that contains it. The node was removed rather "
                 "than left holding nothing. NOTHING was added." % (inner.name, tree.name))
 
+    # ANY OTHER NODE PROPERTY, by its real RNA name. The four keys above are kept because they are
+    # already in use and are friendlier spellings; this is the general form behind them.
+    props_applied = {}
+    given_props = params.get("properties")
+    if given_props is not None:
+        if not isinstance(given_props, dict):
+            raise MifOpError("'properties' must be a {name: value} object, got %r. The node WAS "
+                             "added as '%s'." % (given_props, node.name))
+        for key, value in given_props.items():
+            props_applied[key] = _write_node_property(node, str(key), value)
+
     applied = {}
     given = params.get("inputs")
     if given is not None:
@@ -301,6 +387,9 @@ def op_add_group_node(params):
             "inputs": [s.name for s in node.inputs],
             "outputs": [s.name for s in node.outputs],
             "inputsApplied": applied,
+            # READ BACK OFF THE NODE, not echoed - an enum matched case-insensitively is reported
+            # as the identifier Blender stored, and a clamped number as the value it kept.
+            "propertiesApplied": props_applied,
             "nodeCount": len(tree.nodes)}
 
 

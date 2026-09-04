@@ -13362,3 +13362,32 @@ out-of-process the way ops_gen already does with gen_status.
       and reads back as 7.5; and four refusals fire - self-nesting, a ShaderNodeTree inside a
       GeometryNodeTree, a missing group, and nodeGroup passed to a node that is not a Group node.
       A nested group is now built in the matrix fixtures on every build.
+
+- [x] **four hardcoded node knobs, on a system with hundreds of node properties** DONE 2026-09-04
+      add_group_node could set exactly `operation`, `dataType`, `domain` and `mode` - each looked up
+      by hand and each uppercased as a string. Most of what makes a node do a particular thing is a
+      PROPERTY rather than a socket: a Math node's use_clamp, a Noise texture's noise_dimensions, a
+      Map Range's interpolation_type, a Mix node's blend type. None of it was reachable, and a
+      curated list of four was never going to catch up with Blender.
+
+      `properties` writes any node property by its real RNA name, DISPATCHED ON prop.type rather
+      than on a table: an enum is validated against its OWN items and reported as the identifier
+      Blender stored, a bool coerced as a bool, a float vector as a vector. The uppercase-and-hope
+      approach worked for four properties that happened to be SCREAMING_CASE enums and would have
+      quietly mangled any string property. This is the pattern that scales - the same one applied to
+      modifier enums and socket types earlier today.
+
+      A POINTER property is REFUSED with a reason rather than written: a datablock name assigned as
+      a string is stored by Blender and then ignored, which is the silent no-op class. nodeGroup
+      covers the Group-node case properly; anything else needs its own handling.
+
+      The refusal lists what the node actually has, minus bl_* - that is the node CLASS's metadata
+      (bl_description, bl_width_max), RNA-writable and not a node setting. Listing them buried the
+      few names somebody wants under a dozen that do nothing, which makes naming the options no
+      better than not naming them.
+
+      Verified on 3.6.23 and 5.0.1, identical: use_clamp and operation on a Math node,
+      noise_dimensions '4D' on a Noise texture, interpolation_type and clamp on a Map Range, a
+      lowercase 'subtract' accepted and reported back as SUBTRACT; and three refusals - an unknown
+      property, an invalid enum naming the valid ones, and a denied key that has its own argument.
+      The matrix now writes transform_space on every build.

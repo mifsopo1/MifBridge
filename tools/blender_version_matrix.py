@@ -224,7 +224,11 @@ PAYLOADS = {
     # refused. The value comparison watches inputsApplied, so the pointer resolving to a real
     # object is checked on every build every run.
     "add_group_node": {"group": "MifMatrixGroup", "type": "GeometryNodeObjectInfo",
-                       "inputs": {"Object": "MifProbe"}},
+                       "inputs": {"Object": "MifProbe"},
+                       # AN RNA PROPERTY BY ITS REAL NAME, which nothing could write before
+                       # 2026-09-04 - the op knew four hardcoded knobs and this is not one
+                       # of them. ENUM validated against its own items on every build.
+                       "properties": {"transform_space": "RELATIVE"}},
     # A BOOL WITH A DEFAULT, which raised a bare TypeError out of the op on every build until
     # 2026-09-04 - float(True) is 1.0 and RNA will not take a float for a boolean. NodeSocketInt
     # did the same. Float was the only type that worked, and it is the one the payload used,
