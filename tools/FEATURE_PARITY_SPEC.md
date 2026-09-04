@@ -14835,9 +14835,12 @@ out-of-process the way ops_gen already does with gen_status.
       untested edit to the shared number parser every numeric parameter passes through is worth less
       than a filed one.
 
-      WRITTEN AND REVERTED ON 2026-09-04, which is worth recording rather than repeating. The one-line
-      guard was applied, and before it could be built an editor appeared on 8791 - Andre's, opened
-      while I was working. Building was then impossible and leaving it in place would have left
+      NOW ON THE BRANCH pending/source-needs-a-build, applied and committed, waiting only on a
+      build. To land it: close the editor, merge, build 5.3, then `make_release.py --record-53`.
+
+      WRITTEN AND REVERTED ON 2026-09-04 BEFORE THAT, which is worth recording rather than
+      repeating. The one-line guard was applied, and before it could be built an editor appeared on
+      8791 - Andre's, opened while I was working. Building was then impossible and leaving it in place would have left
       Source/ dirty against both engine records, red-gating the tree for anyone who ran them: exactly
       the "worth less than a filed one" this paragraph already warns about, arrived at from the other
       direction. The patch is preserved verbatim and is a straight re-apply the next time the editor
@@ -15309,20 +15312,29 @@ out-of-process the way ops_gen already does with gen_status.
       indistinguishable without care. Both times the care needed was reading the tool's own output
       beside the 0, not changing the tool.
 
-- [ ] **audit_mutate_then_deny_ue is the last detector with no plant**
-      It plants into Source/, and the harness skips every Source/ plant while an editor holds the
-      tree - so this one cannot be PROVEN right now rather than merely being unwritten. Writing it
-      unverified would be guessing: two of the six plants written today were wrong on their first
-      run, and both looked reasonable. Needs one pass when the editor is free.
-      Its plant table is keyed by filename, so audit_vacuous_checks - which now has five rules - is
-      represented by a single plant exercising rule 4. Rules 1, 2, 3 and 5 have no standing proof
-      that they still fire; each was hand-verified when written and nothing re-checks them.
+- [x] **audit_mutate_then_deny_ue is the last detector with no plant** DONE 2026-09-04
+      Both halves are closed, and `audit_detectors_fire --list` now reports NO detector that has
+      neither a plant nor a stated reason it cannot have one.
 
-      This is not specific to that tool: any detector with several independent rules has the same
-      hole, and the harness reports the tool AWAKE on the strength of whichever rule the plant
-      happens to hit. Wants the table keyed by (file, marker) so one tool can carry several plants.
-      Filed rather than fixed because it changes a shared table that every detector entry depends
-      on, and that deserves its own change.
+      THE PLANT WAS PROVED WITHOUT WAITING FOR A FREE EDITOR, which this item assumed was
+      necessary. It is not: these detectors are static text analysis that find what they scan from
+      dirname(__file__), so the tree is copied to a temp directory, the plant is written to the
+      COPY, and the copy of the detector is run against it. Same detector, same plant, same
+      verdict, and the real Source/ is never opened for writing. That generalised into the harness
+      itself - the 15 Source/ plants, 37% of its coverage, used to be skipped for as long as anyone
+      had an editor open, which on this machine is most of the day.
+
+      AND VERIFYING IT FIRST IS WHAT CAUGHT IT. The concern above - "writing it unverified would be
+      guessing: two of the six plants written today were wrong on their first run" - was exactly
+      right. This one was too. Written with the marker "H_mifplant_ue_deny", the C++ function the
+      plant inserts, it reported the detector ASLEEP: the audit went red on the planted defect
+      precisely as it should, and prove() could not find its marker, because this audit reports
+      findings by ENDPOINT ("MifBridgePIE.cpp:mifplant_ue_deny:SetShouldTick:changed") and handlers
+      are H_<endpoint>. A working detector, accused, by a plant that looked perfectly reasonable.
+
+      THE MULTI-RULE TABLE IS DONE TOO. entries_for() returns a list, so one tool carries several
+      plants and each row is labelled with its own marker rather than reading as one result
+      repeated. audit_vacuous_checks now has five, one per rule.
 
 - [x] **two spellings of one parameter, two values, one silently thrown away** DONE 2026-09-04
       take() returned the first alias present and discarded the rest without a word, so any caller
@@ -15433,7 +15445,7 @@ out-of-process the way ops_gen already does with gen_status.
       The REACH line should land first and on its own: it is the honest number, it is cheap, and
       it stops "all 7" from reading as complete while the widening is still being written.
 
-- [ ] **the repro line printed under a new report is not that report's**
+- [x] **the repro line printed under a new report is not that report's** DONE 2026-09-04
       Seen live during the #4 loop self-test on 2026-09-04. report_repro.py replays everything in the
       queue, not just the report that woke the watcher, so the lines logged directly beneath
       "NEW REPORT #4" read:
@@ -15453,3 +15465,25 @@ out-of-process the way ops_gen already does with gen_status.
       one that just arrived.
 
       Not touched while the #4 agent was still running, since it reads report_queue.json.
+
+      FIXED 2026-09-04, AND IT WAS TWO DEFECTS RATHER THAN THE ONE FILED. "repro ok" was the
+      PROCESS EXIT CODE of report_repro.py, which is 0 when every replay failed and 0 when this
+      report was never replayed at all - it was never a verdict on the report it printed under. The
+      second, which is the actual mechanism behind the observed log, was
+      `tail.splitlines()[-8:]`: the END of a whole-queue replay, so the excerpt belongs to whichever
+      entry ran last, and gets less related to the new report the longer the queue grows.
+
+      Everything needed to report it correctly was already in the output - report_repro labels each
+      entry `=== #N endpoint ===` and already prints "replayed N of M". The watcher was reading the
+      wrong part of it. report_watch.repro_section now pulls THIS issue's block by its header, and
+      an absent block became a third answer in its own words - "did NOT replay #N on this pass ...
+      This says nothing about the report" - because not-replayed is the normal state at 3am with no
+      editor, and it is not "ok".
+
+      Replaying the whole queue stays, as this item said it should.
+
+      Pinned by T550-T560 in test_report_intake.py, against the observed output verbatim in shape.
+      T560 asserts the FIXTURE still reproduces the old defect - that the last eight lines really do
+      carry #2's failure - because without it the suite would pass just as happily against a fixture
+      that stopped exercising the bug. Shown failing: re-breaking repro_section to the old tail
+      behaviour turns 47/0 into 42/5, naming T550 and T551.

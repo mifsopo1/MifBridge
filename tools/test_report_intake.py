@@ -234,6 +234,58 @@ def main():
           [r.get("number") for r in got] == [1, 5, None], "got %s" % [r.get("number") for r in got])
 
     print("")
+    # ---------------------------------------------------------------- T55x the repro log labelling
+    # THE OBSERVED OUTPUT FROM 2026-09-04, in shape. report_repro replays the WHOLE queue and labels
+    # each entry; the watcher used to log the last eight lines of that under the heading of the
+    # report that had just arrived, so "NEW REPORT #4" was followed by "repro ok" and then #2's
+    # failure. Everything needed to get this right was already in the output.
+    print("")
+    print("=== T55x: a whole-queue replay is reported per report, not as a tail ===")
+    import report_watch as W
+    TAIL = "\n".join([
+        "=== #4  compile_blueprint ===",
+        "  ok=True in 0.21s",
+        "  bridge alive afterwards: True",
+        "=== #2  set_struct_member ===",
+        "  ok=False in 0.33s",
+        "  error: blueprint not found: /Game/_MifReport/WBP_RetypeTest",
+        "  bridge alive afterwards: True",
+        "",
+        "replayed 2 of 2; 0 earlier result(s) carried forward; wrote report_results.json",
+        "",
+        "NOTE: whether any of these REPRODUCE the reported bug is not decided here - that needs the",
+        "reporter's prose read against the response, which is a judgement, not a parse.",
+    ])
+
+    mine, summary = W.repro_section(TAIL, 4)
+    joined = "".join(mine)
+    check("T550 the new report's own result is what gets reported", "ok=True in 0.21s" in joined,
+          str(mine))
+    check("T551 and another report's failure does NOT appear under it",
+          "WBP_RetypeTest" not in joined, str(mine))
+    check("T552 the whole-queue count is kept, separately from the per-report lines",
+          summary.startswith("replayed 2 of 2"), summary)
+
+    other, _ = W.repro_section(TAIL, 2)
+    other_joined = "".join(other)
+    check("T553 each report gets its OWN block, not the first or the last",
+          "ok=False in 0.33s" in other_joined and "ok=True" not in other_joined, str(other))
+
+    # NOT REPLAYED IS A THIRD ANSWER. The old code could not express it: report_repro exits 0 when
+    # this report was never in the queue, so "repro ok" was printed about a replay that never
+    # happened. An empty section is what the caller turns into that sentence.
+    absent, absent_summary = W.repro_section(TAIL, 9)
+    check("T554 a report that was not replayed yields NO lines rather than someone else's",
+          absent == [], str(absent))
+    check("T555 and the queue summary is still readable in that case", bool(absent_summary),
+          absent_summary)
+
+    # THE BUG ITSELF, PINNED. If this ever stops holding, the fixture has drifted into a shape that
+    # does not exercise the defect, and every assertion above would pass without testing anything.
+    old_behaviour = [l for l in TAIL.splitlines()[-8:] if l.strip()]
+    check("T560 the fixture really does reproduce the old defect (last 8 lines carry #2's failure)",
+          any("WBP_RetypeTest" in l for l in old_behaviour), str(old_behaviour[:3]))
+
     print("=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for x in FAIL:

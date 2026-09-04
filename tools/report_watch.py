@@ -350,6 +350,33 @@ def claude_exe():
 _CLAUDE = [_UNSET]
 
 
+def repro_section(tail, number):
+    """(lines_for_this_issue, summary_line). Either may be empty, and empty MEANS something.
+
+    report_repro replays the WHOLE QUEUE - deliberately, since an unresolved report is worth
+    re-checking once an editor is back - and labels each entry `=== #N endpoint ===`. The watcher
+    used to log the last eight lines of that output under this issue's heading, which is the end of
+    somebody else's replay whenever anything else is queued. On 2026-09-04 that printed #2's
+    "blueprint not found" under "NEW REPORT #4", with "repro ok" above it.
+
+    An ABSENT section is not a failure and not a success: it means this report was not among the
+    ones replayed, which at 3am with no editor is the normal case. The caller says so in those
+    words rather than falling back to the process exit code, which is 0 in that situation too.
+    """
+    head = "=== #%s " % number
+    mine, summary, capturing = [], "", False
+    for line in tail.splitlines():
+        if line.startswith("=== #"):
+            capturing = line.startswith(head)
+            continue
+        if line.startswith("replayed ") and " of " in line:
+            summary = line.strip()
+            continue
+        if capturing and line.strip():
+            mine.append(line.rstrip())
+    return mine, summary
+
+
 def escalate(issue, push, dry_run):
     """Wake a model - the ONLY step in this file that costs anything."""
     head = "#%s %s" % (issue["number"], (issue.get("title") or "")[:60])
@@ -467,9 +494,26 @@ def handle(issue, push, dry_run):
 
     # Repro needs a live editor. Not having one is a normal state at 3am, not a failure.
     ok, tail = run("report_repro.py")
-    log("  repro %s" % ("ok" if ok else "did not complete (editor may be closed)"))
-    for l in tail.splitlines()[-8:]:
+    # THIS REPORT'S OWN RESULT, not the process exit code and not the tail of the output. Both of
+    # those were wrong in the same direction: report_repro replays the whole queue, so its exit code
+    # is 0 when this report was never replayed, and its last eight lines belong to whichever entry
+    # ran last. Under "NEW REPORT #4" that printed "repro ok" followed by #2's failure.
+    mine, summary = repro_section(tail, issue["number"])
+    if not ok:
+        log("  repro did not complete (editor may be closed)")
+    elif mine:
+        log("  repro ran for THIS report (#%s):" % issue["number"])
+    else:
+        # A DIFFERENT SENTENCE, because it is a different thing. Not replayed is the normal state
+        # when no editor is up, and calling it "ok" is how the log came to disagree with itself.
+        log("  repro did NOT replay #%s on this pass - it is not in the queue, or the editor was "
+            "not up for it. This says nothing about the report." % issue["number"])
+    for l in (mine[-8:] if mine else []):
         log("    | " + l)
+    if summary:
+        # The whole-queue number, kept and labelled as such, so "replayed 1 of 3" cannot be read as
+        # a verdict on the one that just arrived.
+        log("  across the whole queue: %s" % summary)
 
     escalate(issue, push, dry_run)
 
