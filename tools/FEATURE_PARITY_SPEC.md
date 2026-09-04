@@ -12486,6 +12486,55 @@ out-of-process the way ops_gen already does with gen_status.
       Also added bpy.path to the offline stub, which several modules use before any of their other
       refusals - without it those refusals surfaced as AttributeError rather than as passes.
 
+- [x] **the compositor was DEAD on Blender 5.0 and every gate was green** DONE 2026-09-03
+      Found by CALLING the running addon, not by reading it. MifBlender came up on 8792 for the
+      first time that day, the read-only ops were run against it, and compositor_info answered
+      "AttributeError: 'Scene' object has no attribute 'node_tree'" - hours after the whole family
+      was committed with thirteen offline checks passing.
+
+      THE COMPOSITOR MOVED, established by running all four installed Blenders headless:
+        3.6 / 4.2 / 4.4   scene.node_tree, EMBEDDED, gated by use_nodes (default FALSE)
+        5.0               node_tree is ABSENT; scene.compositing_node_group holds a real node group,
+                          and use_nodes defaults TRUE while that group is still None - so "use_nodes
+                          is on" no longer implies a tree exists at all
+      And CompositorNodeComposite is UNDEFINED on 5.0: nodes.new() raises "Node type undefined",
+      because the compositor is a genuine node group there and terminates in NodeGroupOutput.
+      _TERMINALS already listed both, which is the only reason reachability survived when nothing
+      else did.
+
+      THE SECOND BUG WAS ONLY VISIBLE ONCE THE FIRST WAS FIXED: 5.0 then reported a CORRECTLY WIRED
+      compositor as broken, because the blocker still looked for the Composite node by name. A wrong
+      answer, not a missing one, from the field whose entire job is saying the tree is inert.
+
+      Verified end to end by running the real ops headless on 4.4 AND 5.0 - blockers=[] on both,
+      outputNodes ['Composite'] and ['Group Output'] respectively. B124 models a 5.0-shaped scene
+      offline so it cannot regress; three plants, each caught.
+
+      THE LESSON IS ABOUT THE STUB, not the compositor. test_blender_refusals runs against a stub
+      written from the same assumptions as the code, so it agrees with whatever the author believed
+      including the wrong parts. A stub is a mirror, not a check.
+
+- [x] **blender_version_matrix - run every op on every installed Blender, headless** DONE 2026-09-03
+      The direct answer to the above. Each install is launched --background --factory-startup, which
+      is a throwaway process with a fresh default scene, so unlike the live bridge the WHOLE op
+      table can be exercised - including the mutating ops - without touching a file, a running
+      Blender or anybody's session.
+
+      A REFUSAL IS NOT A FINDING. An op declining because the default scene has no armature is the
+      op working - B111's rule applied to a real Blender instead of a stub. The findings are RAW
+      EXCEPTIONS (anything not a MifOpError: the addon meeting an API that is not what it expected)
+      and DIVERGENCE (the same call behaving differently across builds), the second needing no
+      judgement at all: the same call on the same fixture should not change its mind between
+      versions.
+
+- [ ] **gate the version matrix, once its runtime is known** (30 min)
+      It belongs in the ratcheted tuple by the same argument as every other check there - a drift
+      audit nobody runs is a drift audit that finds nothing. What decides it is COST: the tuple's
+      own header says audit_prose_dependence is excluded for being 58s, and this launches four
+      Blenders. If a full run is minutes rather than seconds it wants either a fast subset in the
+      gate and the full sweep on demand, or a place in a slow tier - not a quiet addition that
+      triples what somebody will run casually.
+
 - [ ] **Tier 5 - craft depth** (1 of 5 left)
       DONE 2026-09-03: set_camera_panorama, move_keyframes, set_light_ies, set_light_linking.
 
