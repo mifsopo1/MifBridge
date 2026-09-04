@@ -36,6 +36,38 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 QUEUE_FILE = os.path.join(HERE, "report_queue.json")
 RESULT_FILE = os.path.join(HERE, "report_results.json")
 
+
+def merge_results(existing, fresh):
+    """Fold this run's replays into whatever was already recorded, keyed on report number.
+
+    WHY THIS IS NOT A PLAIN OVERWRITE. Until 2026-09-03 the caller wrote `{"results": results}` over
+    the whole file, so a PARTIAL run erased everything it had not just replayed. Two paths produce a
+    partial run: `--number N` replays exactly one report, and the bridge-died `break` in main stops
+    the loop early. The second was the sharper edge, because it prints "the remaining reports are
+    left queued" - which reads as nothing lost - while the write underneath dropped their earlier
+    responses.
+
+    NOTHING IS DROPPED. The sibling fix in run_all_suites prunes records for suite files that no
+    longer exist, which is right there and wrong here: a report LEAVES the queue once it is handled,
+    so pruning to the live queue would delete precisely the finished work this file is kept for.
+    Nothing reads it programmatically - report_repro deliberately does not decide whether a bug
+    reproduced, since that means reading the reporter's prose against the response - so the only
+    consumer is a person, and what an overwrite deleted was the evidence they were about to read.
+
+    Fresh wins on a collision: a replay just performed describes the code better than an older one.
+    Ordering is by number with None last, so a record that somehow lost its number stays visible at
+    the end rather than crashing the sort on a mixed-type comparison.
+
+    MODULE-LEVEL SO IT CAN BE TESTED, which is not tidiness. Everything else in this file needs a
+    live editor, so the write path is unreachable offline - an empty queue returns before it and a
+    non-empty one demands the bridge. Left inline, the fix for a data-loss bug would itself have
+    shipped unverified. test_report_intake T601-T606 exercise this with no editor and no bridge.
+    """
+    merged = {}
+    for rec in list(existing) + list(fresh):
+        merged[rec.get("number")] = rec
+    return [merged[k] for k in sorted(merged, key=lambda n: (n is None, n))]
+
 CALL_TIMEOUT = 90
 
 
@@ -148,10 +180,21 @@ def main():
             print("  down. It is recorded and the remaining reports are left queued.")
             break
 
+    # MERGE, DO NOT REPLACE - the same defect fixed in run_all_suites.py on 2026-09-03, found by
+    # grepping for the shape after fixing it there. See merge_results for why, and for why nothing
+    # is dropped here even though the sibling fix prunes.
+    existing = []
+    try:
+        with open(RESULT_FILE, encoding="utf-8") as f:
+            existing = json.load(f).get("results", [])
+    except Exception:
+        pass                      # no file, or an unreadable one: this run becomes the whole record
+    kept = merge_results(existing, results)
     with open(RESULT_FILE, "w", encoding="utf-8", newline="\r\n") as f:
-        json.dump({"results": results}, f, indent=2)
+        json.dump({"results": kept}, f, indent=2)
     print("")
-    print("replayed %d of %d; wrote %s" % (len(results), len(queue), RESULT_FILE))
+    print("replayed %d of %d; %d earlier result(s) carried forward; wrote %s"
+          % (len(results), len(queue), len(kept) - len(results), RESULT_FILE))
     print("")
     print("NOTE: whether any of these REPRODUCE the reported bug is not decided here - that needs the")
     print("reporter's prose read against the response, which is a judgement, not a parse.")

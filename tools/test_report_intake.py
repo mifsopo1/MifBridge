@@ -193,6 +193,47 @@ def main():
         R.TRUST_FILE = real
 
     print("")
+    print("=== T6xx: report_repro.merge_results - a partial replay must not erase the rest ===")
+    # WHY THESE LIVE HERE. report_repro needs a live editor for everything else it does, so its
+    # write path is unreachable offline: an empty queue returns before it, and a non-empty one
+    # demands the bridge. That is exactly how the bug being fixed survived - `{"results": results}`
+    # over "w" erased every report the run had not just replayed, and no offline suite could see it.
+    # The merge was lifted to a module-level function so this file can reach it with no editor.
+    import report_repro as RR
+
+    old = [{"number": 1, "endpoint": "a"}, {"number": 2, "endpoint": "b"}]
+    new = [{"number": 3, "endpoint": "c"}]
+    got = RR.merge_results(old, new)
+    check("T601 a one-report replay CARRIES FORWARD the reports it did not touch - the whole bug",
+          [r["number"] for r in got] == [1, 2, 3], "got %s" % [r.get("number") for r in got])
+
+    got = RR.merge_results(old, [{"number": 2, "endpoint": "REPLAYED"}])
+    check("T602 a fresh replay WINS over the older record for the same number",
+          len(got) == 2 and got[1]["endpoint"] == "REPLAYED",
+          "got %s" % [(r.get("number"), r.get("endpoint")) for r in got])
+
+    # THE break PATH. main() stops the loop the moment the bridge dies and writes what it has, while
+    # printing that the remaining reports are "left queued". If that write dropped their earlier
+    # responses, the message would be false in the direction that gets believed.
+    got = RR.merge_results([{"number": n} for n in (1, 2, 3, 4)], [{"number": 1, "bridgeSurvived": False}])
+    check("T603 the bridge-died break keeps the OTHER reports it never got to",
+          [r["number"] for r in got] == [1, 2, 3, 4] and got[0].get("bridgeSurvived") is False,
+          "got %s" % got)
+
+    check("T604 nothing is dropped for a report no longer in the queue - unlike the suite-results "
+          "fix, a handled report leaves the queue and pruning would delete the finished evidence",
+          len(RR.merge_results([{"number": 99}], [])) == 1)
+
+    check("T605 an empty run is not an erasure",
+          [r["number"] for r in RR.merge_results(old, [])] == [1, 2])
+
+    # A MIXED-TYPE SORT IS A CRASH, not a wrong order, and a crash here loses the file entirely
+    # because the write never happens. A record that somehow lost its number must sort, not raise.
+    got = RR.merge_results([{"number": 5}, {"endpoint": "no number at all"}], [{"number": 1}])
+    check("T606 a record with no number sorts LAST instead of crashing the sort",
+          [r.get("number") for r in got] == [1, 5, None], "got %s" % [r.get("number") for r in got])
+
+    print("")
     print("=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for x in FAIL:
