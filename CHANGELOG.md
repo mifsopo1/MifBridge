@@ -20,7 +20,7 @@ measured by hand and was not.
 
 | version | date | UE endpoints | Blender ops |
 |---|---|---|---|
-| [Unreleased](#unreleased) | — | 453 | 68 |
+| [0.9.0](#090) | 2026-09-04 | 453 | 151 |
 | [0.8.1](#081) | 2026-09-01 | 440 | 68 |
 | [0.8.0](#080) | 2026-09-01 | 440 | 68 |
 | [0.7.0](#070) | 2026-08-30 | 421 | 42 |
@@ -32,9 +32,9 @@ measured by hand and was not.
 
 ---
 
-## Unreleased
+## 0.9.0
 
-**Not tagged, not packaged.** 153 commits sit past `v0.8.1`. The 5.7 probe no longer blocks
+**449 commits past `v0.8.1`.** The 5.7 probe no longer blocks
 packaging: both engine records were re-taken on 2026-09-03 and cover the current Source commit —
 5.3 built, 5.7 compile-probed and linked. `python tools/make_release.py --gates` answers that
 without starting a release, which is new, and exists because both records had gone stale unnoticed
@@ -56,6 +56,47 @@ this now", proven by then calling it.
 
 Also: the autonomous report loop went live and worked its first real report end to end, and now pings
 the reporter on Discord so they know to pull.
+
+### Blender: 68 ops to 151, and the addon stopped answering `ok:true` for work it had not done
+
+The addon is a first-class half of this bridge rather than a UE accessory, and this is the release
+where it was audited like one. Eighty-three new ops across modelling, materials, UV, rigging,
+lighting, cameras, animation, geometry nodes, physics, particles, rendering, world and compositing.
+
+The through-line is the same one the UE half had, found by pointing the same question at the other
+backend: **an operation that cannot do what was asked should refuse, not succeed quietly.** Every
+refusal in this addon ends on a promise about state - "NOTHING was changed" - and two new gated
+audits (`audit_mutate_then_deny` for the addon, `audit_mutate_then_deny_ue` for the C++) now hold
+both backends to that sentence.
+
+#### Calls that used to succeed and now REFUSE - read this before upgrading
+
+| what you send | what happens now | what used to happen |
+|---|---|---|
+| `NaN` or `Infinity` in any numeric parameter | refused, naming the parameter | accepted. `NaN` made the response invalid JSON, so the caller got a parse error rather than an answer |
+| an integer outside 32-bit range | refused, naming the bound | a raw `ValueError` traceback, on four ops |
+| a boolean typo - `"ture"`, `"flase"`, `""` | refused | read as **false**, and the op carried on as though you had asked for that |
+| two spellings of one parameter with different values, e.g. `object` and `name` | refused, naming both spellings and both values | the second was silently discarded. Found by asking `add_modifier` for a modifier named `MifSub` and getting `Subsurf` - in that op `name` aliases the *object* |
+| a mesh op while the object is in EDIT mode | refused | `ok:true` and nothing changed - `mesh.polygons` is stale in edit mode, the live data is in a BMesh |
+| a write to a LINKED (library) object | refused | succeeded **in memory only**. RNA writes to linked data do not error and do not survive a reload |
+| `add_modifier` with a datablock pointer Blender's poll rejects - a mesh where a curve is required | refused | `ok:true` with `settingsApplied` naming the setting, while the pointer stayed empty and the modifier sat inert |
+| an output path that cannot be written | refused before any work | `render_still` wrote a file called `.exr` into the working directory; three other ops did the whole job and then failed to save |
+
+Two changes that are not refusals and are worth knowing about:
+
+* **`list_constraints.isValid` now reports a constraint with a deleted target as invalid.** It used
+  to read `true`. Blender's own `is_valid` is correct when a constraint is *created* without a
+  target - false for 19 of the 20 target-taking types - but it is never recomputed when the target
+  is deleted afterwards, which is the one case the field exists for. A new `targetMissing` sits
+  beside it, because "Blender says invalid" and "the target is gone" want different fixes. `PIVOT`
+  is deliberately exempt: with no target it pivots around the object's own point, which is correct.
+* **A create op that hits a name clash now reports the name it actually got.** Blender uniquifies
+  silently, so seven create ops were answering a retry with the name you asked for while the object
+  was called something else.
+
+Responses also gained consequence fields where an op affects something the caller did not name -
+`meshSharedWith` and `alsoChangedCount` when an edit lands on a linked duplicate that shares one
+mesh datablock, `editModeStale` when a read is answering from stale data.
 
 ### Fixed: `override_inherited_component` could not be called through the MCP at all — v0.3.0 to v0.8.1
 

@@ -88,7 +88,25 @@ def main():
         # -------------------------------------------------------------- R102
         print("\n=== R102: a wrong number in the changelog's top row is REFUSED ===")
         top = R.endpoint_count()
-        plant(sandbox, "CHANGELOG.md", "| %d | 68 |" % top, "| %d | 68 |" % (top + 7))
+        # THE ANCHOR IS READ FROM THE ROW, not rebuilt from counters. It used to be
+        # "| %d | 68 |" % top - a literal 68 - so the plant stopped finding its own row the day the
+        # addon passed 68 ops, and the test that exists to catch a stale number in the changelog
+        # failed on a stale number of its own. Rebuilding it from blender_op_count() does not work
+        # either: the sandbox holds only the two markdown files, so that counter finds no addon and
+        # answers 0. The row itself is the only source present here.
+        # THE FIRST DATA ROW, whatever it happens to be called. Anchoring on "[Unreleased]" broke
+        # the moment that row was renamed to a version number at release time - the second stale
+        # anchor in this one check in a single day. What the gate actually cares about is the TOP
+        # row, so that is what this finds: the line straight after the table's separator.
+        row = re.search(r"^\|[\s|-]+\|\s*\n\|[^|]*\|[^|]*\|\s*(\d+)\s*\|\s*(\d+)\s*\|",
+                        io.open(os.path.join(sandbox, "CHANGELOG.md"), encoding="utf-8").read(),
+                        re.M)
+        assert row, "no version table top row in the changelog copy"
+        ue_written, blen_written = int(row.group(1)), int(row.group(2))
+        plant(sandbox, "CHANGELOG.md",
+              "| %d | %d |" % (ue_written, blen_written),
+              "| %d | %d |" % (ue_written + 7, blen_written))
+        top = ue_written
         ok, msg = R.check_changelog()
         check("R102 a top row that disagrees with the tree is refused", ok is False, msg)
         check("R102 and the message gives both numbers, not just 'stale'",
