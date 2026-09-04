@@ -264,6 +264,19 @@ def install_stub():
                                         register=lambda *a, **k: None,
                                         unregister=lambda f: None))
     bpy.ops = types.SimpleNamespace()
+
+    # bpy.path, WHICH SEVERAL MODULES USE BEFORE ANY OF THEIR OTHER REFUSALS. abspath resolves
+    # Blender's "//" relative-to-the-blend prefix and otherwise leaves a path alone; without it,
+    # ops_io's extension check and ops_render's frame paths raise AttributeError instead of
+    # refusing, which surfaces as "raised AttributeError, not MifOpError" rather than a pass.
+    def _abspath(p, **_kw):
+        return os.path.abspath(p[2:]) if str(p).startswith("//") else str(p)
+
+    bpy.path = types.SimpleNamespace(abspath=_abspath, basename=os.path.basename)
+    path_mod = types.ModuleType("bpy.path")
+    path_mod.abspath = _abspath
+    path_mod.basename = os.path.basename
+    sys.modules["bpy.path"] = path_mod
     sys.modules["bpy"] = bpy
 
     # SUBMODULES MUST BE REGISTERED, not just attributes. The addon's __init__ does
@@ -1538,6 +1551,112 @@ def main():
     ok, msg = refuses(lambda _: ON2._tree("PlainGroupName"), None, "no node group named")
     check("B120 an ordinary name still goes to bpy.data.node_groups - the negative control, "
           "without which a resolver that claimed every name would pass every check above", ok, msg)
+
+    print("")
+    print("=== B121: export formats - version drift, and the keyword that differs per exporter ===")
+    # MEASURED, NOT ASSUMED: import_mesh took .fbx/.gltf/.glb and export_mesh wrote .fbx and NOTHING
+    # else, so glTF could come IN and not go OUT, and USD - the interchange format of every film and
+    # Omniverse pipeline - was absent in both directions. FBX is what the Unreal path needs and it
+    # had become the whole of what the addon could write.
+    #
+    # WHAT THESE CHECK is the table, because that is where the mistakes live. Blender moved its OBJ,
+    # STL and PLY exporters to wm.*_export at DIFFERENT versions, and the selection keyword differs
+    # for every single exporter. Both are pure lookups and neither needs Blender.
+    from MifBlender import ops_io as OIO
+
+    bpy = sys.modules["bpy"]
+    bpy.ops = types.SimpleNamespace()
+
+    def _ops(*dotted):
+        """Rebuild bpy.ops so exactly these operators exist - i.e. pick a Blender version."""
+        bpy.ops = types.SimpleNamespace()
+        for d in dotted:
+            mod, _, name = d.partition(".")
+            grp = getattr(bpy.ops, mod, None)
+            if grp is None:
+                grp = types.SimpleNamespace()
+                setattr(bpy.ops, mod, grp)
+            setattr(grp, name, lambda **kw: None)
+
+    # THE CONTAINER IS A KWARG, NOT THE EXTENSION. Both glTF spellings go to the same operator, and
+    # writing .glb without export_format='GLB' produces the wrong container with the right name.
+    _ops("export_scene.gltf")
+    glb = OIO.resolve_exporter(".glb")
+    gltf = OIO.resolve_exporter(".gltf")
+    check("B121 .glb and .gltf use the SAME operator with DIFFERENT export_format - the container "
+          "is decided by a kwarg, so writing .glb on the default would give the wrong file with "
+          "the right name",
+          glb[0] == gltf[0] == "export_scene.gltf"
+          # .get(), NOT a subscript. The condition is evaluated BEFORE check() is called, so a
+          # missing key raises out of the expression and KILLS the suite instead of failing this
+          # line - which is exactly what the plant for it did on 2026-09-03: rc=1, zero reported
+          # failures, and the defect looking uncaught. Absence must BE the failure, not a crash.
+          and glb[2].get("export_format") == "GLB"
+          and gltf[2].get("export_format") == "GLTF_SEPARATE",
+          "got %s / %s" % (glb, gltf))
+
+    # THE VERSION DRIFT, AND THE KEYWORD THAT MOVES WITH IT. Picking the fallback operator and
+    # keeping the new operator's keyword is the exact mistake this table exists to prevent.
+    _ops("wm.obj_export")
+    new_obj = OIO.resolve_exporter(".obj")
+    _ops("export_scene.obj")
+    old_obj = OIO.resolve_exporter(".obj")
+    check("B121 OBJ resolves to wm.obj_export on a 4.0+ build and export_scene.obj on an older one",
+          new_obj[0] == "wm.obj_export" and old_obj[0] == "export_scene.obj",
+          "got %s / %s" % (new_obj[0], old_obj[0]))
+    check("B121 and THE SELECTION KEYWORD MOVES WITH IT - export_selected_objects on the new "
+          "operator, use_selection on the old. Carrying one keyword to the other operator is the "
+          "mistake the per-format table exists to prevent",
+          new_obj[1] == "export_selected_objects" and old_obj[1] == "use_selection",
+          "got %s / %s" % (new_obj[1], old_obj[1]))
+
+    _ops("wm.obj_export", "export_scene.obj")
+    both = OIO.resolve_exporter(".obj")
+    check("B121 with both present the NEW one wins - candidates are tried in order, not by "
+          "whichever getattr happens to answer first",
+          both[0] == "wm.obj_export", "got %s" % both[0])
+
+    # A MISSING EXPORTER IS AN ADD-ON THAT IS OFF, and must read as a sentence rather than an
+    # AttributeError from somewhere inside bpy.ops.
+    _ops("export_scene.gltf")
+    ok, msg = refuses(lambda _: OIO.resolve_exporter(".usd"), None, "no USD exporter",
+                      "Preferences > Add-ons")
+    check("B121 a format whose exporter is absent - a disabled add-on - is named in a sentence "
+          "with where to turn it on, not an AttributeError from inside bpy.ops", ok, msg)
+
+    ok, msg = refuses(lambda _: OIO.resolve_exporter(".fbx"), None, "no exporter for",
+                      "export_mesh")
+    check("B121 .fbx is refused here and pointed at export_mesh, which owns it along with the "
+          "skeletal handling the UE round trip needs", ok, msg)
+    ok, msg = refuses(lambda _: OIO.resolve_exporter(".3ds"), None, "no exporter for")
+    check("B121 an unknown extension is refused listing what this op does write", ok, msg)
+
+    ok, msg = refuses(OIO.op_export_scene, {"file": "C:/tmp/x"}, "no file extension")
+    check("B121 a path with no extension is refused - the format comes from it", ok, msg)
+
+    # A FRAME RANGE ON A FORMAT THAT CARRIES NO TIME. Accepting and ignoring it is the worst
+    # outcome: 'I exported an animation' and 'I exported frame 1' look identical afterwards.
+    _ops("wm.obj_export")
+    ok, msg = refuses(OIO.op_export_scene,
+                      {"file": "C:/tmp/x.obj", "frameStart": 1, "frameEnd": 10},
+                      "carries no animation", "look identical")
+    check("B121 a frame range on OBJ is REFUSED rather than dropped - accepted and ignored, the "
+          "result is indistinguishable from a real animation export", ok, msg)
+
+    check("B121 and the animated set is not empty - a version that refused every frame range "
+          "would pass the check above while making the feature unreachable",
+          {".abc", ".usd", ".glb"} <= OIO._ANIMATED, "got %s" % sorted(OIO._ANIMATED))
+
+    _ops("wm.alembic_export")
+    ok, msg = refuses(OIO.op_export_scene,
+                      {"file": "C:/tmp/x.abc", "frameStart": 50, "frameEnd": 10}, "before")
+    check("B121 an inverted frame range is refused on a format that DOES carry time", ok, msg)
+
+    ok, msg = refuses(OIO.op_export_scene,
+                      {"file": "C:/tmp/x.abc", "objects": ["Cube"], "selectedOnly": True},
+                      "not both")
+    check("B121 naming objects AND selectedOnly is refused - one names a set, the other uses "
+          "whatever happens to be selected", ok, msg)
 
     print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")

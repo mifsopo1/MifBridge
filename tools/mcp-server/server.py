@@ -5834,6 +5834,18 @@ def bl_assign_material_to_faces(object: str, slot: int, faces: list = None,
 
 
 @mcp.tool()
+def bl_export_scene(file: str, objects: list = None, object: str = None,
+                    selected_only: bool = None, apply_modifiers: bool = None,
+                    frame_start: int = None, frame_end: int = None, animation: bool = None,
+                    overwrite: bool = None) -> dict:
+    "Write glTF/GLB, OBJ, USD/USDA/USDC/USDZ, Alembic, STL or PLY - everything except the FBX bl_export_mesh owns. Measured: bl_import_mesh took .fbx/.gltf/.glb and bl_export_mesh wrote .fbx and NOTHING else, so glTF could come IN and not go OUT and USD was absent in both directions. The format comes from the EXTENSION. Blender moved its OBJ, STL and PLY exporters to wm.*_export at DIFFERENT versions (OBJ and PLY at 4.0, STL at 4.2) and EACH EXPORTER SPELLS ITS 'only the selection' OPTION DIFFERENTLY - four different keyword names across the six operators - so each format carries a list of candidate operators and its own keyword rather than a guess. Carrying one operator's spelling to another either raises or is silently ignored. A missing exporter (they are add-ons and can be disabled) is reported as a sentence naming the format, not an AttributeError. A frame range on a format that carries no time is REFUSED rather than ignored, because 'I exported an animation' and 'I exported frame 1' look identical afterwards. And ok:true is not a file: the mtime is taken before the call, so a leftover from an earlier run cannot pass as this export."
+    return _blender("export_scene", file=file, objects=objects, object=object,
+                    selectedOnly=selected_only, applyModifiers=apply_modifiers,
+                    frameStart=frame_start, frameEnd=frame_end, animation=animation,
+                    overwrite=overwrite)
+
+
+@mcp.tool()
 def bl_export_mesh(object_name: str, file: str, object_types: list = None,
                    add_leaf_bones: bool = None, armature_deform_only: bool = None,
                    primary_bone_axis: str = None, secondary_bone_axis: str = None,

@@ -12442,6 +12442,50 @@ out-of-process the way ops_gen already does with gen_status.
       bpy.data.node_groups, without which a resolver that claimed every name would pass everything
       else. Three plants, all caught - and the negative control is what caught the third.
 
+- [x] **export_scene - glTF, OBJ, USD, Alembic, STL, PLY. The addon could only write FBX** DONE 2026-09-03
+      New ops_io.py, one op.
+
+      MEASURED RATHER THAN SUSPECTED: import_mesh accepts .fbx, .gltf and .glb; export_mesh writes
+      .fbx AND NOTHING ELSE. So glTF could come IN and not go OUT, and USD - the interchange format
+      of every film and Omniverse pipeline - was absent in both directions, as were OBJ, Alembic,
+      STL and PLY. FBX is what the Unreal path needs and it had quietly become the whole of what
+      the addon could write, which is precisely the bias the standing rule forbids.
+
+      NOT AN EXTENSION OF export_mesh, and that is the existing op's own position rather than a new
+      one: it is FBX-specific to its bones - FBX_EXPORT_ARGS, the axis overrides, an object_types
+      filter with the FBX exporter's semantics - and it already refuses CAMERA and LIGHT with
+      "exporting a whole scene including lights and cameras is a different job than export_mesh".
+      This is that job. export_mesh keeps the UE round trip and its skeletal handling.
+
+      THE OPERATOR NAMES MOVED AND NOT ALL AT ONCE. Blender rewrote OBJ, STL and PLY in C++ and
+      moved them from export_scene.* / export_mesh.* to wm.*_export at DIFFERENT versions - OBJ and
+      PLY at 4.0, STL at 4.2 - and this addon supports 3.6 through 5.0, so on any build some live
+      at the new name and some at the old. Each format carries a candidate LIST tried in order.
+
+      AND THE SELECTION KEYWORD DIFFERS FOR EVERY EXPORTER: use_selection, export_selected_objects,
+      selected_objects_only, selected. Carrying one operator's keyword to another is the mistake
+      the per-format table exists to prevent, and a plant that does exactly that is caught.
+
+      THREE MORE THINGS THAT WOULD OTHERWISE BE SILENT. The glTF CONTAINER is a kwarg, not the
+      extension, so .glb on the default writes the wrong file under the right name. A missing
+      exporter is a DISABLED ADD-ON, reported as a sentence naming the format and Preferences
+      rather than an AttributeError from inside bpy.ops. And a frame range on a format that carries
+      no time is REFUSED, not dropped - accepted and ignored, "I exported an animation" and "I
+      exported frame 1" are indistinguishable afterwards.
+
+      ok:true is not a file: the mtime is taken BEFORE the call, so a leftover from an earlier run
+      cannot pass as this export - the rule render_animation applies per frame.
+
+      B121, twelve checks. Four plants; three caught immediately and the fourth exposed a HARNESS
+      bug instead - the check subscripted a dict, so the missing key raised out of the expression
+      before check() was called and killed the suite: rc=1, zero reported failures, the defect
+      looking uncaught. Changed to .get() so absence IS the failure. Third time this session that
+      a plant found the harness rather than the code, and the pattern is now explicit: nothing
+      evaluated inside a check() condition may raise.
+
+      Also added bpy.path to the offline stub, which several modules use before any of their other
+      refusals - without it those refusals surfaced as AttributeError rather than as passes.
+
 - [ ] **Tier 5 - craft depth** (1 of 5 left)
       DONE 2026-09-03: set_camera_panorama, move_keyframes, set_light_ies, set_light_linking.
 
