@@ -34,7 +34,8 @@ _KEY_KEYS = {
     "object", "name", "frame", "location", "rotation", "scale",
     "dataPath", "path", "value", "index", "target", "interpolation",
 }
-_RANGE_KEYS = {"start", "end", "fps", "current", "frameStart", "frameEnd"}
+_RANGE_KEYS = {"start", "end", "fps", "current", "frameStart", "frameEnd",
+               "fpsBase", "frameStep", "previewStart", "previewEnd", "usePreviewRange"}
 _LIST_KEYS = {"object", "name", "target"}
 
 # Channels this op knows where to put without being told. Anything else needs an explicit target.
@@ -300,13 +301,62 @@ def op_set_frame_range(params):
     fps = take_float(params, "fps", default=None)
     if fps is not None:
         sc.render.fps = int(fps)
+    # FPS_BASE IS THE OTHER HALF OF THE FRAME RATE and nothing here could set it. Blender stores
+    # 29.97 as fps 30 with fps_base 1.001, and 23.976 as 24 with 1.001 - so every broadcast rate is
+    # unreachable through `fps` alone, and a caller asking for 30 on an NTSC scene silently got
+    # 29.97 with no way to tell or to change it.
+    fps_base = take_float(params, "fpsBase", default=None)
+    if fps_base is not None:
+        if fps_base <= 0:
+            raise MifOpError("fpsBase must be positive, got %g." % fps_base)
+        sc.render.fps_base = fps_base
+    step = take_float(params, "frameStep", default=None)
+    if step is not None:
+        if int(step) < 1:
+            raise MifOpError("frameStep must be at least 1, got %g." % step)
+        sc.frame_step = int(step)
+
+    # PREVIEW RANGE, which overrides the scene range for playback and rendering when it is on. A
+    # scene with one enabled renders the preview range and NOT frame_start..frame_end, which is a
+    # standing trap for anyone reading only the scene range and wondering why the output is short.
+    pv_start = take_float(params, "previewStart", default=None)
+    pv_end = take_float(params, "previewEnd", default=None)
+    if pv_start is not None or pv_end is not None:
+        ws = int(pv_start) if pv_start is not None else sc.frame_preview_start
+        we = int(pv_end) if pv_end is not None else sc.frame_preview_end
+        if we < ws:
+            raise MifOpError("previewEnd (%d) is before previewStart (%d). NOTHING was changed to "
+                             "the preview range." % (we, ws))
+        sc.frame_preview_start, sc.frame_preview_end = ws, we
+        sc.use_preview_range = True
+    if "usePreviewRange" in params:
+        sc.use_preview_range = take_bool(params, "usePreviewRange", default=True)
+
     cur = take_float(params, "current", default=None)
     if cur is not None:
         sc.frame_set(int(cur))
+
+    # THE TRUE RATE IS fps / fps_base, and durationSeconds divided by fps alone until 2026-09-03 -
+    # so every NTSC rate was reported 0.1% short. Small, and exactly the kind of small that makes a
+    # 60-minute programme land a frame and a half out against audio.
+    base = float(sc.render.fps_base) or 1.0
+    effective_fps = float(sc.render.fps) / base
+    span = (sc.frame_end - sc.frame_start + 1)
     return {"before": before,
             "after": {"start": sc.frame_start, "end": sc.frame_end,
                       "fps": sc.render.fps, "current": sc.frame_current},
-            "durationSeconds": round((sc.frame_end - sc.frame_start + 1) / float(sc.render.fps), 4)}
+            "fpsBase": round(base, 6),
+            "effectiveFps": round(effective_fps, 6),
+            "frameStep": sc.frame_step,
+            "usePreviewRange": bool(sc.use_preview_range),
+            "previewStart": sc.frame_preview_start,
+            "previewEnd": sc.frame_preview_end,
+            "durationSeconds": round(span / effective_fps, 6),
+            # NAMED, because a preview range silently replaces the scene range at render time and
+            # a caller reading only start/end would be describing a different clip than the one
+            # Blender will produce.
+            "rendersFrames": ([sc.frame_preview_start, sc.frame_preview_end]
+                              if sc.use_preview_range else [sc.frame_start, sc.frame_end])}
 
 
 def op_list_keyframes(params):

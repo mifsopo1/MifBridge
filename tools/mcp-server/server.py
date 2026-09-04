@@ -5211,9 +5211,13 @@ def bl_set_keyframe(object: str, frame: float, location: list = None, rotation: 
 
 @mcp.tool()
 def bl_set_frame_range(start: float = None, end: float = None, fps: float = None,
-                       current: float = None) -> dict:
-    "Set the Blender scene's frame range, fps and current frame. An end before start is REFUSED and the previous range restored - Blender accepts it and then renders nothing. Reports before, after and the resulting duration in seconds."
-    return _blender("set_frame_range", start=start, end=end, fps=fps, current=current)
+                       current: float = None, fps_base: float = None, frame_step: float = None,
+                       preview_start: float = None, preview_end: float = None,
+                       use_preview_range: bool = None) -> dict:
+    "Set the Blender scene's frame range, frame rate, step, current frame and PREVIEW RANGE. An end before start is REFUSED and the previous range restored - Blender accepts it and then renders nothing. fps_base is the other half of the frame rate and was previously unreachable: Blender stores 29.97 as fps 30 with fps_base 1.001, and 23.976 as 24 with 1.001, so every broadcast rate was impossible to set through fps alone. durationSeconds now divides by the TRUE rate (fps/fps_base) - it divided by fps alone until 2026-09-03, reporting every NTSC duration 0.1% short, which is a frame and a half over an hour. A preview range SILENTLY REPLACES the scene range at render time, so the response reports rendersFrames: the pair Blender will actually produce, whichever is in force. Call mif_help(\"bl_set_frame_range\") first."
+    return _blender("set_frame_range", start=start, end=end, fps=fps, current=current,
+                    fpsBase=fps_base, frameStep=frame_step, previewStart=preview_start,
+                    previewEnd=preview_end, usePreviewRange=use_preview_range)
 
 
 @mcp.tool()
