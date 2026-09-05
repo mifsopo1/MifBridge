@@ -29,7 +29,17 @@ import time
 import urllib.error
 import urllib.request
 
-BRIDGE_PORT = 8791
+# WHICH BRIDGE THE SUITES TALK TO. Overridable as of 2026-09-05, for the same reason
+# PROJECT_MARKER is: it was a bare constant, and 156 suites import it, so there was no way to run
+# anything against a second editor. That is not a missing convenience - it is why no suite result
+# has ever been compared BETWEEN engines, which is the only honest way to tell a 5.7 defect from a
+# missing fixture. A suite that passes on 5.3 and fails on 5.7 is a finding; one that fails on both
+# is a fixture problem wearing an engine's clothes.
+#
+# Unset, it is 8791 exactly as before.
+#
+#     MIF_BRIDGE_PORT=8801 MIF_PROJECT_MARKER=MifProbe.uproject python tools/test_spline.py
+BRIDGE_PORT = int(os.environ.get("MIF_BRIDGE_PORT", "8791"))
 BASE = "http://127.0.0.1:%d/api" % BRIDGE_PORT
 TOKEN = "dev"
 UPROJECT = r"D:\DDS2SDK\Game\DrugDealerSimulator2.uproject"
