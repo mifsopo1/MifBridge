@@ -115,6 +115,62 @@ def png_is_interesting(path, min_bytes=20000, max_dominant=0.985):
     return True, "%dx%d, %d bytes, most common colour %.0f%% of samples" % (w, h, len(raw), frac * 100)
 
 
+def frame_the_content(rows):
+    """(target xyz, spread, kept) - where the publishable content actually is.
+
+    THREE THINGS THIS HAS TO GET RIGHT, and the first version got none of them because it aimed at
+    world origin and assumed.
+
+    SCRATCH ACTORS ARE EXCLUDED, and that is not tidiness. A sweep spawns test fixtures into
+    whatever level is open - this session left 141 of them in Curfew's map - and a store gallery
+    with MifScratchCube in shot is worse than no gallery. The rule has an owner:
+    mifaudit.is_scratch_fixture reads the LABEL as well as the path, which a hand-rolled
+    startswith("/Game/_Mif") cannot do for a level actor, and level actors are exactly what this
+    filters.
+
+    THE MEDIAN, NOT THE MEAN OR THE BOUNDING BOX. A level's extremes are its outliers: the sky
+    actor and WorldDataLayers sit at (0,0,0), a stray probe sits 50km away, and a Landscape reports
+    world-partition bounds of +-2^42 - which is what made the first attempt at a bounding box come
+    back as the whole float range. The median lands where the actors ARE, and a handful of far
+    outliers cannot move it.
+
+    THE SPREAD IS AN INTERQUARTILE DISTANCE for the same reason, floored so a tight cluster does not
+    put the camera inside the geometry it is photographing.
+    """
+    import mifaudit as M
+    pts = []
+    for a in rows:
+        if not isinstance(a, dict):
+            continue
+        if M.is_scratch_fixture(a):
+            continue                          # this session's own fixtures are not marketing art
+        loc = a.get("location") or {}
+        try:
+            x, y, z = float(loc["x"]), float(loc["y"]), float(loc["z"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if max(abs(x), abs(y), abs(z)) > 1e7:
+            continue                          # world-partition sentinel bounds, not a place
+        pts.append((x, y, z))
+    if not pts:
+        return None, 0.0, 0
+
+    def med(vals):
+        s = sorted(vals)
+        n = len(s)
+        return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2.0
+
+    target = tuple(med([p[i] for p in pts]) for i in range(3))
+    # Interquartile spread across x and y, which is how wide the content is without letting one
+    # distant actor decide how far back the camera stands.
+    def iqr(vals):
+        s = sorted(vals)
+        n = len(s)
+        return s[min(n - 1, (3 * n) // 4)] - s[n // 4]
+    spread = max(iqr([p[0] for p in pts]), iqr([p[1] for p in pts]), 600.0)
+    return target, min(spread, 12000.0), len(pts)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", required=True, help="directory to write the images into")
@@ -135,21 +191,48 @@ def main():
     print("  %s" % why)
 
     # READ-ONLY FROM HERE. Nothing below writes an asset, spawns an actor or dirties a package.
-    lvl = M.raw_post("list_level_actors", {"limit": 1}, timeout=120)
-    n_actors = lvl.get("count") if isinstance(lvl, dict) else None
-    print("  actors in the open level: %s" % n_actors)
-    if not n_actors:
+    #
+    # limit 5000 AND `matched`, NOT limit 1 and `count`. The first version asked for one row and
+    # read `count`, which is the number of rows RETURNED - so it could only ever be 0 or 1, and it
+    # was about to decide whether a 183-actor level was empty from a field that cannot answer that.
+    # describe_endpoint says this outright ("the response reports count, matched and truncated"),
+    # which is where it should have been read from the first time.
+    lvl = M.raw_post("list_level_actors", {"limit": 5000}, timeout=180)
+    rows = (lvl.get("actors") or []) if isinstance(lvl, dict) else []
+    n_actors = lvl.get("matched") if isinstance(lvl, dict) else None
+    print("  actors in the open level: %s (%d row(s) read, truncated=%s)"
+          % (n_actors, len(rows), lvl.get("truncated") if isinstance(lvl, dict) else "?"))
+    if not rows:
         print("")
         print("SKIPPED - the open level has no actors, so there is nothing to photograph. This is")
         print("not a failure of the capture path: point the editor at a level with content.")
         return 2
 
+    target, spread, kept = frame_the_content(rows)
+    if target is None:
+        print("")
+        print("SKIPPED - no non-scratch actor has a usable location, so there is nothing this can")
+        print("aim at. A level holding only test fixtures is not a level worth photographing.")
+        return 2
+    print("  framing %d publishable actor(s) around (%.0f, %.0f, %.0f), spread %.0f uu"
+          % (kept, target[0], target[1], target[2], spread))
+
     # Three angles rather than one, because a single camera position is a coin flip on whether it is
     # inside geometry - and the checker below can only reject a bad frame, not compose a good one.
+    #
+    # DERIVED FROM THE CONTENT, NOT HARDCODED. The first version aimed all three at world origin,
+    # which is where a UE level's content is only by convention. Curfew's is at (95173, 99311) and
+    # its origin holds nothing but the sky actor and WorldDataLayers, so every shot was a picture of
+    # empty space - and the frame checker below correctly rejected all of them, which is the only
+    # reason this was noticed rather than published.
+    d = spread
     ANGLES = [
-        {"location": {"x": 1200, "y": -1200, "z": 700},  "lookAt": {"x": 0, "y": 0, "z": 100}},
-        {"location": {"x": -900,  "y": -900,  "z": 1400}, "lookAt": {"x": 0, "y": 0, "z": 0}},
-        {"location": {"x": 0,     "y": -1800, "z": 400},  "lookAt": {"x": 0, "y": 0, "z": 200}},
+        {"location": {"x": target[0] + d,       "y": target[1] - d,       "z": target[2] + d * 0.6},
+         "lookAt":   {"x": target[0], "y": target[1], "z": target[2]}},
+        {"location": {"x": target[0] - d * 0.8, "y": target[1] - d * 0.8, "z": target[2] + d * 1.1},
+         "lookAt":   {"x": target[0], "y": target[1], "z": target[2]}},
+        {"location": {"x": target[0],           "y": target[1] - d * 1.4, "z": target[2] + d * 0.3},
+         "lookAt":   {"x": target[0], "y": target[1], "z": target[2] + d * 0.15}},
     ][:max(1, args.shots)]
 
     written, rejected = [], []
