@@ -15829,6 +15829,28 @@ out-of-process the way ops_gen already does with gen_status.
       DO NOT run the unguarded suites against somebody's uncooked project to find out. Read the
       assertions.
 
+      THREE GUARDED SO FAR, 2026-09-05, all verified on the DISPOSABLE MifProbe project rather than
+      on anybody's game - it is a fresh project, so project_is_cooked returns False there and the
+      guards fire, and it has no content to damage if one did not:
+
+        test_anim_curve             8 pass / 9 fail  ->  3 / 0
+        test_duplicate_cooked_guard 9 pass / 7 fail  ->  3 / 0
+        test_material_graph        30 pass / 5 fail  -> 25 / 0
+
+      test_material_graph is the case for doing this at SECTION level rather than suite level. Its
+      cooked hazard is one section; T352 to T356 author a graph on a fresh material and are
+      environment-neutral. Skipping the suite would have discarded 25 working assertions to silence
+      5. The same is true of test_duplicate_cooked_guard's T942, which is literally "a normal,
+      NOT-cooked scratch Blueprint still duplicates successfully".
+
+      SAFE ON A COOKED PROJECT BY CONSTRUCTION, and said that way rather than claimed as tested: the
+      guard is `if COOKED is False`, so on a cooked project (True) and on an unanswerable one (None)
+      the else-branch runs and the sections behave exactly as they did before. That has NOT been
+      re-run against DDS2 - it needs the 5.3 editor, and the reasoning is why it is safe to land
+      without it.
+
+      NINETEEN LEFT of the 22 with the write shape.
+
       MEASURED 2026-09-05 BY READING, NOT RUNNING - tools/audit_cooked_suite_shape.py. It finds every
       check() line mentioning cooked, collects the endpoints called just above it, and classifies
       them against the LIVE bucket list from self_audit rather than by guessing from a name:

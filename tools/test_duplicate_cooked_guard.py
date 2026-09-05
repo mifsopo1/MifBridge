@@ -47,72 +47,88 @@ def main():
     st = int(time.time() % 100000)
 
     # ------------------------------------------------------------------ T940 cooked StaticMesh
-    print("\n=== T940: duplicate_asset refuses a cooked StaticMesh - the exact crash reproduction ===")
-    # ADOPTION-OK for the three `"_Mif" not in path` tests below. They are BROADER than
-    # is_scratch_fixture on purpose: this suite needs a genuinely REAL asset to try a cooked guard
-    # against, and "_Mif" anywhere in the path also excludes something like /Game/Props/SM_MifRock.
-    # Erring toward skipping a candidate costs one candidate; adopting a scratch asset here would
-    # test the guard against the wrong kind of object entirely.
-    meshes = M.call("find_assets", {"class": "StaticMesh", "pathPrefix": "/Game/", "limit": 5}).get("assets") or []
-    real_mesh = next((a.get("path") for a in meshes if "_Mif" not in (a.get("path") or "")), None)
-    check("T940 (setup) a real StaticMesh exists to try", bool(real_mesh), real_mesh)
-    if real_mesh:
-        r = M.call("duplicate_asset", {"path": real_mesh, "newPath": "/Game/_MifDupGuard/SM_%d" % st})
-        check("T940 the duplicate is refused, not attempted", r.get("ok") is False, json.dumps(r)[:200])
-        check("T940 and explains the real reason (cooked, crashes UStaticMesh::Build)",
-              "COOKED" in (r.get("error") or "") and "StaticMesh" in (r.get("error") or ""),
-              r.get("error"))
-        # THE assertion - see module docstring. A failed guard here is a fatal engine assertion, not
-        # an error return, so the editor answering at all afterward is the real proof.
-        alive = M.call("self_audit", {})
-        check("T940 the editor is still alive afterward", alive.get("ok") is True,
-              "a failed guard here is a fatal assertion, not an error return")
-
-    # ------------------------------------------------------------------ T941 cooked NiagaraSystem
-    print("\n=== T941: duplicate_asset refuses a cooked NiagaraSystem - the guard this one was modelled on ===")
-    systems = M.call("find_assets", {"class": "NiagaraSystem", "pathPrefix": "/Game/", "limit": 5}).get("assets") or []
-    real_ns = next((a.get("path") for a in systems if "_Mif" not in (a.get("path") or "")), None)
-    check("T941 (setup) a real NiagaraSystem exists to try", bool(real_ns), real_ns)
-    if real_ns:
-        r = M.call("duplicate_asset", {"path": real_ns, "newPath": "/Game/_MifDupGuard/NS_%d" % st})
-        check("T941 the duplicate is refused, not attempted", r.get("ok") is False, json.dumps(r)[:200])
-        check("T941 and explains the real reason (cooked, crashes Niagara's PostLoad)",
-              "COOKED" in (r.get("error") or "") and "Niagara" in (r.get("error") or ""), r.get("error"))
-        alive = M.call("self_audit", {})
-        check("T941 the editor is still alive afterward", alive.get("ok") is True,
-              "a failed guard here is a fatal exception, not an error return")
-
-    # ------------------------------------------------------------------ T943 cooked AnimSequence
-    print("\n=== T943: duplicate_asset refuses a cooked AnimSequence - the third of the family ===")
-    # Found 2026-08-31 the expensive way: this call took a live editor down with
-    # EXCEPTION_ACCESS_VIOLATION reading 0x28, through AssetTools' DuplicateAsset. The log named
-    # NOTHING - the crash beat the handler's own logging, so the last entry was an unrelated
-    # create_blueprint - and only Saved/Crashes' callstack put a MifBridge frame under AssetTools.
+    # COOKED-ONLY, and SKIPPED rather than failed where nothing is cooked. See the
+    # write-hazard item in FEATURE_PARITY_SPEC: on an uncooked project the guard these
+    # assert never fires, so 'assert this is refused' becomes 'perform this', and the
+    # failures are also indistinguishable from a real regression in the summary.
     #
-    # Same shape as its two siblings above: cook strips editor-only data and DUPLICATION is what
-    # re-runs the path that dereferences it. Reading the asset is fine, which is why the guard is on
-    # duplication alone.
-    anims = M.call("find_assets", {"class": "AnimSequence", "pathPrefix": "/Game/",
-                                   "limit": 5}).get("assets") or []
-    real_anim = next((a.get("path") for a in anims if "_Mif" not in (a.get("path") or "")), None)
-    check("T943 (setup) a real AnimSequence exists to try", bool(real_anim), real_anim)
-    if real_anim:
-        r = M.call("duplicate_asset", {"path": real_anim,
-                                       "newPath": "/Game/_MifDupGuard/AS_%d" % st})
-        check("T943 the duplicate is refused, not attempted", r.get("ok") is False,
-              json.dumps(r)[:200])
-        check("T943 and explains the real reason (cooked, crashes the post-duplicate load path)",
-              "COOKED" in (r.get("error") or "") and "AnimSequence" in (r.get("error") or ""),
-              r.get("error"))
-        # It also has to say what DOES work, because a refusal that leaves the caller with nowhere
-        # to go is only half an answer - the same rule the other two guards follow.
-        check("T943 and names what still works instead of duplication",
-              "list_animations" in (r.get("error") or ""), (r.get("error") or "")[:240])
-        alive = M.call("self_audit", {})
-        check("T943 the editor is still alive afterward", alive.get("ok") is True,
-              "a failed guard here is a fatal access violation, not an error return")
+    # `is not False`: project_is_cooked returns None when the question could not be asked,
+    # and an unanswerable question is not a No. On None this runs exactly as before.
+    COOKED = M.project_is_cooked()
+    if COOKED is False:
+        print("")
+        print('=== T940 / T941 / T943 SKIPPED - nothing in this project is cooked ===')
+        print('  These reproduce three editor CRASHES that duplicate_asset guards against, and every one')
+        print('  needs a cooked StaticMesh, NiagaraSystem or AnimSequence to reproduce. There are none')
+        print('  here, so the question cannot be asked - which is not the same as the guards being gone.')
+        print('  T942 below is environment-neutral and still runs.')
+    else:
+        print("\n=== T940: duplicate_asset refuses a cooked StaticMesh - the exact crash reproduction ===")
+        # ADOPTION-OK for the three `"_Mif" not in path` tests below. They are BROADER than
+        # is_scratch_fixture on purpose: this suite needs a genuinely REAL asset to try a cooked guard
+        # against, and "_Mif" anywhere in the path also excludes something like /Game/Props/SM_MifRock.
+        # Erring toward skipping a candidate costs one candidate; adopting a scratch asset here would
+        # test the guard against the wrong kind of object entirely.
+        meshes = M.call("find_assets", {"class": "StaticMesh", "pathPrefix": "/Game/", "limit": 5}).get("assets") or []
+        real_mesh = next((a.get("path") for a in meshes if "_Mif" not in (a.get("path") or "")), None)
+        check("T940 (setup) a real StaticMesh exists to try", bool(real_mesh), real_mesh)
+        if real_mesh:
+            r = M.call("duplicate_asset", {"path": real_mesh, "newPath": "/Game/_MifDupGuard/SM_%d" % st})
+            check("T940 the duplicate is refused, not attempted", r.get("ok") is False, json.dumps(r)[:200])
+            check("T940 and explains the real reason (cooked, crashes UStaticMesh::Build)",
+                  "COOKED" in (r.get("error") or "") and "StaticMesh" in (r.get("error") or ""),
+                  r.get("error"))
+            # THE assertion - see module docstring. A failed guard here is a fatal engine assertion, not
+            # an error return, so the editor answering at all afterward is the real proof.
+            alive = M.call("self_audit", {})
+            check("T940 the editor is still alive afterward", alive.get("ok") is True,
+                  "a failed guard here is a fatal assertion, not an error return")
 
-    # ------------------------------------------------------------------ T942 a normal duplication still works
+        # ------------------------------------------------------------------ T941 cooked NiagaraSystem
+        print("\n=== T941: duplicate_asset refuses a cooked NiagaraSystem - the guard this one was modelled on ===")
+        systems = M.call("find_assets", {"class": "NiagaraSystem", "pathPrefix": "/Game/", "limit": 5}).get("assets") or []
+        real_ns = next((a.get("path") for a in systems if "_Mif" not in (a.get("path") or "")), None)
+        check("T941 (setup) a real NiagaraSystem exists to try", bool(real_ns), real_ns)
+        if real_ns:
+            r = M.call("duplicate_asset", {"path": real_ns, "newPath": "/Game/_MifDupGuard/NS_%d" % st})
+            check("T941 the duplicate is refused, not attempted", r.get("ok") is False, json.dumps(r)[:200])
+            check("T941 and explains the real reason (cooked, crashes Niagara's PostLoad)",
+                  "COOKED" in (r.get("error") or "") and "Niagara" in (r.get("error") or ""), r.get("error"))
+            alive = M.call("self_audit", {})
+            check("T941 the editor is still alive afterward", alive.get("ok") is True,
+                  "a failed guard here is a fatal exception, not an error return")
+
+        # ------------------------------------------------------------------ T943 cooked AnimSequence
+        print("\n=== T943: duplicate_asset refuses a cooked AnimSequence - the third of the family ===")
+        # Found 2026-08-31 the expensive way: this call took a live editor down with
+        # EXCEPTION_ACCESS_VIOLATION reading 0x28, through AssetTools' DuplicateAsset. The log named
+        # NOTHING - the crash beat the handler's own logging, so the last entry was an unrelated
+        # create_blueprint - and only Saved/Crashes' callstack put a MifBridge frame under AssetTools.
+        #
+        # Same shape as its two siblings above: cook strips editor-only data and DUPLICATION is what
+        # re-runs the path that dereferences it. Reading the asset is fine, which is why the guard is on
+        # duplication alone.
+        anims = M.call("find_assets", {"class": "AnimSequence", "pathPrefix": "/Game/",
+                                       "limit": 5}).get("assets") or []
+        real_anim = next((a.get("path") for a in anims if "_Mif" not in (a.get("path") or "")), None)
+        check("T943 (setup) a real AnimSequence exists to try", bool(real_anim), real_anim)
+        if real_anim:
+            r = M.call("duplicate_asset", {"path": real_anim,
+                                           "newPath": "/Game/_MifDupGuard/AS_%d" % st})
+            check("T943 the duplicate is refused, not attempted", r.get("ok") is False,
+                  json.dumps(r)[:200])
+            check("T943 and explains the real reason (cooked, crashes the post-duplicate load path)",
+                  "COOKED" in (r.get("error") or "") and "AnimSequence" in (r.get("error") or ""),
+                  r.get("error"))
+            # It also has to say what DOES work, because a refusal that leaves the caller with nowhere
+            # to go is only half an answer - the same rule the other two guards follow.
+            check("T943 and names what still works instead of duplication",
+                  "list_animations" in (r.get("error") or ""), (r.get("error") or "")[:240])
+            alive = M.call("self_audit", {})
+            check("T943 the editor is still alive afterward", alive.get("ok") is True,
+                  "a failed guard here is a fatal access violation, not an error return")
+
+        # ------------------------------------------------------------------ T942 a normal duplication still works
     print("\n=== T942: a normal, NOT-cooked scratch Blueprint still duplicates successfully ===")
     src = "/Game/_MifDupGuard/BP_Src_%d" % st
     dst = "/Game/_MifDupGuard/BP_Dst_%d" % st

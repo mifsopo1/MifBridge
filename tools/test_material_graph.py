@@ -39,47 +39,62 @@ def main():
     st = int(time.time() % 100000)
 
     # ------------------------------------------------------------------ T351 the cooked hazard
-    print("\n=== T351 [the hazard]: a real COOKED material must not crash the editor ===")
-    # SKIP SCRATCH, INCLUDING THIS SUITE'S OWN. pathPrefix "/Game/" matches every scratch tree in
-    # the project, and limit:1 with unstable find_assets ordering makes which one you get a lottery.
-    # This suite creates /Game/_MifMat/M_<stamp> below and does not delete it, so it self-contaminates
-    # on the second pass of a sweep without any help from another suite - and the checks that follow
-    # EXPECT a cooked material to refuse writes. Against a live uncooked scratch material they would
-    # succeed instead, silently mutating somebody's fixture mid-run and reporting the wrong verdict.
+    # COOKED-ONLY, and SKIPPED rather than failed where nothing is cooked. See the
+    # write-hazard item in FEATURE_PARITY_SPEC: on an uncooked project the guard these
+    # assert never fires, so 'assert this is refused' becomes 'perform this', and the
+    # failures are also indistinguishable from a real regression in the summary.
     #
-    # NOT A COOKEDNESS PROBE, and that gap is real: this only guarantees the candidate is not scratch,
-    # not that it is cooked. test_set_struct_member and test_create_struct_init both go further and
-    # probe for an actual COOKED refusal before trusting the fixture; doing the same here is the
-    # better fix and is filed rather than done.
-    cand = M.pick_adoptable(
-        M.call("find_assets", {"class": "Material", "pathPrefix": "/Game/", "limit": 20})
-        .get("assets"))
-    cooked = (cand or {}).get("path")
-    check("T351 a cooked material was found to test against", bool(cooked), cooked)
-    if cooked:
-        print("   using %s" % cooked)
-        # The READ must degrade honestly rather than refuse or die: a modder needs to know a cooked
-        # material has no graph, and that is different from the asset being missing.
-        r = graph(cooked)
-        check("T351 reading it answers instead of dying", r.get("ok") is True, json.dumps(r)[:180])
-        check("T351 and says the material is cooked", r.get("cooked") is True, r.get("cooked"))
-        check("T351 the editor survived the read", M.bridge_responsive() is True,
-              "the bridge stopped answering - GetExpressions on a cooked material is a crash")
-        # The WRITES must refuse, because there is no graph to write into.
-        for ep, payload in (
-            ("add_material_expression", {"material": cooked,
-                                         "expressionClass": "MaterialExpressionConstant"}),
-            ("layout_material_expressions", {"material": cooked}),
-        ):
-            q = M.call(ep, payload)
-            check("T351 %s refuses on a cooked material" % ep, q.get("ok") is False,
-                  json.dumps(q)[:150])
-            check("T351 %s explains that the graph was stripped" % ep,
-                  "cooked" in (q.get("error") or ""), (q.get("error") or "")[:170])
-            check("T351 the editor survived %s" % ep, M.bridge_responsive() is True,
-                  "the bridge stopped answering")
+    # `is not False`: project_is_cooked returns None when the question could not be asked,
+    # and an unanswerable question is not a No. On None this runs exactly as before.
+    COOKED = M.project_is_cooked()
+    if COOKED is False:
+        print("")
+        print('=== T351 SKIPPED - nothing in this project is cooked ===')
+        print('  It asserts that the material-graph endpoints REFUSE a cooked material rather than')
+        print('  crashing the editor. With no cooked material to refuse there is nothing to assert.')
+        print('  T352 onward author a graph on a fresh material and are unaffected.')
+    else:
+        print("\n=== T351 [the hazard]: a real COOKED material must not crash the editor ===")
+        # SKIP SCRATCH, INCLUDING THIS SUITE'S OWN. pathPrefix "/Game/" matches every scratch tree in
+        # the project, and limit:1 with unstable find_assets ordering makes which one you get a lottery.
+        # This suite creates /Game/_MifMat/M_<stamp> below and does not delete it, so it self-contaminates
+        # on the second pass of a sweep without any help from another suite - and the checks that follow
+        # EXPECT a cooked material to refuse writes. Against a live uncooked scratch material they would
+        # succeed instead, silently mutating somebody's fixture mid-run and reporting the wrong verdict.
+        #
+        # NOT A COOKEDNESS PROBE, and that gap is real: this only guarantees the candidate is not scratch,
+        # not that it is cooked. test_set_struct_member and test_create_struct_init both go further and
+        # probe for an actual COOKED refusal before trusting the fixture; doing the same here is the
+        # better fix and is filed rather than done.
+        cand = M.pick_adoptable(
+            M.call("find_assets", {"class": "Material", "pathPrefix": "/Game/", "limit": 20})
+            .get("assets"))
+        cooked = (cand or {}).get("path")
+        check("T351 a cooked material was found to test against", bool(cooked), cooked)
+        if cooked:
+            print("   using %s" % cooked)
+            # The READ must degrade honestly rather than refuse or die: a modder needs to know a cooked
+            # material has no graph, and that is different from the asset being missing.
+            r = graph(cooked)
+            check("T351 reading it answers instead of dying", r.get("ok") is True, json.dumps(r)[:180])
+            check("T351 and says the material is cooked", r.get("cooked") is True, r.get("cooked"))
+            check("T351 the editor survived the read", M.bridge_responsive() is True,
+                  "the bridge stopped answering - GetExpressions on a cooked material is a crash")
+            # The WRITES must refuse, because there is no graph to write into.
+            for ep, payload in (
+                ("add_material_expression", {"material": cooked,
+                                             "expressionClass": "MaterialExpressionConstant"}),
+                ("layout_material_expressions", {"material": cooked}),
+            ):
+                q = M.call(ep, payload)
+                check("T351 %s refuses on a cooked material" % ep, q.get("ok") is False,
+                      json.dumps(q)[:150])
+                check("T351 %s explains that the graph was stripped" % ep,
+                      "cooked" in (q.get("error") or ""), (q.get("error") or "")[:170])
+                check("T351 the editor survived %s" % ep, M.bridge_responsive() is True,
+                      "the bridge stopped answering")
 
-    # ------------------------------------------------------------------ T352 the authoring loop
+        # ------------------------------------------------------------------ T352 the authoring loop
     print("\n=== T352: authoring a graph on a fresh material ===")
     mpath = "/Game/_MifMat/M_%d" % st
     c = M.call("create_material", {"path": mpath})
