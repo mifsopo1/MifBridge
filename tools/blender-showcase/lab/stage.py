@@ -96,7 +96,21 @@ def mat(name, rgb, metallic=0.0, roughness=0.6):
 
 # The room's interior, so a viewpoint can be CHECKED rather than hoped for. Kept here because
 # every stage needs it and none of them should be re-deriving it.
+#
+# SETTABLE AS OF 2026-09-05, and it had to become so before anything else could reuse this file.
+# It was a bare constant holding the LAB's interior, and look() checks the camera eye against it -
+# so a second showcase importing stage.py would have every legitimate viewpoint of ITS room refused,
+# while eyes outside its walls sailed through. The bounds check is the valuable part of look(); a
+# bounds check against the wrong room is worse than none, because it reads as having been checked.
+#
+# Defaults to exactly what it always was, so the lab stages are unaffected.
 ROOM = {"x": (0.32, 17.68), "y": (0.32, 10.68), "z": (0.05, 3.55)}
+
+
+def set_room(x, y, z):
+    """Declare the interior the camera must stay inside. Call it before the first look()."""
+    ROOM["x"], ROOM["y"], ROOM["z"] = tuple(x), tuple(y), tuple(z)
+    return ROOM
 
 
 def look(eye, target, lens=24.0, settle=0.4):
