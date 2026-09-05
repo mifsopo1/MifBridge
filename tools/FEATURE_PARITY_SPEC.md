@@ -11858,7 +11858,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       rather than beside it. It needs a small refactor first: advised_param_findings takes `names`
       and `accepts` as arguments but reads PRIVATE itself, so the directory is not injectable yet.
 
-- [ ] **two cross-endpoint EQUIVALENCE claims that no suite has ever compared** (half a day)
+- [x] **two cross-endpoint EQUIVALENCE claims that no suite has ever compared** (half a day)
       THE OTHER TWELVE WERE READ 2026-09-03, which is what "paired" never meant. The tool says so
       itself - "a pair appearing in one suite proves only that both were CALLED there, never that
       the claim was compared" - and nobody had taken it up on that. Three checked by hand so far,
@@ -12089,6 +12089,40 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       apply_spline_to_landscape -> sculpt_landscape. THE EVIDENCE HOLDS: sculpt_landscape moved 335
       height samples (verticesTouched, area 0,0..20,20) on a landscape built for the purpose, so the
       note is right that a zero from the spline path is a real zero rather than a dead harness.
+
+      ================================================================================
+      CLOSED 2026-09-05. Both are compared, and two of them now have SUITES.
+      ================================================================================
+      Comparing them by hand is not what this item asked for - audit_cross_endpoint_claims measures
+      whether a SUITE drives both sides, and a probe is not a test. So:
+
+        T2907  test_physics_asset      describe_physics_asset vs get_property/set_property, on a
+                                       real PhysicsAsset duplicated into scratch. Pins the
+                                       correction: SkeletalBodySetups returns REFERENCES, the
+                                       primitives are at [N].AggGeom, set_property tunes them there
+                                       and the new radius reads back. 49/0.
+        S110   test_spline_landscape   sculpt_landscape on the landscape the suite already drives.
+                                       That endpoint had appeared in this suite's DOCSTRING and
+                                       nowhere else, so the zero-change note's argument rested on a
+                                       number nothing re-checked. 28/2, and both failures are
+                                       pre-existing - the committed version fails the same two on
+                                       the same editor and they fire before S110.
+
+      WHAT IS LEFT, and it is deliberately left. Two entries remain in the baseline:
+
+        apply_graph_patch -> validate        not a claim at all - the English verb inside a
+                                             parameter help string. Excused with that reason.
+        set_niagara_emitter -> set_property  COMPARED (both paths invalidate the compiled data; the
+                                             note's stated cause was wrong and is corrected on
+                                             pending/source-needs-a-build, 81a0643) but NOT paired
+                                             by a suite, and it will not be.
+
+      WHY THAT ONE IS NOT GETTING A SUITE. It needs an UNCOOKED UNiagaraEmitter with editor data.
+      add_niagara_emitter requires a source emitter to copy, so nothing can build the fixture where
+      none exists, and the probe project has none. A suite section would therefore skip on every
+      project this repo runs against - a check that can never fire, added to make a number go down.
+      That is the shape PM-016 is about, and the count is not worth it. It stays listed with its
+      measurement, which is the honest state.
 
 - [ ] **a freshly built landscape reports NO edit layers on 5.7 while having one, and the response says to trust it** (an hour, needs a build)
       FOUND 2026-09-05 while building the fixture for the claim above. The fixture the note asks for
