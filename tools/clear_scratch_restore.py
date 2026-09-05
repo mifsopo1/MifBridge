@@ -27,7 +27,31 @@ import time
 import shutil
 import sys
 
-MANIFEST = "D:/DDS2SDK/Game/Saved/Autosaves/PackageRestoreData.json"
+# WHICH PROJECT'S MANIFEST. This was a hardcoded DDS2 path - the third tool found with that shape on
+# 2026-09-05, after mifwatch and test_crash_journal, and the worst of the three: this one WRITES.
+# Pointed at the wrong project it would clear a restore offer belonging to a session it never
+# touched, and the whole point of the file is that discarding somebody's recovery data silently is
+# worse than the modal it prevents.
+#
+# Prefer the running editor; fall back to DDS2 when nothing is up. The fallback is normal here - this
+# is usually run right after a kill, when there is no process left to ask - so callers PRINT which
+# was used rather than assuming.
+_DDS2_MANIFEST = "D:/DDS2SDK/Game/Saved/Autosaves/PackageRestoreData.json"
+
+
+def default_manifest():
+    """(path, source). Ask the live editor first; say where the answer came from."""
+    try:
+        import mifaudit as M
+        saved = M.live_saved_dir()
+        if saved:
+            return os.path.join(saved, "Autosaves", "PackageRestoreData.json"), "the running editor"
+    except Exception:                     # noqa: BLE001 - no bridge module is not a failure here
+        pass
+    return _DDS2_MANIFEST, "the default DDS2 project (no editor is running)"
+
+
+MANIFEST = default_manifest()[0]
 
 # /Temp/ is the engine's home for the unsaved Untitled map a headless session leaves behind; it is as
 # disposable as the /Game/_Mif* assets the suites create.

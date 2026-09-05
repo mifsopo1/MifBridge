@@ -224,6 +224,13 @@ def live_project_dir():
     So the answer comes from the PROCESS, whose command line names the .uproject it opened - the
     same string require_sdk_bridge already matches PROJECT_MARKER against, so this cannot disagree
     with the guard that let the run proceed.
+
+    THERE IS A BETTER SOURCE AND IT IS NOT USED YET, deliberately. The `project_paths` endpoint
+    reports the root from FPaths - the engine's own answer, which beats parsing a command line that
+    could be relative, or omit the .uproject entirely when the editor was started from a shortcut.
+    It is not wired in here because no editor was up to test it against when this was written, and
+    an unverified fallback chain in the helper that exists to stop tools reading the wrong project
+    would be a poor trade. Switch to endpoint-first, command-line-second, once it can be measured.
     """
     pid = bridge_pid()
     if pid is None:

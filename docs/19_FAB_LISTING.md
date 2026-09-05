@@ -204,7 +204,7 @@ not what it was planned to be.
 | # | Shows | State |
 |---|---|---|
 | 1 | An agent wiring and **compiling** a Blueprint, real compiler output mapped to node and pin | needs a scratch project — see below |
-| 2 | The in-editor panel mid-session: live call transcript, timings, the Flag button | **Andre's screenshot** |
+| 2 | The in-editor panel mid-session: live call transcript, timings, the Flag button | **DONE** — Andre, 2026-09-05 |
 | 3 | Blender before/after: `mesh_quality` findings, then `recipe_game_ready`, with the numbers | **`make_demo.py`** |
 | 4 | Round trip — an asset authored in Blender, landing in Unreal | needs a scratch project |
 | 5 | The API refusing a wrong call and naming what it accepts | **`make_api_card.py`** |
@@ -232,9 +232,22 @@ hardcoded, and if the bridge is unreachable it refuses rather than falling back 
 draws a transcript and does **not** imitate the editor's UI: an image that looked like a panel I
 never photographed would be a fabricated screenshot even with genuine text in it.
 
-**Photographed by Andre** — image 2, the panel. I do not take self-initiated screenshots of the
-editor, and there is no honest way around that for a picture of a UI. What is wanted: the panel open
-mid-session with the call transcript populated, timings visible, and the Flag button in frame.
+**Photographed by Andre** — image 2, the panel, delivered 2026-09-05. I do not take self-initiated
+screenshots of the editor, and there is no honest way around that for a picture of a UI. Four shots
+came back and they cover more than was asked:
+
+- **ACTIVITY** — the live transcript with per-call timings and READ / REFUSED / FAILED colouring,
+  header reading `UE 5.7`, `:8791`, 453 endpoints, 10,014 calls. This is the hero shot.
+- **PERFORMANCE** — the tick census over `L_Corram_P`, with its own caveat printed on screen
+  ("this is not a measurement... for real frame attribution, start a trace"). A tool that argues
+  against over-reading its own numbers is worth showing.
+- **INHERITANCE** — 219 blueprints under 45 native roots, and the line "nothing was loaded;
+  registry tags only", which is the read-only claim made visible.
+- **The Flag toast** — "Flagged self_audit. The report is saved locally. File it on GitHub (opens a
+  prefilled issue)." That is the bug-reporting path working end to end.
+
+Worth a second take if there is time: the Flag button itself in frame on the ACTIVITY tab, and a
+couple of green WROTE rows among the READs so the gallery does not imply a read-only product.
 
 **Images 1 and 4 need a scratch project, and the reason is now measured.** Both write — a Blueprint
 to compile, an asset to import — and a session **cannot delete an asset it created**: the editor's
