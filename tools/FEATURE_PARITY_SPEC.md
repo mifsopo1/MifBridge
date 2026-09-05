@@ -12464,6 +12464,36 @@ out-of-process the way ops_gen already does with gen_status.
       MIFBRIDGE-VERSION-LINE marker, so it also catches a stale `v0.8.1`, a missing marker, and a
       malformed line. audit_stale_counts cannot see any of those: it reads numbers next to nouns.
 
+      MEASURED 2026-09-05, BOTH DIRECTIONS, ON A CLEAN TREE. The gap is exactly as described and
+      nothing else is:
+
+        version wrong (v0.9.0 -> v0.7.3), counts correct
+            audit_stale_counts --check   rc=0   does NOT notice
+            check_badge                  ok=False, names it
+        count wrong (453 -> 999), version correct
+            audit_stale_counts --check   rc=1   catches it
+
+      README byte-identical after both, checked with git diff.
+
+      SO THE CHURN OBJECTION IS MOOT, and it was the whole argument for the split. It says gating
+      the badge "makes every op-adding commit also a README commit" - but audit_stale_counts is
+      ALREADY in --gates and already fails on a stale badge COUNT, so an op-adding commit already
+      requires that README edit. Adding check_badge on top costs no churn that is not already being
+      paid; it only adds the version string and the line's structure.
+
+      AND THE OTHER STATED REASON NO LONGER MATCHES REALITY. make_release.py's --gates block says in
+      as many words: "The BADGE is deliberately not here: it is stale between releases BY DESIGN, so
+      including it would make this red almost always and teach everyone to ignore it." Tested:
+      check_badge is GREEN right now, in 0.10s, and the version line reads v0.9.0 at every one of
+      the twelve commits made today. It has not been red once. That premise was probably true before
+      audit_stale_counts existed and has quietly stopped being true since.
+
+      NOT CHANGED, AND DELIBERATELY SO. That comment is a written design decision, not an oversight,
+      and this repo's standing rule is to ask before changing one. What has changed is that the
+      decision can now be made on measurements instead of on an argument: no extra churn, 0.10s,
+      green for twelve consecutive commits, and it closes a gap - a stale version string or a broken
+      marker - that nothing else can see. ANDRE'S CALL.
+
       The question left for Andre is therefore NOT "should the badge be gated" - most of it is -
       but "should the VERSION and the line's shape be gated too". That is a much narrower call,
       and the churn argument is weaker than when this was written, because the op-count churn it
