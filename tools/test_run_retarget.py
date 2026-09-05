@@ -194,15 +194,39 @@ def main():
             print("  success path cannot be reached on DDS2 at all. Curfew (uncooked 5.7) is where it")
             print("  would run for real.")
     finally:
-        # Rigs before the retargeter that references them; delete_asset refuses the other order.
-        for path in reversed(made):
+        # THE REFERENCING ASSET FIRST. `made` is [retargeter, rig0, rig1] and this iterated it
+        # REVERSED, deleting the rigs while the retargeter still pointed at them - delete_asset
+        # correctly refused with "2 live object(s) in memory still reference it", both rigs were
+        # left behind, and T3203 failed every run. The comment here used to claim the opposite
+        # order was required, which is how it survived: a wrong reason written down reads as a
+        # checked one. Referrer first, then what it referred to.
+        undo_held = set()
+        for path in made:
             r = SC.confirm_call("delete_asset", {"path": path})
             if not r.get("ok"):
+                if ((r.get("blockedBy") or {}).get("transactionBuffer")) is True:
+                    undo_held.add(path)
                 print("        cleanup: %s -> %s" % (path, (r.get("error") or "")[:140]))
         left = [a["path"] for a in (M.call("find_assets", {"pathPrefix": "/Game/_MifRT"})
                                     .get("assets") or [])
                 if any(a["path"].startswith(m) for m in made)]
-        check("T3203 (cleanup) what this run made is gone", not left, left)
+        # WHAT IS LEFT FOR A REASON THIS SESSION CANNOT FIX, separated from what leaked. Every
+        # mutating endpoint here opens an FScopedTransaction, so an asset a suite creates and then
+        # modifies is held by the editor's undo history - and delete_asset refuses to clear that on
+        # purpose, because the undo stack is the user's (MifBridgeAssetOps.cpp: "this endpoint will
+        # not clear it; an editor restart releases it"). Asserting it is gone asserts against a
+        # deliberate design decision, and this check failed on EVERY run for that reason - 20 rigs
+        # had piled up in the probe project by the time anyone read the message.
+        #
+        # It is still a real check. Anything left for any OTHER reason is a cleanup defect and
+        # fails, and blockedBy.transactionBuffer is the response's own field, not a string match.
+        stuck = [p for p in left if not any(p.startswith(m) for m in undo_held)]
+        check("T3203 (cleanup) nothing this run made leaked for a fixable reason", not stuck, stuck)
+        if left:
+            print("      NOT A LEAK: %d asset(s) held by the editor's undo history, which"
+                  " delete_asset will not clear by design." % len(left))
+            print("      They go when the editor restarts. Deleting the referencing retargeter")
+            print("      BEFORE the rigs it points at is what got the rest of the way.")
 
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
