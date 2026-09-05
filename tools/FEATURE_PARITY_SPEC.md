@@ -12040,17 +12040,18 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
                                                  join IGNORE beside `batch` and `compile` without
                                                  losing the real compile -> validate claim that
                                                  T840b does compare.
-        apply_spline_to_landscape                REAL. "sculpt_landscape moved 736 vertices through
-          -> sculpt_landscape                    the same interface in the same session", offered as
-                                                 evidence the zero-change measurement is sound
-                                                 rather than a broken harness. Needs an editor with
-                                                 a landscape that has NO edit layers.
-        describe_physics_asset -> set_property   REAL, and "everything else" is the load-bearing
-                                                 word: everything outside disabledPairs and the
-                                                 index numbering is claimed to be an ordinary
-                                                 UPROPERTY that get_property returns in full and
-                                                 set_property tunes. The get_property half IS paired
-                                                 (test_physics_asset.py); this half is not.
+        apply_spline_to_landscape                COMPARED 2026-09-05. The evidence HOLDS -
+          -> sculpt_landscape                    sculpt_landscape moved 335 height samples on a
+                                                 freshly built 31x31 landscape, so a zero from the
+                                                 spline path is a real zero and not a dead harness.
+                                                 The note's other half did not survive: see the
+                                                 create_landscape item below, because the fixture it
+                                                 describes cannot be built on 5.7 at all.
+        describe_physics_asset -> set_property   COMPARED 2026-09-05, and the ROUTE IT GIVES IS
+                                                 WRONG. Two thirds hold; the middle third sends
+                                                 callers to a path that returns pointers. Fixed on
+                                                 pending/source-needs-a-build (84593a9). Detail
+                                                 below.
         set_niagara_emitter -> set_property      COMPARED, and its stated reason is contradicted -
                                                  see the section above. THE TEXT IS FIXED, on
                                                  pending/source-needs-a-build (81a0643): the note
@@ -12062,6 +12063,64 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       SO THE ITEM'S TITLE IS WRONG IN BOTH DIRECTIONS and is left standing as a record of that: it
       was never "two", one of the two was never a claim, and three more existed that nothing had
       ever listed.
+
+      ================================================================================
+      BOTH REMAINING CLAIMS COMPARED 2026-09-05. One is fixed, one uncovered a worse
+      defect in a THIRD endpoint.
+      ================================================================================
+
+      describe_physics_asset -> set_property. Measured against TutorialTPP_PhysicsAsset, 23 bodies,
+      22 constraints, 22 disabledPairs. The note claimed get_property {propertyPath:
+      "SkeletalBodySetups"} "returns the primitives in full, including their transforms and radii":
+
+        get_property{SkeletalBodySetups}                      an array of object reference STRINGS.
+                                                              No transform. No radius.
+        get_property{SkeletalBodySetups[0].AggGeom}           SphylElems=((Rotation=(...),
+                                                              Radius=15.150000,Length=15.150000))
+        set_property{...AggGeom.SphylElems[0].Radius} = 22.5  ok, and reads back 22.500000
+
+      So the primitives ARE reachable and set_property DOES tune them - one level deeper than the
+      note said. A caller following it literally gets a list of pointers and concludes the geometry
+      is not exposed, which is the opposite of what the sentence exists to say. The other two
+      assertions hold and are now checked: CollisionDisableTable is refused by get_property, and the
+      refusal names the property. Corrected on pending/source-needs-a-build (84593a9). Writes ran
+      against a duplicate in the disposable probe; engine content was only read.
+
+      apply_spline_to_landscape -> sculpt_landscape. THE EVIDENCE HOLDS: sculpt_landscape moved 335
+      height samples (verticesTouched, area 0,0..20,20) on a landscape built for the purpose, so the
+      note is right that a zero from the spline path is a real zero rather than a dead harness.
+
+- [ ] **a freshly built landscape reports NO edit layers on 5.7 while having one, and the response says to trust it** (an hour, needs a build)
+      FOUND 2026-09-05 while building the fixture for the claim above. The fixture the note asks for
+      is "a landscape with NO EDIT LAYERS", and the spec's own note beside it said create_landscape
+      "deliberately turns them off". On 5.7 it cannot, and it says it did.
+
+      THREE READINGS OF ONE LANDSCAPE, same actor, same session:
+
+        create_landscape                       "editLayers": []
+        sculpt_landscape                       "'MifProbeLS2' has sculpt edit layers (Layer)"
+        get_property{LandscapeEditLayers}      ((EditLayer="/Script/Landscape.LandscapeEditLayer'..."
+                                                 - NON-EMPTY
+
+      NOT TWO READERS DISAGREEING, which was the first guess and is wrong. EditLayerNames delegates
+      to ReadEditLayers (MifBridgeLandscape.cpp:119-122) and HasEditLayers uses the same function at
+      :155, so there is one source of truth and it is the right one. The read at :447 simply happens
+      TOO EARLY - the landscape has no edit layer at that instant and acquires one before any later
+      call looks. bCanHaveLayersContent is False on the same actor, so the legacy flag is not the
+      signal either.
+
+      WHY IT MATTERS MORE THAN A COSMETIC FIELD. The response is explicitly sold as trustworthy -
+      "WHAT THE LANDSCAPE ACTUALLY HAS, not what was attempted" - and its editLayersNote then tells
+      the caller "no sculpt edit layers - apply_spline_to_landscape works without an editLayer
+      here". On 5.7 that is false, apply_spline_to_landscape will refuse, and sculpt_landscape warns
+      that a merged-heightmap write into a layered landscape is DISCARDED by the next composite. So
+      a caller is told their sculpt landed when it may not have.
+
+      NOT FIXED HERE, deliberately. The fix is to re-read the edit layers after the engine has
+      finished registering the actor, and where exactly that point is cannot be established without
+      building and running the change. Guessing at an engine lifecycle in a write path that cannot
+      be tested is the more expensive mistake; the measurement above is what the next session needs
+      and it did not exist before.
       FOUND 2026-09-03 by `audit_cross_endpoint_claims`, which was not in the release gate then and
       exited 0 either way - so its reading list had never been read.
 
