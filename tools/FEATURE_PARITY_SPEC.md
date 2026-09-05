@@ -11896,6 +11896,38 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       false findings in one run, and only two of the review's thirteen verifier agents survived a
       session limit, so these are unconfirmed by design rather than by neglect.
 
+      ALL FIVE READ 2026-09-04, each independently and each confirmed finding then sent to a
+      verifier told to REFUTE it. TWO OF FIVE SURVIVED, which is why the paragraph above exists:
+
+        set_sequence_keys        CONFIRMED, serious. MifBridgeSequencerWrite.cpp. Two paths.
+                                 With replace:true, Channel->Reset() at :809 clears every
+                                 authored key BEFORE the typed dispatch can reject the channel
+                                 type at :907. Without replace, the per-key loop writes key 1 at
+                                 :904 and then refuses key 2 - a bad object path or a class
+                                 mismatch - at :920 with " NOTHING was changed." appended. The
+                                 caller's animation is gone or half-written and the message says
+                                 otherwise.
+        set_material_parameter   CONFIRMED, serious. Scalars and vectors are applied before the
+                                 texture and switch loops can fail.
+        set_viewport_view        REFUTED - the report describes the code BEFORE ff1f7cd. All
+                                 validation already happens first.
+        _vec3 (ops_lightcam)     REFUTED - it is a pure parser. It reads and returns; it mutates
+                                 nothing, so there is no mutation for a later refusal to deny.
+        op_add_particles         REFUTED twice over - the failure path undoes the creation, AND
+                                 the resolution happens before the mutation anyway.
+
+      DO NOT ROLL THESE BACK WITH Transaction.Cancel(). The verifier checked the engine rather
+      than assuming: UTransBuffer::Cancel broadcasts, ends the operation and pops the undo entry -
+      it never calls FTransaction::Apply(). MifBridgeCommon.cpp:1547 says the same thing in this
+      repo's own words, "FAILURE DISCARDS THE UNDO ENTRY. IT DOES NOT ROLL ANYTHING BACK", and
+      PM-007 is what happened when someone relied on it. The fix is a validation pre-pass ahead of
+      the first mutation, or a refusal that stops claiming nothing changed and reports what landed.
+
+      BOTH SURVIVORS ARE C++ ON WRITE PATHS. A build is available now, but the change is a
+      reordering of validation against mutation on two sequencer/material handlers, and getting it
+      wrong leaves an asset in a different wrong state than before. Wants an editor session and
+      the two payloads above, which the verifier wrote out in full.
+
       THE C++ ONES NEED A REBUILD, which needs the editor closed, so they are blocked the same way
       the accepted-summaries item is. The two Blender ones are not blocked.
 
