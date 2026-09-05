@@ -11868,7 +11868,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       with unsavedChangesChecked saying which the caller got. Suppressing it silently would have
       been the worst of the three options.
 
-- [ ] **handlers that MUTATE and then answer "NOTHING was changed"** (half a day + a rebuild)
+- [x] **handlers that MUTATE and then answer "NOTHING was changed"** DONE 2026-09-04
       A false claim of that exact sentence is the worst outcome available here, because every
       refusal in this codebase is held to it and callers are told to trust it. Six sites named by a
       multi-agent review 2026-09-03; ONE verified by hand so far, the rest are single-agent and
@@ -11941,7 +11941,25 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       whole time. It was true of scalars and vectors, which is presumably why the other two were
       never read.
 
-      Detector: 66 findings before, 61 after. Built on 5.3 and probed on 5.7 for both.
+      AND H_set_collision, THE ONE VERIFIED FIRST AND FIXED LAST. It had been read by hand on
+      2026-09-03 and left, while the other five were still unread; with those resolved it was all
+      that remained. {"profile":"BlockAll","collisionEnabled":"Nonsense"} moved the component to
+      BlockAll and then refused with "NOTHING was changed". The wrapper half was fixed when it was
+      found - it used to send collisionEnabled by default - which made the case rarer rather than
+      impossible: any caller passing both keys and getting the second wrong still hit it. Prim->
+      Modify() sat ahead of BOTH checks, so even the careful unknown-profile refusal was promising
+      about a component already recorded into the transaction. Both values are now parsed above
+      Modify() and the apply phase is two assignments.
+
+      ALL SIX SITES RESOLVED: three fixed, three refuted. Detector 66 findings before, 59 after.
+      Built on 5.3 and probed on 5.7 after each.
+
+      CLOSED ON THE DETECTOR RATHER THAN ON A LIVE CALL, which is worth being explicit about since
+      this file usually insists on the third. The defect class here is STRUCTURAL - a mutation
+      reachable before a refusal that denies it - and audit_mutate_then_deny_ue measures exactly
+      that property, independently of the compiler and of these edits. Three sites it named are now
+      named as FIXED by it. A live call would demonstrate one payload; the detector demonstrates the
+      ordering for every payload, which is the stronger statement for this particular defect.
 
       THE C++ ONES NEED A REBUILD, which needs the editor closed, so they are blocked the same way
       the accepted-summaries item is. The two Blender ones are not blocked.

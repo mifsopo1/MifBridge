@@ -198,8 +198,18 @@ namespace MifBridge
 			return;
 		}
 
-		Prim->Modify();
-
+		// BOTH VALUES CHECKED BEFORE EITHER IS WRITTEN. Until 2026-09-04 the profile was applied
+		// first and the mode parsed afterwards, so
+		//     {"profile":"BlockAll","collisionEnabled":"Nonsense"}
+		// moved the component to BlockAll and then refused with "NOTHING was changed." The wrapper
+		// half was fixed when this was found - it used to send collisionEnabled by default - but
+		// that made the case rarer rather than impossible: any caller passing both keys and getting
+		// the second one wrong still hit it.
+		//
+		// Prim->Modify() was one step earlier still, ahead of BOTH checks, so even the careful
+		// unknown-profile refusal below was promising about a component already recorded into the
+		// transaction.
+		FName ProfileName;
 		if (bWantProfile)
 		{
 			const FString Profile = JStr(In, TEXT("profile"));
@@ -220,13 +230,13 @@ namespace MifBridge
 					*Profile, *FString::Join(Have, TEXT(", "))));
 				return;
 			}
-			Prim->SetCollisionProfileName(FName(*Profile));
+			ProfileName = FName(*Profile);
 		}
 
+		ECollisionEnabled::Type Mode = ECollisionEnabled::QueryAndPhysics;
 		if (bWantEnabled)
 		{
 			const FString E = JStr(In, TEXT("collisionEnabled"));
-			ECollisionEnabled::Type Mode = ECollisionEnabled::QueryAndPhysics;
 			if (E == TEXT("NoCollision"))          { Mode = ECollisionEnabled::NoCollision; }
 			else if (E == TEXT("QueryOnly"))       { Mode = ECollisionEnabled::QueryOnly; }
 			else if (E == TEXT("PhysicsOnly"))     { Mode = ECollisionEnabled::PhysicsOnly; }
@@ -238,8 +248,12 @@ namespace MifBridge
 						 "QueryAndPhysics. NOTHING was changed."), *E));
 				return;
 			}
-			Prim->SetCollisionEnabled(Mode);
 		}
+
+		// --- Apply. Nothing below here can refuse. -------------------------------
+		Prim->Modify();
+		if (bWantProfile) { Prim->SetCollisionProfileName(ProfileName); }
+		if (bWantEnabled) { Prim->SetCollisionEnabled(Mode); }
 
 		Prim->MarkPackageDirty();
 
