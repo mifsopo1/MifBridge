@@ -14971,8 +14971,15 @@ out-of-process the way ops_gen already does with gen_status.
       THE BEHAVIOUR IS RIGHT AND THE EXPLANATION IS LOST, which is the least dangerous version of
       this and still worth fixing: these messages are the part of a refusal that stops somebody
       filing a bug. Wants JNum to pass the composed error through where there is one, falling back
-      to RecordParamTypeViolation only when it is empty. Check the other readers at 2090, 2095 and
-      2113 for the same shape before changing any of them.
+      to RecordParamTypeViolation only when it is empty.
+
+      EXACTLY TWO SITES, CHECKED RATHER THAN ASSUMED. `FString Unused;` appears twice in the file
+      and nowhere else - 2074 in the double reader and 2085 in the whole-number one, which discards
+      the same composed message and then reports "a whole number" or "a WHOLE number (it has a
+      fractional part)". The other two readers are NOT affected and must not be swept in with them:
+      the boolean reader at 2108 calls Value->AsNumber() directly and never asks
+      JsonValueAsNumber for a message, and the array check at 1780 refuses on the JSON type alone
+      before any parse is attempted. Neither has an error to lose.
 
       Needs a rebuild, so it is filed rather than done.
 
