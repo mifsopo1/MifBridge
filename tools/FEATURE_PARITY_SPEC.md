@@ -15732,6 +15732,37 @@ out-of-process the way ops_gen already does with gen_status.
       foliage_modes, load_partition_actors, niagara_params, safety_gate, water_zone. safety_gate
       skips because the session's write mode is 'full' and the gate it tests is deliberately off.
 
+- [ ] **suites written for a cooked project WRITE to real content on an uncooked one**
+      FOUND 2026-09-05 while guarding the first of the 29 cooked-only suites, and it is a bigger
+      problem than the one that item describes.
+
+      test_anim_curve picks the first non-scratch AnimSequence and fires three write endpoints at
+      it, asserting each is REFUSED because the asset is cooked. On DDS2 that holds - every one of
+      its 514 AnimSequences is cooked, so nothing lands. On Curfew nothing is cooked, so the guard
+      never fires and the calls SUCCEED:
+
+        add_anim_curve      ok, curve created on /MetaHumanCharacter/.../AS_MetaHuman_ARKit_Mapping
+        remove_anim_curve   ok, removed:true, keysDestroyed:1, curveCount 1173 -> 1172
+
+      Net content is unchanged - the curve it added is the curve it removed - and nothing was saved,
+      so closing the editor discarded it. But the suite EDITED a real asset in somebody's project to
+      assert a refusal that never came, and list_dirty_packages showed exactly one dirty package
+      afterwards. On a project whose assets are not cooked, "assert this write is refused" is
+      "perform this write".
+
+      THE COOKED-ONLY ITEM BELOW FRAMES THIS AS READABILITY - failures that cannot be told from real
+      regressions. That is true and it is the smaller half. The section guard fixes both at once,
+      because a skipped section performs no calls.
+
+      HOW MANY OF THE 29 DO THIS IS NOT KNOWN. test_anim_curve was the first one guarded and the
+      hazard was found on its first run. Any suite whose cooked assertion is "this WRITE is refused"
+      has the same shape; one whose assertion is "this READ reports cooked" does not. That split has
+      not been measured and is the first thing to do, because it decides whether the remaining 28
+      are a readability job or a safety one.
+
+      DO NOT run the unguarded suites against somebody's uncooked project to find out. Read the
+      assertions.
+
 - [ ] **29 suites can only ever pass on a COOKED project, and most buyers are not on one**
       FOUND 2026-09-05, running the suites against Curfew - uncooked 5.7, 35,725 assets, a real
       game project - for the first time. Andre's prompt was "most of our testing im pretty sure has
