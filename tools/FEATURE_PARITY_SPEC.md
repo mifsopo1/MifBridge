@@ -15885,7 +15885,27 @@ out-of-process the way ops_gen already does with gen_status.
       a few safe sections to the slower treatment and never sends an unsafe one to the fast path. A
       false positive costs a careful edit; a false negative costs a suite that dies at runtime.
 
-      EIGHTEEN LEFT of the 22 with the write shape.
+      TEN MORE WRAPPED 2026-09-05, driven by that audit rather than by a hand-copied list - a copy
+      would drift from the analyser the first time a suite was edited, and judging this by eye is
+      what killed a suite an hour earlier. Bottom-up within each file, because wrapping shifts every
+      line below it.
+
+        consolidate, create_asset, create_struct_init, dependency_edges, geometryscript,
+        level_blueprint, metasound, niagara_emitter, niagara_set_user_param, structs
+
+      FOUR OF THE FOURTEEN WERE REFUSED BY THE APPLIER, not by me: asset_tags T4903,
+      cooked_class_trap T758, lighting_status T4302 and niagara_emitter T6102 each contain a line
+      shallower than the section they start, so the section does not end where the next banner
+      begins. Wrapping those would have re-indented code out of its own scope. They fall back to
+      per-assertion guards with the other nineteen.
+
+      ALL TEN RUN, not merely compile: 199 assertions pass, 0 fail, no tracebacks, on the probe.
+      That distinction is the whole lesson from the reverted attempt - py_compile was happy about
+      the suite that died on UnboundLocalError.
+
+      SO: 14 SECTIONS GUARDED ACROSS 14 SUITES. What remains is the 19 that carry setup plus the 4
+      the applier refused, all needing their cooked ASSERTIONS guarded individually rather than the
+      section wrapped.
 
       MEASURED 2026-09-05 BY READING, NOT RUNNING - tools/audit_cooked_suite_shape.py. It finds every
       check() line mentioning cooked, collects the endpoints called just above it, and classifies

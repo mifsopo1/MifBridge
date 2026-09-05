@@ -94,15 +94,31 @@ def main():
           "%d of %d inputs have no typeName" % (len(ins) - len(typed), len(ins)))
 
     print("")
-    print("=== T742: it read a COOKED asset without taking the editor down ===")
-    # THE test. The engine's own document accessors hard-assert, and this is the asset class that
-    # would have triggered it. Reaching this line at all is most of the result.
-    check("T742 cooked is reported, not guessed at", isinstance(d.get("cooked"), bool), d.get("cooked"))
-    check("T742 the bridge is still answering afterwards",
-          M.call("find_assets", {"class": "MetaSoundSource", "limit": 1}).get("ok") is True,
-          "the editor died reading a cooked MetaSound")
+    # COOKED-ONLY, SKIPPED where nothing is cooked. On an uncooked project the
+    # refusal this asserts never comes, so the assertion fails for the environment
+    # rather than for a defect - and where the call is a write, it lands instead.
+    # Section confirmed self-contained by audit_cooked_section_safety before wrapping.
+    #
+    # `is not False`: project_is_cooked returns None when the question could not be
+    # asked, and an unanswerable question is not a No - None runs this as before.
+    COOKED = M.project_is_cooked()
+    if COOKED is False:
+        print("")
+        print('=== T742 SKIPPED - nothing in this project is cooked ===')
+        print('  This section asserts what an endpoint REFUSES on cooked content. There is nothing cooked')
+        print('  here, so the refusal cannot be provoked - which is not the same as the guard being absent.')
+        print('  Where the call is a WRITE, running it unguarded would perform the write it means to see')
+        print('  refused. Run against a cooked project for this half.')
+    else:
+        print("=== T742: it read a COOKED asset without taking the editor down ===")
+        # THE test. The engine's own document accessors hard-assert, and this is the asset class that
+        # would have triggered it. Reaching this line at all is most of the result.
+        check("T742 cooked is reported, not guessed at", isinstance(d.get("cooked"), bool), d.get("cooked"))
+        check("T742 the bridge is still answering afterwards",
+              M.call("find_assets", {"class": "MetaSoundSource", "limit": 1}).get("ok") is True,
+              "the editor died reading a cooked MetaSound")
 
-    print("")
+        print("")
     print("=== T743: the counts agree with what was serialised ===")
     check("T743 inputCount matches inputs[]", d.get("inputCount") == len(ins),
           "inputCount=%r len(inputs)=%d" % (d.get("inputCount"), len(ins)))

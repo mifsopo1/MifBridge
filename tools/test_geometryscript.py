@@ -156,24 +156,40 @@ def main():
           "original vertexCount=%s, read-back=%s" % (first.get("vertexCount"), still_there.get("vertexCount")))
 
     # ------------------------------------------------------------------ T1011 cooked asset, graceful failure
-    print("\n=== T1011: describe_dynamic_mesh on a REAL cooked DDS2Casino mesh fails gracefully, no crash ===")
-    # Scratch fixtures live under /Game/_Mif*, which can never match a /DDS2Casino/ prefix, and a
-    # COOKED mesh is precisely what T1011 needs - nothing scratch could supply one anyway.
-    # ADOPTION-OK: pathPrefix /DDS2Casino/ is the scope; no suite can put anything in this result.
-    found = M.call("find_assets", {"class": "StaticMesh", "pathPrefix": "/DDS2Casino/", "limit": 1})
-    cooked_assets = found.get("assets") or []
-    if cooked_assets:
-        cooked_path = cooked_assets[0].get("packageName")
-        cooked = M.call("describe_dynamic_mesh", {"path": cooked_path})
-        check("T1011 a cooked mesh reports failure rather than crashing or faking zeros",
-              cooked.get("ok") is False, json.dumps(cooked)[:250])
-        check("T1011 the bridge is still alive immediately after",
-              M.call("self_audit", {}).get("ok") is True, "bridge did not respond after T1011")
+    # COOKED-ONLY, SKIPPED where nothing is cooked. On an uncooked project the
+    # refusal this asserts never comes, so the assertion fails for the environment
+    # rather than for a defect - and where the call is a write, it lands instead.
+    # Section confirmed self-contained by audit_cooked_section_safety before wrapping.
+    #
+    # `is not False`: project_is_cooked returns None when the question could not be
+    # asked, and an unanswerable question is not a No - None runs this as before.
+    COOKED = M.project_is_cooked()
+    if COOKED is False:
+        print("")
+        print('=== T1011 SKIPPED - nothing in this project is cooked ===')
+        print('  This section asserts what an endpoint REFUSES on cooked content. There is nothing cooked')
+        print('  here, so the refusal cannot be provoked - which is not the same as the guard being absent.')
+        print('  Where the call is a WRITE, running it unguarded would perform the write it means to see')
+        print('  refused. Run against a cooked project for this half.')
     else:
-        check("T1011 (skipped) no /DDS2Casino/ StaticMesh found to test against", True,
-              "not a failure - just nothing to exercise this against on this content set")
+        print("\n=== T1011: describe_dynamic_mesh on a REAL cooked DDS2Casino mesh fails gracefully, no crash ===")
+        # Scratch fixtures live under /Game/_Mif*, which can never match a /DDS2Casino/ prefix, and a
+        # COOKED mesh is precisely what T1011 needs - nothing scratch could supply one anyway.
+        # ADOPTION-OK: pathPrefix /DDS2Casino/ is the scope; no suite can put anything in this result.
+        found = M.call("find_assets", {"class": "StaticMesh", "pathPrefix": "/DDS2Casino/", "limit": 1})
+        cooked_assets = found.get("assets") or []
+        if cooked_assets:
+            cooked_path = cooked_assets[0].get("packageName")
+            cooked = M.call("describe_dynamic_mesh", {"path": cooked_path})
+            check("T1011 a cooked mesh reports failure rather than crashing or faking zeros",
+                  cooked.get("ok") is False, json.dumps(cooked)[:250])
+            check("T1011 the bridge is still alive immediately after",
+                  M.call("self_audit", {}).get("ok") is True, "bridge did not respond after T1011")
+        else:
+            check("T1011 (skipped) no /DDS2Casino/ StaticMesh found to test against", True,
+                  "not a failure - just nothing to exercise this against on this content set")
 
-    # ------------------------------------------------------------------ T1020 cylinder
+        # ------------------------------------------------------------------ T1020 cylinder
     print("\n=== T1020: cylinder generation ===")
     cyl_path = base + "/SM_Cylinder"
     rcyl = M.call("create_procedural_mesh", {"path": cyl_path, "shape": "cylinder",

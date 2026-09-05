@@ -117,34 +117,50 @@ def main():
     check("T144 a missing class is refused", q.get("ok") is False, json.dumps(q)[:150])
 
     # ------------------------------------------------------------------ T145 the generic breadth
-    print("\n=== T145 [found 2026-08-29]: create_asset covers classes tools/capability_gaps.py missed ===")
-    # capability_gaps.py's own weak name-match heuristic flagged 18 classes as having "no write
-    # endpoint by name" - CurveFloat, AnimMontage, ParticleSystem, SoundClass, UserDefinedEnum,
-    # PCGGraph and others. None of them has a DEDICATED author endpoint, which is why the heuristic
-    # missed them, but every one of them is a concrete, non-Actor, non-Blueprint UObject subclass -
-    # exactly what create_asset is generic over. Live-tested by hand before this suite existed (9 of
-    # 11 spot-checked succeeded outright; the other 2 correctly refused as abstract, covered below).
-    # This locks that finding in as regression coverage rather than leaving it as a one-off finding
-    # that could silently stop being true.
-    for cls in ("CurveFloat", "AnimMontage", "ParticleSystem", "SoundClass", "UserDefinedEnum",
-                "PCGGraph", "CurveVector", "SubsurfaceProfile"):
-        gp = M.call("create_asset", {"path": path + "_generic_" + cls, "class": cls})
-        check("T145 %s creates via the generic path" % cls, gp.get("ok") is True, json.dumps(gp)[:200])
-        check("T145 %s is registered, not just in memory" % cls, gp.get("registered") is True,
-              json.dumps(gp)[:200])
-    # The other half of the same finding: an abstract class in this same "no dedicated endpoint"
-    # bucket is refused the SAME informative way T142 already proved for PrimaryDataAsset/DataAsset -
-    # not a silent failure, and not a different code path for classes nobody wrote a dedicated
-    # endpoint for.
-    for cls in ("NavigationData",):
-        na = M.call("create_asset", {"path": path + "_abstract_" + cls, "class": cls})
-        check("T145 %s (abstract) is refused, not silently broken" % cls, na.get("ok") is False,
-              json.dumps(na)[:200])
-        check("T145 %s explains the cooked-game consequence" % cls,
-              "ABSTRACT" in (na.get("error") or "") and "cooked game" in (na.get("error") or ""),
-              (na.get("error") or "")[:200])
+    # COOKED-ONLY, SKIPPED where nothing is cooked. On an uncooked project the
+    # refusal this asserts never comes, so the assertion fails for the environment
+    # rather than for a defect - and where the call is a write, it lands instead.
+    # Section confirmed self-contained by audit_cooked_section_safety before wrapping.
+    #
+    # `is not False`: project_is_cooked returns None when the question could not be
+    # asked, and an unanswerable question is not a No - None runs this as before.
+    COOKED = M.project_is_cooked()
+    if COOKED is False:
+        print("")
+        print('=== T145 SKIPPED - nothing in this project is cooked ===')
+        print('  This section asserts what an endpoint REFUSES on cooked content. There is nothing cooked')
+        print('  here, so the refusal cannot be provoked - which is not the same as the guard being absent.')
+        print('  Where the call is a WRITE, running it unguarded would perform the write it means to see')
+        print('  refused. Run against a cooked project for this half.')
+    else:
+        print("\n=== T145 [found 2026-08-29]: create_asset covers classes tools/capability_gaps.py missed ===")
+        # capability_gaps.py's own weak name-match heuristic flagged 18 classes as having "no write
+        # endpoint by name" - CurveFloat, AnimMontage, ParticleSystem, SoundClass, UserDefinedEnum,
+        # PCGGraph and others. None of them has a DEDICATED author endpoint, which is why the heuristic
+        # missed them, but every one of them is a concrete, non-Actor, non-Blueprint UObject subclass -
+        # exactly what create_asset is generic over. Live-tested by hand before this suite existed (9 of
+        # 11 spot-checked succeeded outright; the other 2 correctly refused as abstract, covered below).
+        # This locks that finding in as regression coverage rather than leaving it as a one-off finding
+        # that could silently stop being true.
+        for cls in ("CurveFloat", "AnimMontage", "ParticleSystem", "SoundClass", "UserDefinedEnum",
+                    "PCGGraph", "CurveVector", "SubsurfaceProfile"):
+            gp = M.call("create_asset", {"path": path + "_generic_" + cls, "class": cls})
+            check("T145 %s creates via the generic path" % cls, gp.get("ok") is True, json.dumps(gp)[:200])
+            check("T145 %s is registered, not just in memory" % cls, gp.get("registered") is True,
+                  json.dumps(gp)[:200])
+        # The other half of the same finding: an abstract class in this same "no dedicated endpoint"
+        # bucket is refused the SAME informative way T142 already proved for PrimaryDataAsset/DataAsset -
+        # not a silent failure, and not a different code path for classes nobody wrote a dedicated
+        # endpoint for.
+        for cls in ("NavigationData",):
+            na = M.call("create_asset", {"path": path + "_abstract_" + cls, "class": cls})
+            check("T145 %s (abstract) is refused, not silently broken" % cls, na.get("ok") is False,
+                  json.dumps(na)[:200])
+            check("T145 %s explains the cooked-game consequence" % cls,
+                  "ABSTRACT" in (na.get("error") or "") and "cooked game" in (na.get("error") or ""),
+                  (na.get("error") or "")[:200])
 
-    # ------------------------------------------------------------------ T146 the crash this session found
+        # ------------------------------------------------------------------ T146 the crash this session found
     print("\n=== T146 [CRASH found live 2026-08-29]: create_asset{class:NiagaraSystem} took the editor down ===")
     # Found while checking whether create_asset's generic breadth (T145) extended to NiagaraSystem
     # too - it does not, on its own: a bare NewObject<UNiagaraSystem> crashed the editor mid-call

@@ -113,44 +113,60 @@ def main():
               "create_struct" in note, note[:250])
 
         # -------------------------------------------------- T6212 the diagnosis must stay right
-        print("\n=== T6212: a COOKED struct is still diagnosed as cooked ===")
-        # SELECT FOR THE PROPERTY, DO NOT ASSUME IT. This used to take the first non-scratch
-        # struct find_assets returned and call it cooked - but that filter only excludes scratch
-        # paths, and plenty of project structs have intact EditorData. find_assets' ordering is not
-        # stable, so the suite passed or failed depending on which asset the registry enumerated
-        # first: 14/14 on one run, two failures on the next, reported as NOT REPEAT-SAFE.
+        # COOKED-ONLY, SKIPPED where nothing is cooked. On an uncooked project the
+        # refusal this asserts never comes, so the assertion fails for the environment
+        # rather than for a defect - and where the call is a write, it lands instead.
+        # Section confirmed self-contained by audit_cooked_section_safety before wrapping.
         #
-        # Exactly the order-dependent selection fixed in test_consolidate the same day, written
-        # again here. Probing for the actual refusal costs one call per candidate and cannot drift.
-        c, chosen = None, None
-        for cand in [x["path"] for x in
-                     (M.call("find_assets", {"class": "UserDefinedStruct",
-                                             "limit": 25}).get("assets") or [])
-                     if not M.is_scratch_fixture(x)]:
-            probe = M.raw_post("list_struct_members", {"struct": cand})
-            if probe.get("ok") is False and "COOKED" in (probe.get("error") or ""):
-                c, chosen = probe, cand
-                break
-        if c is not None:
-            print("  (using %s)" % chosen)
-            check("T6212 a cooked struct is refused", c.get("ok") is False, json.dumps(c)[:200])
-            # The regression that matters: splitting the diagnosis must not have broken the arm
-            # that was already correct.
-            check("T6212 and it is still told it is COOKED, not mis-blamed on construction",
-                  "COOKED" in (c.get("error") or ""), (c.get("error") or "")[:220])
-            check("T6212 the cooked message does NOT mention bare NewObject - that is the OTHER "
-                  "cause, and naming both would be no better than naming the wrong one",
-                  "NewObject" not in (c.get("error") or ""), (c.get("error") or "")[:250])
+        # `is not False`: project_is_cooked returns None when the question could not be
+        # asked, and an unanswerable question is not a No - None runs this as before.
+        COOKED = M.project_is_cooked()
+        if COOKED is False:
+            print("")
+            print('=== T6212 SKIPPED - nothing in this project is cooked ===')
+            print('  This section asserts what an endpoint REFUSES on cooked content. There is nothing cooked')
+            print('  here, so the refusal cannot be provoked - which is not the same as the guard being absent.')
+            print('  Where the call is a WRITE, running it unguarded would perform the write it means to see')
+            print('  refused. Run against a cooked project for this half.')
         else:
-            print("  NOTE  no struct in this project is refused as COOKED, so T6212 is unexercised")
-            print("        here. That is reported rather than passed silently - the previous")
-            print("        version would have asserted against whatever asset came back first.")
+            print("\n=== T6212: a COOKED struct is still diagnosed as cooked ===")
+            # SELECT FOR THE PROPERTY, DO NOT ASSUME IT. This used to take the first non-scratch
+            # struct find_assets returned and call it cooked - but that filter only excludes scratch
+            # paths, and plenty of project structs have intact EditorData. find_assets' ordering is not
+            # stable, so the suite passed or failed depending on which asset the registry enumerated
+            # first: 14/14 on one run, two failures on the next, reported as NOT REPEAT-SAFE.
+            #
+            # Exactly the order-dependent selection fixed in test_consolidate the same day, written
+            # again here. Probing for the actual refusal costs one call per candidate and cannot drift.
+            c, chosen = None, None
+            for cand in [x["path"] for x in
+                         (M.call("find_assets", {"class": "UserDefinedStruct",
+                                                 "limit": 25}).get("assets") or [])
+                         if not M.is_scratch_fixture(x)]:
+                probe = M.raw_post("list_struct_members", {"struct": cand})
+                if probe.get("ok") is False and "COOKED" in (probe.get("error") or ""):
+                    c, chosen = probe, cand
+                    break
+            if c is not None:
+                print("  (using %s)" % chosen)
+                check("T6212 a cooked struct is refused", c.get("ok") is False, json.dumps(c)[:200])
+                # The regression that matters: splitting the diagnosis must not have broken the arm
+                # that was already correct.
+                check("T6212 and it is still told it is COOKED, not mis-blamed on construction",
+                      "COOKED" in (c.get("error") or ""), (c.get("error") or "")[:220])
+                check("T6212 the cooked message does NOT mention bare NewObject - that is the OTHER "
+                      "cause, and naming both would be no better than naming the wrong one",
+                      "NewObject" not in (c.get("error") or ""), (c.get("error") or "")[:250])
+            else:
+                print("  NOTE  no struct in this project is refused as COOKED, so T6212 is unexercised")
+                print("        here. That is reported rather than passed silently - the previous")
+                print("        version would have asserted against whatever asset came back first.")
 
-        print("\n  NOT EXERCISED: the 'not cooked and no EditorData' arm. create_asset can no")
-        print("  longer produce that state, which was the point of the fix, so it is unreachable")
-        print("  from here and stays as a defensive branch for other routes into LoadUserStruct.")
+            print("\n  NOT EXERCISED: the 'not cooked and no EditorData' arm. create_asset can no")
+            print("  longer produce that state, which was the point of the fix, so it is unreachable")
+            print("  from here and stays as a defensive branch for other routes into LoadUserStruct.")
 
-        # -------------------------------------------------- T6213 the two routes agree
+            # -------------------------------------------------- T6213 the two routes agree
         print("\n=== T6213: create_asset and create_struct produce the same kind of thing ===")
         b = M.raw_post("create_struct", {"path": "/Game/_MifStruct/S_B%d" % st})
         if b.get("ok"):

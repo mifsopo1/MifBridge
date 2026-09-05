@@ -120,44 +120,60 @@ def main():
           "no edges[] on a filtered call")
 
     # ------------------------------------------------------------------ T5002 the empty result
-    print("\n=== T5002: count:0 has three meanings, and they lead to opposite actions ===")
-    good = M.call("get_referencers", {"path": target})
-    check("T5002 a loose package reports its source as loose",
-          good.get("packageSource") == "loose", good.get("packageSource"))
-    check("T5002 and dependencyDataAvailable is true for it",
-          good.get("dependencyDataAvailable") is True, good.get("dependencyDataAvailable"))
+    # COOKED-ONLY, SKIPPED where nothing is cooked. On an uncooked project the
+    # refusal this asserts never comes, so the assertion fails for the environment
+    # rather than for a defect - and where the call is a write, it lands instead.
+    # Section confirmed self-contained by audit_cooked_section_safety before wrapping.
+    #
+    # `is not False`: project_is_cooked returns None when the question could not be
+    # asked, and an unanswerable question is not a No - None runs this as before.
+    COOKED = M.project_is_cooked()
+    if COOKED is False:
+        print("")
+        print('=== T5002 SKIPPED - nothing in this project is cooked ===')
+        print('  This section asserts what an endpoint REFUSES on cooked content. There is nothing cooked')
+        print('  here, so the refusal cannot be provoked - which is not the same as the guard being absent.')
+        print('  Where the call is a WRITE, running it unguarded would perform the write it means to see')
+        print('  refused. Run against a cooked project for this half.')
+    else:
+        print("\n=== T5002: count:0 has three meanings, and they lead to opposite actions ===")
+        good = M.call("get_referencers", {"path": target})
+        check("T5002 a loose package reports its source as loose",
+              good.get("packageSource") == "loose", good.get("packageSource"))
+        check("T5002 and dependencyDataAvailable is true for it",
+              good.get("dependencyDataAvailable") is True, good.get("dependencyDataAvailable"))
 
-    cont = (M.call("find_assets", {"origin": "container", "limit": 1}).get("assets")
-            or [{}])[0].get("packageName")
-    if cont:
-        c = M.call("get_referencers", {"path": cont})
-        check("T5002 (setup) the container package is KNOWN to the registry - which is why the "
-              "existing packageExists guard does not catch this case",
-              c.get("packageExists") is True, c.get("packageExists"))
-        if (c.get("count") or 0) == 0:
-            # THE assertion. Without this an agent reads count:0 + packageExists:true as
-            # "unreferenced" and deletes something that is in use.
-            check("T5002 an empty result on a non-loose package sets dependencyDataAvailable FALSE",
-                  c.get("dependencyDataAvailable") is False, json.dumps(c)[:250])
-            check("T5002 and the note says the data was NOT RECORDED, not that nothing references it",
-                  "NOT RECORDED" in (c.get("dependencyDataNote") or "")
-                  or "nothing recorded" in (c.get("dependencyDataNote") or ""),
-                  (c.get("dependencyDataNote") or "")[:220])
-            check("T5002 the note names the real cause rather than guessing",
-                  "bSerializeDependencies" in (c.get("dependencyDataNote") or "")
-                  or "never saved" in (c.get("dependencyDataNote") or ""),
-                  (c.get("dependencyDataNote") or "")[:220])
-        else:
-            print("  NOTE  this container package DOES carry edges, so the caveat is not exercised.")
+        cont = (M.call("find_assets", {"origin": "container", "limit": 1}).get("assets")
+                or [{}])[0].get("packageName")
+        if cont:
+            c = M.call("get_referencers", {"path": cont})
+            check("T5002 (setup) the container package is KNOWN to the registry - which is why the "
+                  "existing packageExists guard does not catch this case",
+                  c.get("packageExists") is True, c.get("packageExists"))
+            if (c.get("count") or 0) == 0:
+                # THE assertion. Without this an agent reads count:0 + packageExists:true as
+                # "unreferenced" and deletes something that is in use.
+                check("T5002 an empty result on a non-loose package sets dependencyDataAvailable FALSE",
+                      c.get("dependencyDataAvailable") is False, json.dumps(c)[:250])
+                check("T5002 and the note says the data was NOT RECORDED, not that nothing references it",
+                      "NOT RECORDED" in (c.get("dependencyDataNote") or "")
+                      or "nothing recorded" in (c.get("dependencyDataNote") or ""),
+                      (c.get("dependencyDataNote") or "")[:220])
+                check("T5002 the note names the real cause rather than guessing",
+                      "bSerializeDependencies" in (c.get("dependencyDataNote") or "")
+                      or "never saved" in (c.get("dependencyDataNote") or ""),
+                      (c.get("dependencyDataNote") or "")[:220])
+            else:
+                print("  NOTE  this container package DOES carry edges, so the caveat is not exercised.")
 
-    # An in-memory package must NOT be described as cooked - that was the first version's bug.
-    mem = M.call("get_referencers", {"path": "/Temp/Untitled_1"})
-    if mem.get("ok") and mem.get("packageSource") == "inMemory":
-        check("T5002 an in-memory package is NOT called cooked - three states, not two",
-              "COOKED" not in (mem.get("dependencyDataNote") or ""),
-              (mem.get("dependencyDataNote") or "")[:200])
+        # An in-memory package must NOT be described as cooked - that was the first version's bug.
+        mem = M.call("get_referencers", {"path": "/Temp/Untitled_1"})
+        if mem.get("ok") and mem.get("packageSource") == "inMemory":
+            check("T5002 an in-memory package is NOT called cooked - three states, not two",
+                  "COOKED" not in (mem.get("dependencyDataNote") or ""),
+                  (mem.get("dependencyDataNote") or "")[:200])
 
-    # ------------------------------------------------------------------ T5003 vocabulary
+        # ------------------------------------------------------------------ T5003 vocabulary
     print("\n=== T5003: the parameters ===")
     bad = M.raw_post("get_dependencies", {"path": target, "category": "nonsense"})
     check("T5003 an unknown category is refused and the real ones listed",

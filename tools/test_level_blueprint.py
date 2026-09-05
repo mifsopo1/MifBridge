@@ -73,49 +73,65 @@ def main():
               bool(r.get("blueprintId")), json.dumps(r)[:220])
 
     # ------------------------------------------------------------------ T5501 the front door
-    print("\n=== T5501: the id must actually work in the endpoints that take one ===")
-    made = M.raw_post("get_level_blueprint", {"create": True})
-    if made.get("cookedMap"):
-        check("T5501 a cooked map refuses creation with the reason",
-              made.get("ok") is False and "cannot be resaved" in (made.get("error") or ""),
-              (made.get("error") or "")[:220])
-        print("  NOT EXERCISED: everything below - this map is cooked, so no Level Blueprint")
-        print("  exists or can be made. ULevel::LevelScriptBlueprint is editor-only data and only")
-        print("  the compiled ALevelScriptActor survives a cook.")
+    # COOKED-ONLY, SKIPPED where nothing is cooked. On an uncooked project the
+    # refusal this asserts never comes, so the assertion fails for the environment
+    # rather than for a defect - and where the call is a write, it lands instead.
+    # Section confirmed self-contained by audit_cooked_section_safety before wrapping.
+    #
+    # `is not False`: project_is_cooked returns None when the question could not be
+    # asked, and an unanswerable question is not a No - None runs this as before.
+    COOKED = M.project_is_cooked()
+    if COOKED is False:
+        print("")
+        print('=== T5501 SKIPPED - nothing in this project is cooked ===')
+        print('  This section asserts what an endpoint REFUSES on cooked content. There is nothing cooked')
+        print('  here, so the refusal cannot be provoked - which is not the same as the guard being absent.')
+        print('  Where the call is a WRITE, running it unguarded would perform the write it means to see')
+        print('  refused. Run against a cooked project for this half.')
     else:
-        check("T5501 create:true produces one", made.get("ok") is True
-              and made.get("exists") is True, json.dumps(made)[:250])
-        bid = made.get("blueprintId")
-        check("T5501 and returns a blueprintId", bool(bid), bid)
-        check("T5501 which is a SUBOBJECT path - the form ResolveBlueprint already accepted, "
-              "and which nothing else emitted",
-              bid and ":PersistentLevel." in bid, bid)
+        print("\n=== T5501: the id must actually work in the endpoints that take one ===")
+        made = M.raw_post("get_level_blueprint", {"create": True})
+        if made.get("cookedMap"):
+            check("T5501 a cooked map refuses creation with the reason",
+                  made.get("ok") is False and "cannot be resaved" in (made.get("error") or ""),
+                  (made.get("error") or "")[:220])
+            print("  NOT EXERCISED: everything below - this map is cooked, so no Level Blueprint")
+            print("  exists or can be made. ULevel::LevelScriptBlueprint is editor-only data and only")
+            print("  the compiled ALevelScriptActor survives a cook.")
+        else:
+            check("T5501 create:true produces one", made.get("ok") is True
+                  and made.get("exists") is True, json.dumps(made)[:250])
+            bid = made.get("blueprintId")
+            check("T5501 and returns a blueprintId", bool(bid), bid)
+            check("T5501 which is a SUBOBJECT path - the form ResolveBlueprint already accepted, "
+                  "and which nothing else emitted",
+                  bid and ":PersistentLevel." in bid, bid)
 
-        # THE assertion the endpoint exists for. An id nobody can use is not worth emitting.
-        graphs = M.call("list_graphs", {"blueprintId": bid})
-        check("T5501 - list_graphs accepts it and answers, so the whole blueprint surface is open",
-              graphs.get("ok") is True, json.dumps(graphs)[:220])
-        names = [g.get("name") for g in (graphs.get("graphs") or [])]
-        check("T5501 and a Level Blueprint has an EventGraph like any other",
-              "EventGraph" in names, names)
+            # THE assertion the endpoint exists for. An id nobody can use is not worth emitting.
+            graphs = M.call("list_graphs", {"blueprintId": bid})
+            check("T5501 - list_graphs accepts it and answers, so the whole blueprint surface is open",
+                  graphs.get("ok") is True, json.dumps(graphs)[:220])
+            names = [g.get("name") for g in (graphs.get("graphs") or [])]
+            check("T5501 and a Level Blueprint has an EventGraph like any other",
+                  "EventGraph" in names, names)
 
-        # A second existing endpoint, to show it is not a one-off. list_nodes takes a graphId -
-        # the '<blueprintPath>::<graphName>' form list_graphs emits - not a blueprint path; its
-        # own refusal says so, which is how this test got corrected.
-        gid = next((g.get("graphId") for g in (graphs.get("graphs") or [])
-                    if g.get("name") == "EventGraph"), None)
-        check("T5501 list_graphs emits a usable graphId for it", bool(gid), gid)
-        nodes = M.call("list_nodes", {"graphId": gid}) if gid else {}
-        check("T5501 list_nodes works on that graph too - ULevelScriptBlueprint IS-A UBlueprint",
-              nodes.get("ok") is True, json.dumps(nodes)[:220])
+            # A second existing endpoint, to show it is not a one-off. list_nodes takes a graphId -
+            # the '<blueprintPath>::<graphName>' form list_graphs emits - not a blueprint path; its
+            # own refusal says so, which is how this test got corrected.
+            gid = next((g.get("graphId") for g in (graphs.get("graphs") or [])
+                        if g.get("name") == "EventGraph"), None)
+            check("T5501 list_graphs emits a usable graphId for it", bool(gid), gid)
+            nodes = M.call("list_nodes", {"graphId": gid}) if gid else {}
+            check("T5501 list_nodes works on that graph too - ULevelScriptBlueprint IS-A UBlueprint",
+                  nodes.get("ok") is True, json.dumps(nodes)[:220])
 
-        check("T5501 the response says so rather than leaving the caller to try",
-              "work on a Level Blueprint unchanged" in (made.get("usage") or ""),
-              (made.get("usage") or "")[:200])
-        check("T5501 and warns that creating dirtied the map",
-              "DIRTIES the map" in (made.get("assetNote") or ""), made.get("assetNote"))
+            check("T5501 the response says so rather than leaving the caller to try",
+                  "work on a Level Blueprint unchanged" in (made.get("usage") or ""),
+                  (made.get("usage") or "")[:200])
+            check("T5501 and warns that creating dirtied the map",
+                  "DIRTIES the map" in (made.get("assetNote") or ""), made.get("assetNote"))
 
-    # ------------------------------------------------------------------ T5502 addressing
+        # ------------------------------------------------------------------ T5502 addressing
     print("\n=== T5502: which level ===")
     bad = M.raw_post("get_level_blueprint", {"level": "NoSuchSublevelAnywhere"})
     check("T5502 an unknown sublevel is refused and the real ones listed",

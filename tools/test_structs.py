@@ -121,52 +121,68 @@ def main():
 
     # ------------------------------------------------------------------ T484 the cooked hazard
     print("")
-    print("=== T484 [the hazard]: a real COOKED struct must not take the editor down ===")
-    # SELECT FOR COOKEDNESS, DO NOT ASSUME IT. Skipping scratch is necessary and NOT sufficient:
-    # plenty of project structs under /Game/ have intact EditorData and load perfectly well
-    # (test_set_struct_member names BCE_DeveloperStruct), so a non-scratch pick can easily be an
-    # UNCOOKED struct - and against one of those every read answers normally and T484 goes green
-    # having probed nothing at all. find_assets' ordering is not stable either, so which it got was
-    # luck that could change between runs.
+    # COOKED-ONLY, SKIPPED where nothing is cooked. On an uncooked project the
+    # refusal this asserts never comes, so the assertion fails for the environment
+    # rather than for a defect - and where the call is a write, it lands instead.
+    # Section confirmed self-contained by audit_cooked_section_safety before wrapping.
     #
-    # This is the fix the previous comment here described and deferred - "doing the same here is the
-    # stronger fix and is filed rather than done". It is done now, mirroring test_set_struct_member:
-    # one read per candidate, and only a struct that actually REFUSES as cooked is used. The probe
-    # costs a read and cannot drift, because it asks the question rather than inferring it from a
-    # path.
-    cooked = None
-    for _a in (M.call("find_assets", {"class": "UserDefinedStruct", "pathPrefix": "/Game/",
-                                      "limit": 25}).get("assets") or []):
-        _p = _a.get("path") or ""
-        if not _p or _p.startswith(SC.SCRATCH_PREFIXES):
-            continue
-        _probe = M.raw_post("list_struct_members", {"struct": _p})
-        if _probe.get("ok") is False and "COOKED" in (_probe.get("error") or ""):
-            cooked = _p
-            break
-    if cooked:
-        print("   using %s" % cooked)
-        # gotchas 6c: a CastChecked on cooked editor data terminates the process - not an error, a dead
-        # editor. The reads must answer or refuse; either is fine, dying is not.
-        for ep, payload in (("list_struct_members", {"struct": cooked}),
-                            ("resolve_struct", {"name": cooked.split("/")[-1].split(".")[0]})):
-            r = M.call(ep, payload, timeout=60)
-            check("T484 %s answers on a cooked struct" % ep, isinstance(r.get("ok"), bool),
-                  json.dumps(r)[:180])
-            check("T484 and the editor survived %s" % ep, M.bridge_responsive() is True,
-                  "the bridge stopped answering - a CastChecked on cooked editor data is fatal")
+    # `is not False`: project_is_cooked returns None when the question could not be
+    # asked, and an unanswerable question is not a No - None runs this as before.
+    COOKED = M.project_is_cooked()
+    if COOKED is False:
+        print("")
+        print('=== T484 SKIPPED - nothing in this project is cooked ===')
+        print('  This section asserts what an endpoint REFUSES on cooked content. There is nothing cooked')
+        print('  here, so the refusal cannot be provoked - which is not the same as the guard being absent.')
+        print('  Where the call is a WRITE, running it unguarded would perform the write it means to see')
+        print('  refused. Run against a cooked project for this half.')
     else:
-        # RECORDED AS A SKIP, and deliberately still a passing row rather than a failure: a project
-        # with no cooked UserDefinedStruct is a legitimate place to run this suite (an uncooked 5.7
-        # project has none by construction), and failing there would make the suite unrunnable
-        # outside DDS2. What changed is that this line now means something specific - 25 candidates
-        # were ASKED and none refused as cooked - where before it only meant find_assets returned
-        # nothing pickable.
-        check("T484 (not exercised: no struct under /Game/ refused as COOKED, so the fatal-cast "
-              "guard has nothing to be proven against here)", True)
+        print("=== T484 [the hazard]: a real COOKED struct must not take the editor down ===")
+        # SELECT FOR COOKEDNESS, DO NOT ASSUME IT. Skipping scratch is necessary and NOT sufficient:
+        # plenty of project structs under /Game/ have intact EditorData and load perfectly well
+        # (test_set_struct_member names BCE_DeveloperStruct), so a non-scratch pick can easily be an
+        # UNCOOKED struct - and against one of those every read answers normally and T484 goes green
+        # having probed nothing at all. find_assets' ordering is not stable either, so which it got was
+        # luck that could change between runs.
+        #
+        # This is the fix the previous comment here described and deferred - "doing the same here is the
+        # stronger fix and is filed rather than done". It is done now, mirroring test_set_struct_member:
+        # one read per candidate, and only a struct that actually REFUSES as cooked is used. The probe
+        # costs a read and cannot drift, because it asks the question rather than inferring it from a
+        # path.
+        cooked = None
+        for _a in (M.call("find_assets", {"class": "UserDefinedStruct", "pathPrefix": "/Game/",
+                                          "limit": 25}).get("assets") or []):
+            _p = _a.get("path") or ""
+            if not _p or _p.startswith(SC.SCRATCH_PREFIXES):
+                continue
+            _probe = M.raw_post("list_struct_members", {"struct": _p})
+            if _probe.get("ok") is False and "COOKED" in (_probe.get("error") or ""):
+                cooked = _p
+                break
+        if cooked:
+            print("   using %s" % cooked)
+            # gotchas 6c: a CastChecked on cooked editor data terminates the process - not an error, a dead
+            # editor. The reads must answer or refuse; either is fine, dying is not.
+            for ep, payload in (("list_struct_members", {"struct": cooked}),
+                                ("resolve_struct", {"name": cooked.split("/")[-1].split(".")[0]})):
+                r = M.call(ep, payload, timeout=60)
+                check("T484 %s answers on a cooked struct" % ep, isinstance(r.get("ok"), bool),
+                      json.dumps(r)[:180])
+                check("T484 and the editor survived %s" % ep, M.bridge_responsive() is True,
+                      "the bridge stopped answering - a CastChecked on cooked editor data is fatal")
+        else:
+            # RECORDED AS A SKIP, and deliberately still a passing row rather than a failure: a project
+            # with no cooked UserDefinedStruct is a legitimate place to run this suite (an uncooked 5.7
+            # project has none by construction), and failing there would make the suite unrunnable
+            # outside DDS2. What changed is that this line now means something specific - 25 candidates
+            # were ASKED and none refused as cooked - where before it only meant find_assets returned
+            # nothing pickable.
+            check("T484 (not exercised: no struct under /Game/ refused as COOKED, so the fatal-cast "
+                  "guard has nothing to be proven against here)", True)
 
-    # ------------------------------------------------------------------ T485 guards
-    print("")
+        # ------------------------------------------------------------------ T485 guards
+        print("")
     print("=== T485: bad references are refused ===")
     q = M.call("add_struct_member", {"struct": "/Game/NoSuchStruct_zz", "name": "X", "type": "float"})
     check("T485 a struct that does not exist is refused", q.get("ok") is False, json.dumps(q)[:180])

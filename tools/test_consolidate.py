@@ -121,34 +121,50 @@ def main():
           (notgt.get("error") or "")[:180])
 
     # ------------------------------------------------------------------ T5101 cooked
-    print("\n=== T5101: a reference inside a pak cannot be rewritten ===")
-    cooked = None
-    for i in range(len(mats)):
-        for j in range(len(mats)):
-            if i == j:
-                continue
-            c = M.call("check_consolidate_assets", {"target": mats[i], "sources": [mats[j]]})
-            if (c.get("blockedBy") or {}).get("cookedReferencers"):
-                cooked = c
+    # COOKED-ONLY, SKIPPED where nothing is cooked. On an uncooked project the
+    # refusal this asserts never comes, so the assertion fails for the environment
+    # rather than for a defect - and where the call is a write, it lands instead.
+    # Section confirmed self-contained by audit_cooked_section_safety before wrapping.
+    #
+    # `is not False`: project_is_cooked returns None when the question could not be
+    # asked, and an unanswerable question is not a No - None runs this as before.
+    COOKED = M.project_is_cooked()
+    if COOKED is False:
+        print("")
+        print('=== T5101 SKIPPED - nothing in this project is cooked ===')
+        print('  This section asserts what an endpoint REFUSES on cooked content. There is nothing cooked')
+        print('  here, so the refusal cannot be provoked - which is not the same as the guard being absent.')
+        print('  Where the call is a WRITE, running it unguarded would perform the write it means to see')
+        print('  refused. Run against a cooked project for this half.')
+    else:
+        print("\n=== T5101: a reference inside a pak cannot be rewritten ===")
+        cooked = None
+        for i in range(len(mats)):
+            for j in range(len(mats)):
+                if i == j:
+                    continue
+                c = M.call("check_consolidate_assets", {"target": mats[i], "sources": [mats[j]]})
+                if (c.get("blockedBy") or {}).get("cookedReferencers"):
+                    cooked = c
+                    break
+            if cooked:
                 break
         if cooked:
-            break
-    if cooked:
-        check("T5101 a cooked referencer blocks the consolidation",
-              cooked.get("canConsolidate") is False
-              and len(cooked["blockedBy"]["cookedReferencers"]) > 0,
-              json.dumps(cooked["blockedBy"]["cookedReferencers"])[:220])
-        # THE assertion: it names WHICH package, not just that something was cooked.
-        check("T5101 and names the offending package, so the caller can see what stopped it",
-              cooked["blockedBy"]["cookedReferencers"][0].startswith("/"),
-              cooked["blockedBy"]["cookedReferencers"][0])
-        check("T5101 with a note saying a success there would vanish on restart",
-              "restart" in (cooked.get("cookedNote") or ""), (cooked.get("cookedNote") or "")[:200])
-    else:
-        print("  NOTE  no cooked referencer found among these materials, so that branch is")
-        print("        unexercised in this run.")
+            check("T5101 a cooked referencer blocks the consolidation",
+                  cooked.get("canConsolidate") is False
+                  and len(cooked["blockedBy"]["cookedReferencers"]) > 0,
+                  json.dumps(cooked["blockedBy"]["cookedReferencers"])[:220])
+            # THE assertion: it names WHICH package, not just that something was cooked.
+            check("T5101 and names the offending package, so the caller can see what stopped it",
+                  cooked["blockedBy"]["cookedReferencers"][0].startswith("/"),
+                  cooked["blockedBy"]["cookedReferencers"][0])
+            check("T5101 with a note saying a success there would vanish on restart",
+                  "restart" in (cooked.get("cookedNote") or ""), (cooked.get("cookedNote") or "")[:200])
+        else:
+            print("  NOTE  no cooked referencer found among these materials, so that branch is")
+            print("        unexercised in this run.")
 
-    # ------------------------------------------------------------------ T5102 the split + trap
+        # ------------------------------------------------------------------ T5102 the split + trap
     print("\n=== T5102: the preview is never gated; the act always is ===")
     mode = M.write_mode()
 

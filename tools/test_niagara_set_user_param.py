@@ -99,33 +99,49 @@ def main():
               (add.get("error") or "")[:220])
 
         # ------------------------------------------------------------------ T8301 cooked
-        print("\n=== T8301: cooked is refused for persistence, NOT for safety ===")
-        if cooked:
-            path, listing = cooked
-            pname = (listing.get("parameters") or [{}])[0].get("name") or "User.Unknown"
-            w = M.raw_post("set_niagara_user_parameter", {"path": path, "name": pname,
-                                                          "value": 0.5})
-            check("T8301 writing a cooked system is refused", w.get("ok") is False,
-                  json.dumps(w)[:200])
-            # THE assertion. A refusal blaming a crash would invite someone to remove a guard the
-            # engine does not need; the true reason is that the change cannot outlive the session.
-            check("T8301 and the reason is that it cannot be SAVED or recompiled, not that it would "
-                  "crash",
-                  "cannot be SAVED" in (w.get("error") or "")
-                  and "recompiled" in (w.get("error") or ""), (w.get("error") or "")[:260])
-            check("T8301 it says explicitly that the write itself would succeed, so nobody 'fixes' "
-                  "this by adding a safety guard",
-                  "would succeed" in (w.get("error") or ""), (w.get("error") or "")[:260])
-            # And the read must still work on the same asset - the refusal is about writing only.
-            still = M.raw_post("list_niagara_user_parameters", {"path": path})
-            check("T8301 the cooked system is still READABLE - only the write is refused",
-                  still.get("ok") is True and (still.get("count") or 0) > 0,
-                  json.dumps(still)[:200])
+        # COOKED-ONLY, SKIPPED where nothing is cooked. On an uncooked project the
+        # refusal this asserts never comes, so the assertion fails for the environment
+        # rather than for a defect - and where the call is a write, it lands instead.
+        # Section confirmed self-contained by audit_cooked_section_safety before wrapping.
+        #
+        # `is not False`: project_is_cooked returns None when the question could not be
+        # asked, and an unanswerable question is not a No - None runs this as before.
+        COOKED = M.project_is_cooked()
+        if COOKED is False:
+            print("")
+            print('=== T8301 SKIPPED - nothing in this project is cooked ===')
+            print('  This section asserts what an endpoint REFUSES on cooked content. There is nothing cooked')
+            print('  here, so the refusal cannot be provoked - which is not the same as the guard being absent.')
+            print('  Where the call is a WRITE, running it unguarded would perform the write it means to see')
+            print('  refused. Run against a cooked project for this half.')
         else:
-            print("  NOTE  no cooked NiagaraSystem here exposes a user parameter, so T8301 is")
-            print("        unexercised. Reported rather than passed silently.")
+            print("\n=== T8301: cooked is refused for persistence, NOT for safety ===")
+            if cooked:
+                path, listing = cooked
+                pname = (listing.get("parameters") or [{}])[0].get("name") or "User.Unknown"
+                w = M.raw_post("set_niagara_user_parameter", {"path": path, "name": pname,
+                                                              "value": 0.5})
+                check("T8301 writing a cooked system is refused", w.get("ok") is False,
+                      json.dumps(w)[:200])
+                # THE assertion. A refusal blaming a crash would invite someone to remove a guard the
+                # engine does not need; the true reason is that the change cannot outlive the session.
+                check("T8301 and the reason is that it cannot be SAVED or recompiled, not that it would "
+                      "crash",
+                      "cannot be SAVED" in (w.get("error") or "")
+                      and "recompiled" in (w.get("error") or ""), (w.get("error") or "")[:260])
+                check("T8301 it says explicitly that the write itself would succeed, so nobody 'fixes' "
+                      "this by adding a safety guard",
+                      "would succeed" in (w.get("error") or ""), (w.get("error") or "")[:260])
+                # And the read must still work on the same asset - the refusal is about writing only.
+                still = M.raw_post("list_niagara_user_parameters", {"path": path})
+                check("T8301 the cooked system is still READABLE - only the write is refused",
+                      still.get("ok") is True and (still.get("count") or 0) > 0,
+                      json.dumps(still)[:200])
+            else:
+                print("  NOTE  no cooked NiagaraSystem here exposes a user parameter, so T8301 is")
+                print("        unexercised. Reported rather than passed silently.")
 
-        # ------------------------------------------------------------------ T8302 ordinary guards
+            # ------------------------------------------------------------------ T8302 ordinary guards
         print("\n=== T8302: the guards around the type dispatch ===")
         notsys = M.raw_post("set_niagara_user_parameter", {
             "path": "/Engine/EngineMaterials/WorldGridMaterial.WorldGridMaterial",
