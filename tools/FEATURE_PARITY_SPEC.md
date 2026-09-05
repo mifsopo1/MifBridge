@@ -15360,7 +15360,7 @@ out-of-process the way ops_gen already does with gen_status.
       a knob that turns nothing. All three have been corrected. Verified after the fix: a fresh
       world reports contributesLight true, backgroundConnected true, blockers [].
 
-- [ ] **13 messages declare a leftover and do not say it is permanent**
+- [x] **13 messages declare a leftover and do not say it is permanent** - it was SIX
       FOUND 2026-09-05 by fixing ONE of them, then counting. recipe_add_debug_print has two failure
       paths out of the same request and only one was honest:
 
@@ -15398,6 +15398,32 @@ out-of-process the way ops_gen already does with gen_status.
       Cancel is reached at all. Seventeen small readings, not one regex.
 
       The one fixed here qualified on evidence its sibling path already carried.
+
+      ================================================================================
+      DONE 2026-09-05, AND THE COUNT IN THE HEADING WAS WRONG.
+      ================================================================================
+      SIX OF THE THIRTEEN ARE CODE COMMENTS, not messages. The survey grepped for "LEFT BEHIND" and
+      counted the places that DISCUSS the phrase alongside the places that emit it - in
+      MifBridgeCooked, MifBridgeExport, MifBridgeMaterials, MifBridgeNodes:2810, MifBridgeNodes3:298
+      and MifBridgePipeline. audit_suite_payloads' strip_py_comments exists because of exactly this
+      and says so: "a grep for a word finds the places that USE it and the places that DISCUSS it."
+      This item made that mistake while quoting the rule elsewhere in the same file.
+
+      Seven real messages. create_struct is left alone - it already explains its own consequence
+      better than a generic clause would ("unregistered and unsaved, but retrying at the SAME path
+      in this editor session will meet the existing object"). Six were changed.
+
+      THE CLAUSE IS TRUE FOR ALL SIX, and this was the item's stated blocker rather than an
+      afterthought. It worried that adding "a cancel would only discard the undo entry" where no
+      cancel happens would be a FALSE explanation of a real consequence - worse than the silence it
+      replaces. Settled from the dispatch: none of these endpoints is readOnly and none is in
+      IsSelfManagedEndpoint, so RunEndpoint wraps each in its blanket FScopedTransaction
+      (MifBridgeCommon.cpp:1544) and calls Transaction.Cancel() on failure (:1577) - and the comment
+      at :1547 documents that Cancel pops the undo entry and never calls FTransaction::Apply. The
+      sentence is accurate at every one of the six.
+
+      add_pin x2, add_reroute, add_widget_animation_track x2, add_widget_animation. Both engines
+      rebuilt and re-recorded; 5.3 verified with buildcheck, 5.7 probe Result: Succeeded.
 
 - [ ] **a session cannot delete an asset it created, and nothing can flush the undo buffer**
       DIAGNOSED 2026-09-05, and it settles test_socket_authoring's T3104 - the failure the
