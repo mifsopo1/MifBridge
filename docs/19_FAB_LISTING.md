@@ -5,9 +5,13 @@
 # Selling MifBridge on Fab — the submission, and what is still open
 
 **Status as of 2026-09-05. `fab_readiness --check` PASSES.** Every clause it can judge is green,
-all four decisions are made and recorded, and the package is 144 files and 2.1 MB. What remains
-before posting is the gallery, and two things you do AT upload rather than before it: tick
-CreatedWithAI in the Fab portal, and put `git rev-parse HEAD` into `publishedCommit`.
+all four decisions are made and recorded, and the package is 144 files and 2.1 MB.
+
+**The gallery is no longer the blocker.** Three images generate themselves and check their own
+output — the Blender before/after, the API refusal card, and three renders from a real UE 5.7
+project. What is left is **one screenshot only Andre can take** (the in-editor panel, image 2), and
+two things you do AT upload rather than before it: tick CreatedWithAI in the Fab portal, and put
+`git rev-parse HEAD` into `publishedCommit`. Section 5 says which is which and why.
 
 Getting to a passing run meant correcting two checks rather than changing the package, and both are
 worth knowing about because either would have looked like a package defect:
@@ -192,34 +196,58 @@ every authored key on a channel and then said *"NOTHING was changed"*), `set_mat
 `set_collision`. All three fixed by moving validation above the first mutation rather than trying to
 undo one afterwards. The detector went from 66 findings to 59.
 
-## 5. The gallery — the only thing left before posting
+## 5. The gallery
 
-Fab lists on its images, and this is now the sole blocker.
+Fab lists on its images. Three of the five exist now; the state below is what each one actually is,
+not what it was planned to be.
 
 | # | Shows | State |
 |---|---|---|
-| 1 | An agent wiring and **compiling** a Blueprint, with the real compiler output mapped to node and pin | needs a free editor |
-| 2 | The in-editor panel mid-session: live call transcript, timings, the Flag button | needs a free editor |
-| 3 | Blender before/after: `mesh_quality` findings, then `recipe_game_ready`, with the numbers on it | **`make_demo.py` generates this today** |
-| 4 | Round trip — an asset authored in Blender, landing in Unreal | needs both |
-| 5 | `describe_endpoint` answering, to make the point that the API documents itself | needs a free editor |
+| 1 | An agent wiring and **compiling** a Blueprint, real compiler output mapped to node and pin | needs a scratch project — see below |
+| 2 | The in-editor panel mid-session: live call transcript, timings, the Flag button | **Andre's screenshot** |
+| 3 | Blender before/after: `mesh_quality` findings, then `recipe_game_ready`, with the numbers | **`make_demo.py`** |
+| 4 | Round trip — an asset authored in Blender, landing in Unreal | needs a scratch project |
+| 5 | The API refusing a wrong call and naming what it accepts | **`make_api_card.py`** |
+| 6 | MifBridge driving a real project on stock UE 5.7 | **`make_ue_demo.py`** — 3 kept |
 
-**Two constraints settled on 2026-09-05, and they resolve each other.**
+**The plan's central assumption was wrong, and it is worth writing down rather than quietly
+fixing.** It said the images would be made by the plugin doing its job — `capture_viewport` is an
+endpoint, so no screenshot tool is pointed at anyone's window. That holds for a 3D scene and does
+not survive contact with images 1, 2 and 5: the panel, the compiler output and `describe_endpoint`'s
+answer are **UI and text**, and no capture endpoint can photograph those. A render of the level
+shows *Curfew*. It does not show *MifBridge*.
 
-The scene must be **our own IP** — using another studio's content in marketing is the same §3(g)(i)
-problem as shipping its name in a string. And I do not take self-initiated screenshots of the
-editor.
+So the gallery splits three ways by what can honestly produce each image:
 
-**Curfew answers both.** It is Andre's own uncooked 5.7 project with 35,725 assets, so shots from it
-are ours to publish, and they show MifBridge as a **general UE5 tool** rather than a DDS2 mod utility
-— which is the listing's whole argument. `capture_viewport` is an endpoint, so the images are made
-by the plugin doing its job rather than by pointing a screenshot tool at a window. Demoing the
-product by using the product is the honest version of a gallery.
+**Rendered from the scene** — `make_ue_demo.py`, image 6. Read-only: no actor spawned, no package
+dirtied, no viewport moved. Against Curfew on stock 5.7 it kept 3 of 3 shots at 1280×720. It also
+excludes scratch fixtures via `is_scratch_fixture`, which is not tidiness — a sweep leaves fixtures
+in whatever level is open, and this session left 116 in that map.
 
-`make_demo.py` produces image 3 end to end and checks its own output. Its subject is now a bevelled
-barrel with a steel material rather than a grey cylinder — a shape a buyer recognises — while the
-defects it measures (ngon caps, unapplied non-uniform scale) are untouched, because a demo that
-tidied away its own defects would be showing a tool solving a problem it had already removed.
+**Drawn from captured output** — `make_api_card.py`, image 5, and it is the strongest one on the
+page. Every UE automation tool can spawn an actor; what a buyer is choosing between is what happens
+when the call is **wrong**, because that is where an agent spends its time. The card sends three
+deliberately wrong parameters to read-only endpoints and renders the refusals verbatim — nothing is
+hardcoded, and if the bridge is unreachable it refuses rather than falling back to text I typed. It
+draws a transcript and does **not** imitate the editor's UI: an image that looked like a panel I
+never photographed would be a fabricated screenshot even with genuine text in it.
+
+**Photographed by Andre** — image 2, the panel. I do not take self-initiated screenshots of the
+editor, and there is no honest way around that for a picture of a UI. What is wanted: the panel open
+mid-session with the call transcript populated, timings visible, and the Flag button in frame.
+
+**Images 1 and 4 need a scratch project, and the reason is now measured.** Both write — a Blueprint
+to compile, an asset to import — and a session **cannot delete an asset it created**: the editor's
+transaction buffer holds it, and the bridge binds undo/redo but nothing that clears the buffer. So
+generating them in Curfew would leave undeletable junk in Andre's game. They belong in a throwaway
+project, which also makes the shots reproducible.
+
+### Should Curfew appear on a public listing at all?
+
+It is Andre's own IP, so there is no §3(g)(i) problem — that was the reason for choosing it over the
+DDS2 fork, whose content is another studio's. The remaining question is not legal: image 6 shows an
+**unannounced game's greybox**. That is Andre's call, and the listing does not depend on it — images
+3 and 5 carry the argument on their own.
 
 ## 6. The listing copy
 

@@ -67,7 +67,7 @@ HARNESS = {"confirm", "save", "force", "overwrite", "replaceexisting", "discardu
 # missed, and it cost on 2026-09-05: make_ue_demo sent capture_camera{path}, a key that endpoint does
 # not accept, and nothing static saw it.
 EXTRA_CALLERS = ("make_demo.py", "make_ue_demo.py", "verify_install.py", "scratch_confirm.py",
-                 "bench_bridge_latency.py")
+                 "bench_bridge_latency.py", "make_api_card.py")
 
 
 def scanned_files(here):
@@ -306,6 +306,12 @@ def main():
     print("               attempted on 2026-09-05 and reverted: merging the addon accept-lists in")
     print("               produced 64 findings on a clean tree naming keys those ops demonstrably")
     print("               DO accept, and the cause was not found. See FEATURE_PARITY_SPEC.")
+    print("  NOT covered  TABLE-DRIVEN payloads - a list of (endpoint, payload) tuples fed to a")
+    print("               loop. Every pattern here wants the payload literal AT the call site, so a")
+    print("               table is invisible. make_api_card.py's PROBES is that shape, and putting")
+    print("               that file in EXTRA_CALLERS does NOT make its payloads judged. Said out")
+    print("               loud because the file IS in the scanned list, which otherwise reads as")
+    print("               coverage it does not have.")
     print("  NOT covered  %s Blender addon ops - this tool does not read tools/blender-addon at"
           % (_ops or "the"))
     print("               all, so the verdict above is about the UE half only.")
