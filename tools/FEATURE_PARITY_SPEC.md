@@ -15059,6 +15059,70 @@ out-of-process the way ops_gen already does with gen_status.
       supplied a set. Print `allowed` and `m.group(0)` together in the scan loop and it will be
       obvious in one run.
 
+- [ ] **set_keyframe and evaluate_at_frame resolve the same dataPath against different datablocks**
+      FOUND 2026-09-05, one minute after the set_world finding and in the same investigation.
+
+        set_keyframe {object: "Lamp_Hall00", dataPath: "energy", value: 780}   -> ok, and correct
+        list_keyframes {object: "Lamp_Hall00"}  -> curves[0].target == "data", dataPath "energy"
+        evaluate_at_frame {object: "Lamp_Hall00", dataPaths: ["energy"]}
+            -> values.energy.error = 'Object.path_resolve("energy") could not be resolved'
+
+      set_keyframe is RIGHT: a light's energy lives on the light datablock, it writes there, and
+      list_keyframes reports target "data" so the two agree. evaluate_at_frame resolves the same
+      string against the OBJECT and fails.
+
+      So the obvious way to answer "what will this lamp's energy be at frame 700" - the question the
+      keyframe op exists to create, asked of the op named for answering it - does not work, and the
+      failure is a path_resolve error rather than a hint. A caller has to already know that one op
+      means data.energy and its sibling means object.energy.
+
+      WHAT IT COST: nothing here, because the darkness had another cause. It is filed because it is
+      the SAME defect class as the set_world item above - two endpoints disagreeing about the same
+      string - and because a keyframe you cannot evaluate is a keyframe you cannot verify, which
+      matters for every animated showcase this repo builds.
+
+      THE FIX IS PROBABLY ONE LINE: try the object, then its data, the way set_keyframe already
+      does. Failing that, say so - "energy is on the light data; evaluate_at_frame reads the object"
+      is a hint, and the current message is a stack-trace fragment.
+
+- [ ] **set_world reports ok:true for a write that changes no light, and world_info knows**
+      FOUND 2026-09-05 building the bunker showcase, by reading a field I had not thought to read.
+
+        set_world {color, strength}            -> ok:true
+        set_world {color, strength, useAsLight:true} -> ok:true
+        world_info                             -> contributesLight: false
+                                                  blockers: ["the Background node exists but is NOT
+                                                  connected to the world output, so every value on
+                                                  it is inert - it accepts writes and changes no
+                                                  light."]
+
+      TWO ENDPOINTS DISAGREE ABOUT THE SAME WRITE. One says it worked; the other says it cannot
+      matter, and says so in a purpose-built field with a purpose-built explanation. The diagnosis
+      already exists and is excellent - what is missing is that the endpoint DOING the write never
+      consults it.
+
+      WHY IT MATTERS MORE THAN IT LOOKS. A caller tuning ambient light gets a plausible number back
+      on every call and no change in any render. There is no failure to investigate, so the natural
+      conclusion is that the value is wrong and the natural response is to try another one. I spent
+      several renders tuning a knob that turns nothing, and the only reason I stopped is that I
+      happened to call world_info for an unrelated reason.
+
+      THE SHAPE IS FAMILIAR AND IS WHY THIS IS FILED RATHER THAN SHRUGGED AT. It is the Blender-side
+      twin of the mutate-then-deny family: a handler that reports the operation it performed rather
+      than the outcome it achieved. "ok:true is not proof" is this repo's rule for UE and there is no
+      reason the addon should be held to a weaker one.
+
+      THREE WAYS FORWARD, and the first is the cheap one:
+        * set_world CONNECTS the Background node when it is not connected. That is what the caller
+          asked for, and refusing to wire up the thing being configured is surprising.
+        * or it REFUSES, naming the same blocker world_info already names, so the caller learns at
+          the call rather than never.
+        * or, at minimum, it returns contributesLight in its OWN response, so a caller who checks
+          the reply learns without knowing that a second endpoint exists.
+
+      DO NOT "fix" this by having callers call world_info afterwards. That is what the bunker's
+      stage 4 does now as a stopgap and it only works for callers who already know to.
+
 - [ ] **13 messages declare a leftover and do not say it is permanent**
       FOUND 2026-09-05 by fixing ONE of them, then counting. recipe_add_debug_print has two failure
       paths out of the same request and only one was honest:

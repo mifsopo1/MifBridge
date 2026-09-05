@@ -90,10 +90,24 @@ def clear_previous():
     # lie later on.
     doomed = [o["name"] for o in objs
               if o.get("name", "").startswith(("Lamp_", "Bulb_", "Emg_", "Peek_", "Measure_"))]
-    for n in doomed:
-        S.call("delete_object", {"object": n})
+    # purgeOrphans IS THE WHOLE FIX, and leaving it off cost stage 5 outright.
+    #
+    # delete_object frees the OBJECT and leaves its light DATA-BLOCK behind with no users. The next
+    # create_light asking for "Lamp_Hall02" then finds that name taken and gets Lamp_Hall02.001 -
+    # so seven tuning re-runs of this stage produced Lamp_Hall02.007, and b5_anim, which keyframes
+    # lamps BY NAME, failed with "no object named 'Lamp_Hall02'" against a scene that visibly had
+    # seven hall pendants in it.
+    #
+    # Nothing reported a problem at any point. Every delete succeeded, every create succeeded, the
+    # render looked identical, and the op census counted 44 lights. The names drifted silently and
+    # the only symptom was a later stage failing to find something that was plainly there.
+    #
+    # ONE CALL WITH A LIST, not one per object - delete_object takes `objects`, and 96 round trips
+    # for a re-run is most of this stage's runtime.
     if doomed:
-        print("  removed %d lamp(s)/bulb(s) from a previous run" % len(doomed))
+        S.call("delete_object", {"objects": doomed, "purgeOrphans": True})
+        print("  removed %d lamp(s)/bulb(s) from a previous run, orphan data purged with them"
+              % len(doomed))
 
 
 def main():
@@ -105,10 +119,28 @@ def main():
     S.begin("STAGE 4 - light: colour per room, practicals bright against a dark hall")
     clear_previous()
 
-    # A DARK WORLD. The lab's finding in one line: contrast comes from bright practicals against
-    # darkness, not from raising the ambient, and 95% of pixels near black came from getting this
-    # backwards in the other direction.
+    # A DARK WORLD - AND ON THIS BUILD THE KNOB IS DEAD. set_world accepts the colour and the
+    # strength, returns ok:true, and world_info reports the result:
+    #
+    #   contributesLight: false
+    #   blockers: ["the Background node exists but is NOT connected to the world output, so every
+    #              value on it is inert - it accepts writes and changes no light."]
+    #
+    # useAsLight:true does not connect it either. So the two endpoints disagree - one claims the
+    # write succeeded, the other says the write cannot matter - and the ambient in this scene is
+    # zero however this line is tuned. Filed in FEATURE_PARITY_SPEC.
+    #
+    # It is still called, because when the connection is fixed these are the values that should
+    # apply, and because the check below is what turns a silent nothing into a printed one.
     S.call("set_world", {"color": [0.030, 0.033, 0.042], "strength": WORLD_STRENGTH})
+    w = S.call("world_info", {})
+    if not w.get("contributesLight"):
+        print("  !! THE WORLD IS INERT and set_world reported success anyway:")
+        for b in (w.get("blockers") or ["(world_info gave no reason)"]):
+            print("  !! %s" % b)
+        print("  !! Every lamp below is doing all the lighting. Not fatal - the lab's own advice is")
+        print("  !! that contrast comes from bright practicals rather than ambient - but the")
+        print("  !! WORLD_STRENGTH constant in this file is currently a knob that turns nothing.")
 
     # ---- the hall: pendants down the centre line ------------------------------------------------
     print("  hall pendants")
