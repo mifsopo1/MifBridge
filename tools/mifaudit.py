@@ -34,7 +34,21 @@ BASE = "http://127.0.0.1:%d/api" % BRIDGE_PORT
 TOKEN = "dev"
 UPROJECT = r"D:\DDS2SDK\Game\DrugDealerSimulator2.uproject"
 EDITOR_EXE = r"D:\UE532\Engine\Binaries\Win64\UnrealEditor.exe"
-PROJECT_MARKER = "DrugDealerSimulator2.uproject"
+# WHICH EDITOR THIS HARNESS IS WILLING TO DRIVE, and it is overridable as of 2026-09-05.
+#
+# It was a bare constant, and the consequence was larger than it looked: require_sdk_bridge matches
+# this against the owning process's command line, so the suites could ONLY ever run against the
+# cooked 5.3.2 SDK editor. A live stock 5.7 editor - healthy, answering, 453 endpoints - was turned
+# away with "NOT the SDK editor". Every suite result in this project is from the cooked fork by
+# construction rather than by habit, and that is why the 5.7 row has only ever meant that a compiler
+# agreed.
+#
+# The guard itself is right and is unchanged: several editors are usually running, and driving a
+# sweep at the wrong one would be useless and destructive. What changes is that it can be AIMED.
+# Unset, the default is exactly what it always was.
+#
+#     MIF_PROJECT_MARKER=MifProbe.uproject python tools/run_all_suites.py --once
+PROJECT_MARKER = os.environ.get("MIF_PROJECT_MARKER", "DrugDealerSimulator2.uproject")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FINDINGS = os.path.join(HERE, "audit_findings.jsonl")
@@ -166,8 +180,14 @@ def require_sdk_bridge(force=False):
     cmd = process_cmdline(pid)
     if PROJECT_MARKER not in cmd:
         _verified_pid[0] = None
-        return False, ("port %d is owned by pid %d, which is NOT the SDK editor: %s"
-                       % (BRIDGE_PORT, pid, cmd[:160]))
+        # SAY THAT THE OVERRIDE EXISTS. A guard that blocks a legitimate thing without naming the
+        # way through is one people get past by editing the source, which is worse than either
+        # outcome it was choosing between. Testing on a second engine is legitimate; doing it by
+        # accident is not, and an environment variable is exactly that distinction.
+        return False, ("port %d is owned by pid %d, whose command line does not contain %r: %s. "
+                       "If you MEANT to drive another project - a stock-engine probe, a second "
+                       "game - name it with MIF_PROJECT_MARKER and run again."
+                       % (BRIDGE_PORT, pid, PROJECT_MARKER, cmd[:140]))
     _verified_pid[0] = pid
     return True, "pid %d (%s)" % (pid, PROJECT_MARKER)
 
