@@ -12598,6 +12598,81 @@ out-of-process the way ops_gen already does with gen_status.
       that interacts with the 150s job ceiling and the single serialised socket, not an op to bolt
       on at the end of a long stretch.
 
+      ================================================================================
+      THE ARCHITECTURE DECISION, WRITTEN 2026-09-05 SO IT CAN BE MADE. STILL NOT BUILT.
+      ================================================================================
+      Andre's standing rule is architecture first, and this item has been open precisely because
+      nobody wrote the architecture. Here it is, from the three things that actually constrain it.
+
+      CONSTRAINT 1 - THE THREADING CONTRACT (server.py's header). The socket thread does accept,
+      recv, json.loads, enqueue, sendall and NOTHING else; every bpy call runs on the main thread
+      out of a queue drained by ONE timer registered at addon register(). A batch cannot be N jobs
+      dispatched concurrently - there is one worker by design, and the design says do not
+      "simplify" it back.
+
+      CONSTRAINT 2 - THE JOB CEILING. job_timeout is a preference whose help says "KEEP THIS BELOW
+      the MCP server's work timeout". A batch executed as ONE job spends the whole batch against a
+      single timeout, so twenty ops that each take 8s exceed a 150s ceiling while every one of them
+      individually is fine. This is the interaction that made the item defer, and it is real.
+
+      CONSTRAINT 3 - BACKGROUND MODE. Under `blender -b` there are no timers: start(), _server_loop()
+      and _handle_client() all branch on bpy.app.background and run the job INLINE. So a batch must
+      behave identically down the inline path, which is also the path every suite and every showcase
+      stage uses. A batch that only works in the GUI would be untested by construction.
+
+      WHAT UE'S batch ALREADY SETTLES, and copying it costs nothing:
+        * the envelope is validated for its OWN keys only; each op is validated by the handler it
+          dispatches to. One guard, not two.
+        * an EMPTY ops[] is a hard failure, not ok:true with opCount 0 - "batch's response IS the
+          audit trail, so nothing to do is a caller error worth naming".
+        * per-op results in order, so a partial batch is readable rather than a single verdict.
+        * an optional backup taken BEFORE anything mutates, and a failure to take it aborts the
+          batch rather than proceeding unprotected.
+
+      WHAT UE'S batch DOES NOT SETTLE, because Blender differs:
+        * ATOMICITY. UE wraps a transacted endpoint and cancels on failure - and PM-007 says that
+          cancel does not roll back anyway. Blender pushes an undo step per bpy.ops call, so a batch
+          that fails at op 7 of 10 leaves six applied. The honest contract is the same one this
+          codebase already uses: say what was applied, name what was not, and do NOT claim atomicity.
+        * THE TIMEOUT. The recommendation is a per-batch budget rather than a fixed op cap: measure
+          elapsed after each op and STOP with a partial result naming the op it stopped before, when
+          the next op would risk the ceiling. A cap on op COUNT is the wrong axis - ten
+          apply_modifier calls and ten set_keyframe calls are three orders of magnitude apart.
+
+      MEASURED 2026-09-05 RATHER THAN LEFT AS "SOMETHING TO MEASURE", on Blender 5.0 headless, from
+      the elapsedMs every response already carries. Only calls that returned ok:true are counted -
+      the first attempt timed three REFUSED calls at 0.03-0.05ms and would have reported a wrong
+      parameter name as the fastest op in the addon:
+
+        list_objects (read)                0.05 ms
+        set_material_slots                 0.12 ms
+        set_keyframe                       0.15 ms
+        create_material                    0.20 ms
+        transform_object                   0.22 ms
+        create_light                       0.41 ms
+        create_primitive                   0.64 ms
+        boolean_op (difference)            1.53 ms
+        apply_modifier                    10.9  ms
+        mesh_quality on a 20k-tri mesh    21.4  ms
+        add_modifier SUBSURF             205.3  ms
+        render_still 960x540 @64          122.4 ms
+        render_still 320x180 @16         610.7 ms   (first render - shader compilation)
+
+      FOUR ORDERS OF MAGNITUDE, AND THAT SETTLES THE DESIGN QUESTION. A cap on op COUNT is
+      indefensible: 1000 ordinary ops is about one second, while 250 renders is 150 seconds. The
+      budget-not-cap recommendation above is now measured rather than argued.
+
+      AND THE CEILING BARELY EXISTS FOR REAL WORK. The whole bunker showcase - 340 objects, 2020
+      particles, 181 keyframes, seven stages - runs in about 16 seconds of wall clock across
+      thousands of calls. A batch would have to be almost entirely renders, bakes or imports before
+      job_timeout mattered, which reframes this from "a ceiling to design around" to "a guard rail
+      for one op family". That is a much smaller feature than the item has been carrying.
+
+      NOT BUILT, and the reason is unchanged from when this was deferred: it is a contract about
+      partial failure on a single-threaded queue, and this repo's own standard is that a wrong
+      contract about partial failure is worse than no batch. ANDRE'S CALL, and now a decision with
+      the constraints written down rather than an open question.
+
 - [x] **Tier 4 - procedural** (8 ops) DONE 2026-09-03
       Constraints (add/list/remove, one module for objects AND bones), drivers (add/remove),
       custom properties (set/list), NLA strips.
