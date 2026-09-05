@@ -1685,6 +1685,28 @@ namespace MifBridge
 				Field, *DescribeJsonValue(Value), Expected));
 		}
 
+		// THE SAME THING, BUT KEEPING THE READER'S OWN EXPLANATION when it composed one. JNum and
+		// JInt both ask JsonValueAsNumber for a message and then dropped it into a variable named
+		// `Unused`, so a caller who sent 1e999 was told "the number inf, which is not a number" -
+		// exactly what that function's finiteness branch argues against three lines above the text
+		// it had written. Infinity IS a number; the useful sentence is that it overflowed.
+		//
+		// THE FALLBACK IS NOT PADDING. JsonValueAsNumber has paths that return false without
+		// composing anything, and a violation reading "'scale' was given" and then stopping is
+		// worse than the generic line it replaced. The empty check is what makes this safe to use
+		// from both readers without auditing every return in that function first.
+		void RecordParamTypeViolation(const TCHAR* Field, const TSharedPtr<FJsonValue>& Value,
+			const TCHAR* Expected, const FString& Detail)
+		{
+			if (Detail.IsEmpty())
+			{
+				RecordParamTypeViolation(Field, Value, Expected);
+				return;
+			}
+			ParamTypeViolations().Add(FString::Printf(
+				TEXT("%s — it was IGNORED and the default was used instead"), *Detail));
+		}
+
 		// TryGetField is case-insensitive the same way JStr/JBool/JInt are, so a key that WOULD be
 		// honoured is never reported as a violation.
 		TSharedPtr<FJsonValue> FieldIfPresent(const TSharedRef<FJsonObject>& In, const TCHAR* Field)
@@ -2071,9 +2093,13 @@ namespace MifBridge
 		const TSharedPtr<FJsonValue> Value = FieldIfPresent(In, Field);
 		if (!Value.IsValid()) { return Default; }
 		double Parsed = 0.0;
-		FString Unused;
-		if (JsonValueAsNumber(Value, Field, Parsed, Unused)) { return Parsed; }
-		RecordParamTypeViolation(Field, Value, TEXT("a number"));
+		// NOT `Unused`. JsonValueAsNumber explains WHY it refused - that 1e999 overflowed to
+		// infinity, or that a partly-numeric string is refused on purpose because UE's parsers
+		// take the prefix and discard the rest - and that explanation is the part of a refusal
+		// that stops somebody filing a bug.
+		FString Why;
+		if (JsonValueAsNumber(Value, Field, Parsed, Why)) { return Parsed; }
+		RecordParamTypeViolation(Field, Value, TEXT("a number"), Why);
 		return Default;
 	}
 
@@ -2082,12 +2108,12 @@ namespace MifBridge
 		const TSharedPtr<FJsonValue> Value = FieldIfPresent(In, Field);
 		if (!Value.IsValid()) { return Default; }
 		double Parsed = 0.0;
-		FString Unused;
-		if (!JsonValueAsNumber(Value, Field, Parsed, Unused))
+		FString Why;                                   // see JNum - the reader's own explanation
+		if (!JsonValueAsNumber(Value, Field, Parsed, Why))
 		{
 			// FJsonValueString::TryGetNumber(int32&) ALWAYS returns true and LexFromString gives 0 for
 			// garbage (JsonValue.h:135), so the old TryGetNumberField could not fail here at all.
-			RecordParamTypeViolation(Field, Value, TEXT("a whole number"));
+			RecordParamTypeViolation(Field, Value, TEXT("a whole number"), Why);
 			return Default;
 		}
 		if (Parsed != FMath::TruncToDouble(Parsed))
