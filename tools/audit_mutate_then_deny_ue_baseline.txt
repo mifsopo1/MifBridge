@@ -44,7 +44,6 @@ MifBridgePhysicsAsset.cpp:remove_physics_constraint:Modify:removed
 MifBridgeSequencerWrite.cpp:add_sequence_possessable:Modify:changed
 MifBridgeSequencerWrite.cpp:add_sequence_section:Modify:changed
 MifBridgeSequencerWrite.cpp:add_sequence_track:Modify:changed
-MifBridgeSequencerWrite.cpp:set_sequence_keys:Modify:changed
 MifBridgeSkeleton.cpp:remove_virtual_bone:Modify:removed
 MifBridgeUserTypes.cpp:set_struct_member:Modify:changed
 MifBridgeWidgets.cpp:add_tree_widget:Modify:created

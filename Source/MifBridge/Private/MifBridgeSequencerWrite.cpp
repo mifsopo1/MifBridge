@@ -801,6 +801,94 @@ namespace MifBridge
 		const FFrameRate Tick = Scene->GetTickResolution();
 		const int32 KeysBefore = Channel->GetNumKeys();
 
+		// EVERYTHING THAT CAN REFUSE HAPPENS HERE, ABOVE THE FIRST MUTATION. Until 2026-09-04 the
+		// channel type and every object path were checked INSIDE the write loop, after
+		// Channel->Reset() had already cleared the section and after earlier keys had already been
+		// written - and the refusal still appended " NOTHING was changed." Both paths were
+		// confirmed by an adversarial verifier: replace:true on an enum/byte section wiped every
+		// authored key and then refused, and any multi-key call with a bad LATER key wrote the
+		// earlier ones and then denied it.
+		//
+		// Transaction.Cancel() is NOT the fix and must not be reached for here. It pops the undo
+		// entry and never calls FTransaction::Apply - MifBridgeCommon.cpp:1547 says so in this
+		// repo's own words, and PM-007 is what happened when somebody relied on it.
+
+		// THE CHANNEL TYPE IS FIXED FOR THE WHOLE CALL, so testing it once per key was never
+		// meaningful. Hoisted, its refusal is simply true.
+		const bool bTypeHandled =
+			   ChannelType == FMovieSceneDoubleChannel::StaticStruct()->GetFName()
+			|| ChannelType == FMovieSceneFloatChannel::StaticStruct()->GetFName()
+			|| ChannelType == FMovieSceneBoolChannel::StaticStruct()->GetFName()
+			|| ChannelType == FMovieSceneIntegerChannel::StaticStruct()->GetFName()
+			|| ChannelType == FMovieSceneStringChannel::StaticStruct()->GetFName()
+			|| ChannelType == FMovieSceneObjectPathChannel::StaticStruct()->GetFName();
+		if (!bTypeHandled)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("channel '%s' is a %s, which this endpoint does not key yet - it handles ")
+				TEXT("double, float, bool, integer, string and object-path channels. That covers ")
+				TEXT("transforms, most property tracks and visibility. Named rather than skipped, ")
+				TEXT("because a key silently not written leaves a section that looks authored and ")
+				TEXT("animates nothing. NOTHING was changed."), *ChannelName,
+				*ChannelType.ToString()));
+			return;
+		}
+
+		// AND EVERY OBJECT PATH, FOR EVERY KEY, BEFORE ANY OF THEM IS WRITTEN. The resolved
+		// pointers are kept so the loop below reads them rather than loading a second time: a load
+		// that has already succeeded cannot fail on the retry, which is what makes the write loop
+		// incapable of refusing at all.
+		TArray<UObject*> PreResolved;
+		if (ChannelType == FMovieSceneObjectPathChannel::StaticStruct()->GetFName())
+		{
+			FMovieSceneObjectPathChannel* PC = static_cast<FMovieSceneObjectPathChannel*>(Channel);
+			UClass* const Expected = PC->GetPropertyClass();
+			PreResolved.Reserve(KeysJson->Num());
+			for (const TSharedPtr<FJsonValue>& KV : *KeysJson)
+			{
+				const TSharedPtr<FJsonObject>* KO = nullptr;
+				if (!KV.IsValid() || !KV->TryGetObject(KO) || !KO)
+				{
+					// Skipped by the write loop too - kept parallel so the indices line up.
+					PreResolved.Add(nullptr);
+					continue;
+				}
+				const TSharedRef<FJsonObject> K = KO->ToSharedRef();
+				const double TimeSec = JNum(K, TEXT("time"), 0.0);
+				const FString ObjPath = JStr(K, TEXT("value"));
+
+				// AN EMPTY PATH IS A REAL KEY. "no object" is what clears a slot, so it resolves to
+				// nullptr deliberately and is not an error.
+				if (ObjPath.IsEmpty()) { PreResolved.Add(nullptr); continue; }
+
+				UObject* Obj = StaticLoadObject(UObject::StaticClass(), nullptr, *ObjPath);
+				if (!Obj)
+				{
+					Fail(Out, FString::Printf(
+						TEXT("key at %.4fs names '%s', which did not load. An EMPTY value is ")
+						TEXT("accepted and keys 'no object'; a path that does not resolve is ")
+						TEXT("refused, because keying null for a mistyped path is exactly the ")
+						TEXT("silent wrong answer this endpoint refuses elsewhere. NOTHING was ")
+						TEXT("changed - this is checked before anything is written."),
+						TimeSec, *ObjPath));
+					return;
+				}
+				if (Expected && !Obj->IsA(Expected))
+				{
+					Fail(Out, FString::Printf(
+						TEXT("key at %.4fs names '%s', which is a %s, but channel '%s' expects a ")
+						TEXT("%s. The engine would accept it - the key value takes a bare UObject* ")
+						TEXT("- and the section would look authored while resolving to something ")
+						TEXT("the property cannot use. NOTHING was changed - this is checked ")
+						TEXT("before anything is written."),
+						TimeSec, *ObjPath, *Obj->GetClass()->GetName(), *ChannelName,
+						*Expected->GetName()));
+					return;
+				}
+				PreResolved.Add(Obj);
+			}
+		}
+
 		FScopedTransaction Transaction(NSLOCTEXT("MifBridge", "MifBridge_SetSequenceKeys",
 												 "Set Sequence Keys"));
 		Section->Modify();
@@ -814,8 +902,13 @@ namespace MifBridge
 		// worst outcome here - the section looks authored and animates nothing.
 		int32 Written = 0;
 		FString TypeError;
+		// INDEXED so the object-path branch can read the pointer resolved above rather than loading
+		// again. The index advances on every element including the skipped ones, which is what
+		// keeps it parallel with PreResolved.
+		int32 KeyIndex = -1;
 		for (const TSharedPtr<FJsonValue>& KV : *KeysJson)
 		{
+			++KeyIndex;
 			const TSharedPtr<FJsonObject>* KO = nullptr;
 			if (!KV.IsValid() || !KV->TryGetObject(KO) || !KO) { continue; }
 			const TSharedRef<FJsonObject> K = KO->ToSharedRef();
@@ -862,62 +955,41 @@ namespace MifBridge
 			else if (ChannelType == FMovieSceneObjectPathChannel::StaticStruct()->GetFName())
 			{
 				FMovieSceneObjectPathChannel* C = static_cast<FMovieSceneObjectPathChannel*>(Channel);
-				const FString ObjPath = JStr(K, TEXT("value"));
-
-				// AN EMPTY PATH IS A REAL KEY. "no object" is what clears a slot, so it is accepted;
-				// a path that fails to LOAD is refused. Keying null because someone mistyped a path
-				// is the silent wrong answer this endpoint exists to refuse.
-				UObject* Obj = nullptr;
-				if (!ObjPath.IsEmpty())
-				{
-					Obj = StaticLoadObject(UObject::StaticClass(), nullptr, *ObjPath);
-					if (!Obj)
-					{
-						TypeError = FString::Printf(
-							TEXT("key at %.4fs names '%s', which did not load. An EMPTY value is ")
-							TEXT("accepted and keys 'no object'; a path that does not resolve is ")
-							TEXT("refused, because keying null for a mistyped path is exactly the ")
-							TEXT("silent wrong answer this endpoint refuses elsewhere."),
-							TimeSec, *ObjPath);
-						break;
-					}
-
-					// THE CONSTRAINT. The channel knows what class the bound property expects, and
-					// nothing in the engine stops a key of any other class going in - the key value
-					// takes a bare UObject*. A section keyed with the wrong class looks authored and
-					// resolves at runtime to something the property cannot accept.
-					if (UClass* Expected = C->GetPropertyClass())
-					{
-						if (!Obj->IsA(Expected))
-						{
-							TypeError = FString::Printf(
-								TEXT("key at %.4fs names '%s', which is a %s, but channel '%s' ")
-								TEXT("expects a %s. The engine would accept it - the key value takes ")
-								TEXT("a bare UObject* - and the section would look authored while ")
-								TEXT("resolving to something the property cannot use."),
-								TimeSec, *ObjPath, *Obj->GetClass()->GetName(), *ChannelName,
-								*Expected->GetName());
-							break;
-						}
-					}
-				}
+				// RESOLVED ABOVE, BEFORE THE TRANSACTION, AND THAT IS THE WHOLE FIX. This used to
+				// StaticLoadObject here and check the class here, inside the write loop - so key 1
+				// was already on the section when key 2 was refused with " NOTHING was changed."
+				// A load that has already succeeded cannot fail on a second attempt, so reading the
+				// pre-resolved pointer is what makes this loop incapable of refusing.
+				//
+				// An empty path resolves to nullptr deliberately: "no object" is a real key, it is
+				// what clears a slot, and the pre-pass records it as nullptr rather than an error.
+				UObject* const Obj = PreResolved.IsValidIndex(KeyIndex) ? PreResolved[KeyIndex]
+																		: nullptr;
 				C->GetData().UpdateOrAddKey(Frame, FMovieSceneObjectPathChannelKeyValue(Obj));
 				++Written;
 			}
 			else
 			{
+				// UNREACHABLE unless bTypeHandled above and this chain disagree - the type is
+				// checked before the transaction opens. Kept rather than deleted, because the two
+				// lists have to be edited together and the failure if they drift is a channel type
+				// that passes the gate and is then silently not keyed. If this ever fires, the
+				// section HAS been touched, so the message does not claim otherwise.
 				TypeError = FString::Printf(
-					TEXT("channel '%s' is a %s, which this endpoint does not key yet - it handles ")
-					TEXT("double, float, bool, integer, string and object-path channels. That ")
-					TEXT("covers transforms, most property tracks and visibility. Named rather than ")
-					TEXT("skipped, because a key silently not written leaves a section that looks ")
-					TEXT("authored and animates nothing."), *ChannelName, *ChannelType.ToString());
+					TEXT("channel '%s' is a %s. The type check above accepted it and the write ")
+					TEXT("chain does not handle it, which is a bug in this handler rather than in ")
+					TEXT("the call - the two lists have drifted. Some keys may already have been ")
+					TEXT("written; re-read the channel."), *ChannelName, *ChannelType.ToString());
 				break;
 			}
 		}
 		if (!TypeError.IsEmpty())
 		{
-			Fail(Out, TypeError + TEXT(" NOTHING was changed."));
+			// NO BLANKET DENIAL HERE ANY MORE. Everything that can legitimately refuse now does so
+			// above the transaction, where "NOTHING was changed" is true and is said there. The
+			// only way to arrive here is the drift bug described above, and by then keys may have
+			// been written - so this reports what happened instead of promising it did not.
+			Fail(Out, TypeError);
 			return;
 		}
 
