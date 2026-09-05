@@ -15085,6 +15085,36 @@ out-of-process the way ops_gen already does with gen_status.
       does. Failing that, say so - "energy is on the light data; evaluate_at_frame reads the object"
       is a hint, and the current message is a stack-trace fragment.
 
+- [ ] **bake_physics returns baked:true without baking the particle systems**
+      FOUND 2026-09-05 building the bunker showcase's atmosphere stage.
+
+        add_particles x5   (EMITTER, physicsType NEWTON - dust, steam, sparks)
+        bake_physics {start: 1, end: 961}
+          -> {"baked": true, "cacheCount": 1,
+              "caches": [{"kind": "rigidbody", "isBaked": true, "frames": [1, 961]}]}
+
+      Five particle systems were created immediately before the call and NONE of them appears in
+      the cache list. The top-level flag says baked:true either way.
+
+      THE FIELD THAT TELLS THE TRUTH IS ALREADY THERE, which is the same shape as the set_world item
+      below: `caches` names exactly what was baked, so the endpoint knows and the caller only finds
+      out by reading a list rather than the flag they asked for. A caller who checks `baked` gets
+      "yes" and an unbaked scene.
+
+      HOW IT SHOWS UP. EMITTER particles with NEWTON physics are simulated forward from the start of
+      the frame range, so a still rendered at a JUMPED frame shows none of them. Measured: the
+      spark-ish pixel count at 6.4s (inside a failure window), 16.6s (outside both windows) and
+      17.7s (inside the second) came back 23, 23, 23 - identical, all of it static background.
+
+      IT DOES NOT BREAK THE VIDEO, and that matters for how urgent this is. A recording plays
+      forward and simulates as it goes. What it breaks is CHECKING: a single-frame render can no
+      longer verify a particle effect, which is how this repo verifies everything else.
+
+      WORTH ESTABLISHING FIRST, because the fix depends on it: does bake_physics intend to cover
+      particle caches at all? If it is rigid-body-only by design then the name and the docstring are
+      the defect, and `caches` should say "no particle caches were baked; use <x>". If it intends to
+      cover them, it is missing PointCache lookups on every object's particle systems.
+
 - [ ] **set_world reports ok:true for a write that changes no light, and world_info knows**
       FOUND 2026-09-05 building the bunker showcase, by reading a field I had not thought to read.
 
