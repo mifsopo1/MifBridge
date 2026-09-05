@@ -4,9 +4,9 @@
 
 # Selling MifBridge on Fab — the submission, and what is still open
 
-**Status as of 2026-09-04.** The package builds and is measured against the agreement on every run
-(`python tools/fab_readiness.py --check`). Four things block submission and every one of them is a
-decision rather than a defect. Nothing here is guesswork about the contract: the clauses are quoted
+**Status as of 2026-09-04, late.** The package builds and is measured against the agreement on
+every run (`python tools/fab_readiness.py --check`). All four decisions are made and recorded. What
+remains is one finding that resolves itself at upload, one that is cosmetic, and the gallery. Nothing here is guesswork about the contract: the clauses are quoted
 from the live [Fab Distribution Agreement](https://www.fab.com/distribution-agreement), last updated
 23 February 2026, read on 2026-09-04.
 
@@ -15,62 +15,65 @@ from the live [Fab Distribution Agreement](https://www.fab.com/distribution-agre
 
 ---
 
-## 1. The four open decisions
+## 1. The decisions, and what they came out as
 
-These are Andre's, not something a tool can settle. Each one is recorded in
-`tools/fab_listing.json`, where a null is reported as an open decision rather than passing silently.
+All four were answered on 2026-09-04 and are recorded in `tools/fab_listing.json`, where
+`fab_readiness` reads them. A field left null there is reported as an open decision rather than
+passing silently, so the file is the record and not a summary of one.
 
-### 1a. The licence, and what it means for the people who already have it
+| | decided | note |
+|---|---|---|
+| price | **$59.99** | §1(d): $0.00 or ≥$0.99, complete discretion. No price-parity clause exists anywhere in the agreement, so nothing constrains what you charge elsewhere. |
+| `CreatedWithAI` | **true** | §18(k)(ii) requires it where a material portion is generated. The reason is written out in the file. **Recording it here is not the same as tagging it** — the box still has to be ticked in the Fab portal, which is what the clause actually asks for. |
+| licence in the payload | **`fab-eula-notice`** | The MIT file does not ship inside the Fab zip. |
+| channels reaching end users | **public GitHub, and the Nexus SDK installer** | Both confirmed: anyone can clone the repo today, and the DDS2 SDK installer bundles MifBridge and the Blender addon. |
 
-`LICENSE` is **MIT**, and the repository has been public. MIT is perpetual and irrevocable, so
-**every version pushed so far is MIT to everyone who has ever cloned it** — Brando, Huslaa, infected,
-and anyone who found the repo. That cannot be undone. It can only be changed going forward.
+### The licence changed, and what that does and does not do
 
-Two separate questions follow, and they have different answers:
+`LICENSE` is now **proprietary and non-redistributable**. Buy it once, use it on any number of your
+own machines including commercially, modify it for yourself — and everything you MAKE with it is
+yours, with nothing attaching to your assets, levels, Blueprints or builds. What is forbidden is
+passing MifBridge itself on.
 
-- **Does the Fab package keep an MIT LICENSE inside it?** No, and this is not a preference. §3(f)(v):
-  *"content distributed through Fab is licensed only under the Fab End User License Agreement, which
-  is not superseded by custom licenses included in Content's distributed files."* The MIT file does
-  not win — but a buyer who reads it will believe they may redistribute the plugin publicly, which is
-  the one thing a paid listing depends on them not doing. It must be replaced in the package with a
-  short notice pointing at the Fab EULA.
-- **What licence do future versions carry in the public repo?** Open. If it stays MIT, the paid
-  listing is competing with a free, redistributable copy of the same code.
+**Versions already published under MIT stay MIT for everyone who received them.** That grant is
+perpetual and irrevocable; the new licence says so in its own section rather than leaving it to be
+discovered. Brando, infected and anyone who cloned the repo keep what they have, permanently, and
+they do not need adding to anything for that to be true.
 
-### 1b. The price
+**The relicense turned up an actual compliance gap first**, which mattered more than the relicense
+itself. The Blender backend adapts blender-mcp under MIT, and MIT's condition — *"the above copyright
+notice and this permission notice shall be included in all copies or substantial portions"* — **was
+not being met**: `NOTICE.md` named the licence and gave the copyright line, and the permission notice
+appeared nowhere in the repository. A technical gap while we were MIT; a real breach in a paid
+product. The full text is now reproduced, and the reasoning that used to read "MIT-to-MIT, so the
+adaptation is permitted" is corrected — MIT permits proprietary use, on that condition, which now
+carries the whole weight.
 
-§1(d): *"You have complete discretion in setting any Listing Price… You may set the Listing Price for
-Content at $0.00 or a value equal to or greater than $0.99."* Nothing in the agreement constrains it
-further — there is no price-parity or most-favoured-nation clause anywhere in the document.
+### Update parity is now measurable, and currently outstanding
 
-### 1c. The `CreatedWithAI` tag
+§3(b): *"If your Content is made available to end users through channels other than the
+Marketplaces, you will provide any Updates to Epic no later than you provide them to any other third
+party."*
 
-§18(k)(ii): *"When your Content is created using Generative AI Programs, you are required to tag the
-Content as 'CreatedWithAI'"*, where *"a material portion of the Content is generated with Generative
-AI Programs."* A material portion of this plugin was written by a generative model. This is a
-requirement, not a preference, and "material" is a judgement a person has to make and record.
+With both channels declared and nothing published yet, `fab_readiness` reports **FINDING** rather
+than UNKNOWN — it cannot measure how far behind Fab is, and says so instead of passing. It resolves
+at the first upload, when `git rev-parse HEAD` goes into `publishedCommit`.
 
-### 1d. Which channels reach an end user
+The arrangement that keeps a commit-and-push workflow intact is a private `master` only Andre pulls,
+with collaborators on a branch or tag that advances when the listing does. Parity then holds by
+construction rather than by discipline.
 
-§3(b): *"If your Content is made available to end users through channels other than the Marketplaces,
-you will provide any Updates to Epic no later than you provide them to any other third party."*
+### Going private: what it stops, measured rather than assumed
 
-The obligation attaches to **end users receiving updates**, not to the repository being public. So:
-
-| Arrangement | Parity obligation |
+| | after going private |
 |---|---|
-| Private repo, only Andre pulls | **None.** Nobody else is an end user. Auto-push freely. |
-| Private repo, collaborators pull | **Yes, on every push they can pull.** Going private does not exempt it. |
-| Public repo | **Yes, on every push.** |
-| DDS2 SDK installer bundles it | **Yes, on every SDK release carrying a newer build.** |
+| watchdog polling | keeps working — `report_watch.py` shells out to `gh issue list`, and `gh` is authenticated as the repo owner |
+| Discord postings | unaffected — a webhook knows nothing about repo visibility |
+| the auto-repair loop | keeps working; it reads what the watchdog fetches |
+| **strangers filing issues** | **stops.** Only collaborators can open issues on a private repo. |
 
-**The arrangement that keeps the "commit and push as you go" workflow intact:** push `master` to a
-private repo only Andre can pull, and give collaborators a branch or tag that advances only when the
-Fab listing does. Parity then holds by construction rather than by discipline. Recording the answer
-in `fab_listing.json` makes `fab_readiness.py` measure how far behind the listing is instead of
-guessing.
-
----
+**Do not flip to private while a collaborator invite is pending** — an unaccepted invitee loses
+access entirely.
 
 ## 2. What is already settled
 
@@ -107,12 +110,15 @@ is a product decision, so it is opt-in.
 
 |  | default | `--fab` |
 |---|---:|---:|
-| files | 506 | **166** |
-| size | — | **4.8 MB** |
+| files | 506 | **144** |
+| size | — | **2.1 MB** |
 
 What `--fab` removes and why: 180 test suites that need this repo's fixtures and a live editor; 49
 static audits of our own source; 53 files of endpoint-audit working notes from July; and the
-top-level dev scripts. That last one was the important find — the exclude patterns had left 48 of
+top-level dev scripts; and `tools/blender-showcase/`, 2.8 MB of renders and lab scripts from the
+sessions where these features were built, which escaped because the allow-list governs top-level
+`tools/` files and a subdirectory falls through to the pattern list. The dev scripts were the
+important find — the exclude patterns had left 48 of
 them, **including `report_trust.json`, which describes itself as "the security boundary of the whole
 autonomous loop" and names the GitHub logins allowed to have issues auto-processed.** Top-level
 `tools/` is now allow-listed instead, so a mistake there loses a utility rather than leaking one.
@@ -124,54 +130,56 @@ Four tools ship because a buyer runs them: `verify_install.py`, `scratch_confirm
 
 ## 4. Blockers with a technical fix
 
-### 4a. Third-party game references — 16 lines a buyer can see
+### 4a. Third-party game references — zero a buyer can reach, 119 in comments
 
 A 54-agent census of the shipped package, every finding adversarially verified, split the references
-by whether a buyer can actually encounter them. The agent-facing half is **fixed**: `tool_help.json`
-and `server.py` no longer teach a buyer's model to reach for `DDS2_GameMode` or `DDS2Casino`, and
-every measurement in those strings survived verbatim — only the provenance changed.
+by whether a buyer can actually encounter them. **The runtime half is fixed: 28 emitted strings this
+morning, 0 now.**
 
-What remains is 16 emitted strings in `Source/`, and the worst is not cosmetic:
+The worst was not cosmetic. `MifGameRoot()` fell back to a hardcoded path into one specific
+commercial game in one Steam library, and with `MIF_GAME_ROOT` unset — the default for every buyer —
+`read_modloader_log` returned it in its `path` field and its not-found error, while `trigger_cook`
+built all six of `gameRoot`, `paksDir`, `deployMods`, `deployLogicMods` and `ue4ssLog` from it. Both
+endpoints were bound unconditionally with no gate. **The fallback is now removed entirely** — a wrong
+guess is worse than none, because it yields a plausible path that silently is not yours — and the
+endpoints refuse while naming both ways to configure it, `MIF_GAME_ROOT` or `[MifBridge] GameRoot`.
 
-> `MifBridgePipeline.cpp:36` — `MifGameRoot()` falls back to a hardcoded path into one specific
-> commercial game in one specific Steam library. With `MIF_GAME_ROOT` unset — the default for every
-> buyer — `read_modloader_log` returns that path in its `path` field and its not-found error, and
-> `trigger_cook` builds all six of `gameRoot`, `paksDir`, `deployMods`, `deployLogicMods` and
-> `ue4ssLog` from it. Both endpoints are bound unconditionally with no gate.
+The agent-facing half is fixed too: `tool_help.json` no longer teaches a buyer's model to reach for
+`DDS2_GameMode` or `DDS2Casino`. Every measurement in those strings survived verbatim; only the
+provenance changed.
 
-The fix is written and waiting at `scratchpad/pipeline_neutral.py`: the fallback is removed entirely
-(a wrong guess is worse than none — it yields a plausible path that silently is not yours), an ini
-setting joins the env var so this machine configures it once, and the three callers refuse through
-one shared message that says how to set it.
+**What remains is 119 references in comments and docs, and they are staying.** A fan-out to sweep
+them was run and **reverted in full**: the instruction to replace asset names with "a plausible
+generic name" produced `S_Rock_02` and `M_Landscape_MasterMat`, which contradicted seven other files
+still using the real names, falsified sentences like *"re-ran the EXACT call that crashed the
+editor"*, rewrote runnable commands into paths that do not exist, and edited verbatim captured UBT
+output. An asset name is a fact and a path in a runnable command is a fact, so "remove the name, keep
+the facts" was not a coherent instruction for this corpus. Desynchronising docs from code is a worse
+outcome than a studio name in a `//` line.
 
-**Blocked on a free editor.** A `Source/` edit that cannot be compiled leaves the tree dirty against
-both engine records and red-gates it for everyone.
+### 4b. Fixed: the in-editor Flag button reported to nobody
 
-### 4b. The in-editor Flag button reports to nobody
+The panel's Flag button wrote a structured report to `Saved/MifBridge/reports/` and **nothing
+anywhere read that directory** — four mentions in the whole tree, all of them the writer and its own
+comments, while `report_intake.py` fetches GitHub issues. Every flag ever clicked went into a folder
+no code opens, under a tooltip promising *"for the autonomous loop to pick up, reproduce and fix."*
+For a buyer that is worse than a missing feature: a button that looks like reporting and tells
+nobody.
 
-The panel has a Flag button on every call. It writes a structured report to
-`Saved/MifBridge/reports/` in the exact shape `report_intake.parse_report` validates — and **nothing
-anywhere reads that directory.** Four mentions of it exist in the whole tree: the writer, its
-declaration, and two comments. `report_intake.py` fetches GitHub issues; `report_watch.py` polls the
-GitHub API. So every flag ever clicked went into a folder no code opens.
-
-The tooltip says *"for the autonomous loop to pick up, reproduce and fix."* That has never been true.
-For a buyer it is worse than a missing feature: a button that looks like reporting, tells nobody, and
-leaves them believing they filed something. People do not report a bug twice.
-
-Fix written at `scratchpad/flag_reaches_us.py`: the file is still written, and a notification then
-offers to open a **pre-filled GitHub issue** — the reporter sees every character on GitHub's own form
+It now offers a **pre-filled GitHub issue** — the reporter sees every character on GitHub's own form
 and submits it themselves. Nothing is transmitted automatically, which keeps the property the
-original design was right to have. The repo URL is configurable so a fork's users do not file against
-ours. **Also blocked on a free editor.**
+original design was right to have.
 
-### 4c. The finiteness guard
+### 4c. Fixed: the finiteness guard, and three mutate-then-deny handlers
 
-`1e999` quoted is refused; `1e999` unquoted is accepted — the same value, opposite outcomes, decided
-by quoting. All 233 numeric call sites inherit it. One-line fix preserved at
-`scratchpad/MifBridgeCommon.finite-patch.cpp`. **Same blocker.**
+`1e999` quoted was refused and `1e999` unquoted accepted — the same value, opposite outcomes, decided
+by quoting, inherited by all 233 numeric call sites. Fixed and **verified against a live editor**:
+`1e999` and `-1e999` are now refused, a finite `5.0` still passes.
 
----
+And three handlers that mutated and then claimed they had not — `set_sequence_keys` (which cleared
+every authored key on a channel and then said *"NOTHING was changed"*), `set_material_parameter`, and
+`set_collision`. All three fixed by moving validation above the first mutation rather than trying to
+undo one afterwards. The detector went from 66 findings to 59.
 
 ## 5. The gallery
 
