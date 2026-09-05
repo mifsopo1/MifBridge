@@ -287,6 +287,28 @@ def main():
     print("A pair appearing in one suite proves only that both were CALLED there, never that the")
     print("claim was compared. This is a reading list - read the hits, do not count them.")
 
+    # REACH, NOT GREEN - this repo's rule everywhere, and this tool was missing it. It reads the
+    # C++ under Source/MifBridge and nothing else, so every verdict above is about the UE half of a
+    # two-backend product. A reader takes an unqualified clean line as covering all of it.
+    _ops = 0
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from make_release import blender_op_count as _boc
+        _ops = _boc()
+    except Exception:
+        pass
+    print("")
+    print("REACH - what this audit can and cannot judge:")
+    print("  covered      the C++ endpoints under Source/MifBridge")
+    print("  NOT covered  %s Blender addon ops - this tool does not read tools/blender-addon at"
+          % (_ops or "the"))
+    print("               all, so the verdict above is about the UE half only.")
+    print("  AND THE PATTERN HAS PAID IN THE HALF IT CANNOT SEE. set_vertex_weights told callers")
+    print("  a zero-weight group 'reads back identically to a working one in list_vertex_groups'.")
+    print("  It does not: measured live, a dead group returns weightedVertexCount 0 and")
+    print("  influencesGeometry false where a working one returns 8 and true. Exactly this shape -")
+    print("  prose claiming another endpoint returns the same thing, compared by no suite - and it")
+    print("  was in neither this tool's corpus nor its baseline.")
     if args.check or args.write_baseline:
         print("")
         return check_against_baseline(unpaired, write=args.write_baseline)

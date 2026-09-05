@@ -153,6 +153,16 @@ def main():
             print("ignores it, and answers ok:true. That is the failure this plugin exists to refuse.")
         else:
             print("no endpoint accepts unknown keys silently.")
+            # THE ADDON HALF IS COVERED ELSEWHERE, and saying so is the whole fix here. This tool
+            # reads the C++ only, so the line above is a verdict about half a two-backend product -
+            # but unlike the other audits swept on 2026-09-04, that half is NOT unguarded. It has a
+            # static gate and two dynamic ones, and the only thing missing was a reader knowing
+            # where to look.
+            print("")
+            print("  This covers the C++ only. The addon's equivalent is NOT unchecked:")
+            print("    parity_check.py CHECK 2       static, fail-closed, and in the release gates")
+            print("    test_blender_refusals B110    an unknown key is actually sent and refused")
+            print("    test_blender_reject_unknown   the same property across the op surface")
     return 1 if unguarded else 0
 
 

@@ -271,6 +271,25 @@ def main():
         print("  satisfied rather than bypassed - or check the result and say when it fails.")
         return 1
 
+    # REACH, NOT GREEN - this repo's rule everywhere, and this tool was missing it. It reads the
+    # C++ under Source/MifBridge and nothing else, so every verdict above is about the UE half of a
+    # two-backend product. A reader takes an unqualified clean line as covering all of it.
+    _ops = 0
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from make_release import blender_op_count as _boc
+        _ops = _boc()
+    except Exception:
+        pass
+    print("")
+    print("REACH - what this audit can and cannot judge:")
+    print("  covered      the C++ endpoints under Source/MifBridge")
+    print("  NOT covered  %s Blender addon ops - this tool does not read tools/blender-addon at"
+          % (_ops or "the"))
+    print("               all, so the verdict above is about the UE half only.")
+    print("  THE ADDON SUITES ARE OPENED AND MATCHED BY NOTHING, which is worse than being skipped:")
+    print("  the glob is test_*.py so test_blender_*.py IS read, but every call-site pattern here")
+    print("  wants the UE shape, so those files contribute zero call sites and no line says so.")
     if not rows and not ghosts:
         print("")
         print("OK  every suite call names a real endpoint and only keys it accepts")

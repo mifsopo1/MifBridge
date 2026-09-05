@@ -423,6 +423,24 @@ def main():
         print("READ AND CLEARED - marked in the handler, with the reason given:")
         for ep, why in cleared:
             print("  %-30s %s" % (ep, why[:74]))
+    # REACH, NOT GREEN - this repo's rule everywhere, and this tool was missing it. It reads the
+    # C++ under Source/MifBridge and nothing else, so every verdict above is about the UE half of a
+    # two-backend product. A reader takes an unqualified clean line as covering all of it.
+    _ops = 0
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from make_release import blender_op_count as _boc
+        _ops = _boc()
+    except Exception:
+        pass
+    print("")
+    print("REACH - what this audit can and cannot judge:")
+    print("  covered      the C++ endpoints under Source/MifBridge")
+    print("  NOT covered  %s Blender addon ops - this tool does not read tools/blender-addon at"
+          % (_ops or "the"))
+    print("               all, so the verdict above is about the UE half only.")
+    print("  The addon has the same shape - ops that branch on a mode string and declare parameters")
+    print("  only one branch reads - and none of it is in the count above.")
     print("=" * 78)
     return 0
 

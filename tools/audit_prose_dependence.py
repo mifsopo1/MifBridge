@@ -323,6 +323,25 @@ def main():
         for l in diff[:6]:
             print("            %s" % l[:132])
 
+    # REACH, NOT GREEN - this repo's rule everywhere, and this tool was missing it. It reads the
+    # C++ under Source/MifBridge and nothing else, so every verdict above is about the UE half of a
+    # two-backend product. A reader takes an unqualified clean line as covering all of it.
+    _ops = 0
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from make_release import blender_op_count as _boc
+        _ops = _boc()
+    except Exception:
+        pass
+    print("")
+    print("REACH - what this audit can and cannot judge:")
+    print("  covered      the C++ endpoints under Source/MifBridge")
+    print("  NOT covered  %s Blender addon ops - this tool does not read tools/blender-addon at"
+          % (_ops or "the"))
+    print("               all, so the verdict above is about the UE half only.")
+    print("  The addon is roughly a third prose by weight and NONE of it is ever blanked, so an")
+    print("  'answer unchanged by comments' above is a claim about each tool's C++ reads only.")
+    print("  Four of the tools driven here read both corpora, and their addon reads pass unscrubbed.")
     print("=" * 78)
     if skipped:
         print("  not tested (no direct C++ reads): %s" % ", ".join(skipped))
