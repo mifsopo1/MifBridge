@@ -221,7 +221,70 @@ barrel with a steel material rather than a grey cylinder — a shape a buyer rec
 defects it measures (ngon caps, unapplied non-uniform scale) are untouched, because a demo that
 tidied away its own defects would be showing a tool solving a problem it had already removed.
 
-## 6. Running the check
+## 6. The listing copy
+
+Written from the numbers the tools compute, not from adjectives. Every figure below is one
+`make_release.py --update-badge` and `audit_stale_counts` already keep honest, so if it drifts the
+gates go red rather than the store page going stale.
+
+### Title
+
+    MifBridge — drive Unreal and Blender from an AI agent, and read the results back
+
+### Short description
+
+    An MCP server fronting two backends: an in-editor Unreal plugin and a Blender addon. Build,
+    wire and compile Blueprints programmatically and get the real compiler output mapped to node
+    and pin. 453 UE endpoints, 154 Blender ops.
+
+### Long description
+
+> **The loop this replaces.** Today an agent writes T3D, you paste it, you screenshot the errors,
+> it guesses, you repeat. MifBridge closes that: the agent builds the graph, compiles it, and reads
+> the compiler's actual output — the node and the pin, not a screenshot of them.
+>
+> **Two backends, one agent.** On the Unreal side: Blueprint graphs, DataTables, level actors,
+> Sequencer, Niagara, landscape, World Partition, IK Rig, Game Features. On the Blender side:
+> modelling, booleans, UV unwrapping, rigging, lighting, cameras, keyframes, geometry nodes,
+> physics, particles and rendering — as typed, guarded operations rather than arbitrary Python.
+> `run_python` exists, is off by default, reports nothing, and is deliberately not how the
+> interesting work gets done.
+>
+> **Every call tells you what actually happened.** Not what it was asked to do. A refusal says
+> which parameter, what was sent, what is accepted, and whether anything changed — and "NOTHING was
+> changed" is a promise the test suite holds the code to. An endpoint that mutates and then denies
+> it is treated as a defect here, and there are 35 ratcheted static checks in the release gate
+> making sure new ones do not appear.
+>
+> **It documents itself.** `describe_endpoint` returns the accepted parameters for any endpoint, and
+> a static gate fails the build when that description and the guard that answers it disagree. You do
+> not have to guess a parameter name, and neither does your agent.
+>
+> **Engines.** Built and tested continuously against UE 5.3.2. Against stock UE 5.7 it compiles,
+> links, loads and runs — verified on a real 35,725-asset project, healthy, all 453 endpoints
+> registered. Blender 3.6 through 5.0, with every op exercised on every version on each release.
+
+### Technical details
+
+    Type            Editor plugin (C++) + Blender addon (Python) + MCP server (Python)
+    UE versions     5.3, 5.7          Blender versions  3.6, 4.2 LTS, 4.4, 5.0
+    Platforms       Windows 64-bit
+    Endpoints       453 UE, 154 Blender ops, 624 MCP tools
+    Ships in build  No - editor-time only, nothing links into a packaged game
+
+### Tags
+
+    ai, mcp, blender, automation, blueprint, pipeline, tooling, editor-utility,
+    procedural, workflow
+
+### What the description deliberately does NOT say
+
+No "powerful", no "seamless", no "revolutionise". A buyer of a developer tool can check every claim
+on this page against the plugin in ten minutes, and one that does not survive that is worse than a
+plainer one that does. Every number here is generated; the strongest claims — the compiler output,
+the self-documenting API, the refusal contract — are the ones easiest to verify and hardest to fake.
+
+## 7. Running the check
 
 ```bash
 python tools/make_release.py --fab && python tools/fab_readiness.py --check
