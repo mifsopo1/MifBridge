@@ -15054,11 +15054,21 @@ out-of-process the way ops_gen already does with gen_status.
       content ships that way, 26 of a 400-row sample.
 
       AND SKIPPING THE WHOLE SUITE IS TOO COARSE, which the first version of this item got wrong.
-      test_anim_curve on Curfew is PASS 8 FAIL 9: every one of the nine failures is in the T4200
-      section, which needs a cooked sequence, and the other eight checks - T4201's read/write
-      agreement, T4202's discarded curve type - are engine-neutral and passed. A suite-level skip
-      would throw those eight away and report the suite as verifying nothing, which trades one wrong
-      answer for another.
+      Measured across all eight cooked-failing suites on Curfew - NOT ONE of them is wholly cooked:
+
+        test_anim_curve                  PASS  8  FAIL 9
+        test_collections                 PASS 22  FAIL 5
+        test_duplicate_cooked_guard      PASS  9  FAIL 7
+        test_material_graph              PASS 30  FAIL 5
+        test_niagara_set_user_param      PASS 13  FAIL 3
+        test_run_retarget                PASS 15  FAIL 3
+        test_set_struct_member           PASS 19  FAIL 1
+        test_simplified_collision_guard  PASS 13  FAIL 9
+
+      A suite-level skip would discard 129 PASSING CHECKS to silence 42 failures, and report eight
+      suites as verifying nothing. Even test_duplicate_cooked_guard, whose whole name is about the
+      cooked path, keeps 9 checks on an uncooked project. That trades one wrong answer for another
+      and would have looked like progress.
 
       So the guard belongs at the SECTION, not the suite. mifaudit.require_cooked_project exists and
       is right for a suite that is cooked-only end to end; a mixed suite wants the same question
