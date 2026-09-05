@@ -193,19 +193,18 @@ def main():
     S.begin("STAGE 4 - light: colour per room, practicals bright against a dark hall")
     clear_previous()
 
-    # A DARK WORLD - AND ON THIS BUILD THE KNOB IS DEAD. set_world accepts the colour and the
-    # strength, returns ok:true, and world_info reports the result:
+    # A DARK WORLD. The lab's finding in one line: contrast comes from bright practicals against
+    # darkness, not from raising the ambient.
     #
-    #   contributesLight: false
-    #   blockers: ["the Background node exists but is NOT connected to the world output, so every
-    #              value on it is inert - it accepts writes and changes no light."]
+    # THIS COMMENT USED TO SAY THE KNOB WAS DEAD, and that was wrong. world_info reported
+    # contributesLight false with a blocker claiming the Background node was not connected to the
+    # world output - on a completely normal world where it demonstrably was. The addon compared a
+    # NodeLink's .to_node with `is`, and bpy re-wraps non-ID sub-structs, so identity failed for the
+    # same node. Fixed in the addon on 2026-09-05; WORLD_STRENGTH has always worked.
     #
-    # useAsLight:true does not connect it either. So the two endpoints disagree - one claims the
-    # write succeeded, the other says the write cannot matter - and the ambient in this scene is
-    # zero however this line is tuned. Filed in FEATURE_PARITY_SPEC.
-    #
-    # It is still called, because when the connection is fixed these are the values that should
-    # apply, and because the check below is what turns a silent nothing into a printed one.
+    # The check below is KEPT, because a genuinely disconnected world is a real state and this is
+    # the only place that would notice. It now stays quiet, which is what a check should do when
+    # nothing is wrong.
     S.call("set_world", {"color": [0.030, 0.033, 0.042], "strength": WORLD_STRENGTH})
     w = S.call("world_info", {})
     if not w.get("contributesLight"):

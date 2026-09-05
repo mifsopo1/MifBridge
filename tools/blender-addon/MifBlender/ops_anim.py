@@ -650,15 +650,46 @@ def op_evaluate_at_frame(params):
             if paths:
                 values = {}
                 for p in paths:
-                    try:
-                        v = ev.path_resolve(p)
-                    except (ValueError, AttributeError, TypeError) as exc:
-                        values[p] = {"error": str(exc)[:120]}
+                    # OBJECT FIRST, THEN ITS DATABLOCK - the same two places set_keyframe writes.
+                    #
+                    # This resolved against the OBJECT only, which made the obvious question
+                    # unanswerable: set_keyframe puts a light's `energy` on the light DATA (and
+                    # list_keyframes reports target "data" to say so), and asking this op for
+                    # "energy" came back
+                    #     Object.path_resolve("energy") could not be resolved
+                    # So the op named for evaluating a keyframed value could not evaluate the
+                    # commonest keyframed value in the addon, and a caller had to already know that
+                    # one op means data.energy while its sibling means object.energy.
+                    #
+                    # _resolve_target above owns that object-or-data decision for set_keyframe;
+                    # this deliberately does not re-derive it, it just tries both on the EVALUATED
+                    # copies and reports which one answered.
+                    v, came_from, exc = None, None, None
+                    for holder, tag in ((ev, "object"), (getattr(ev, "data", None), "data")):
+                        if holder is None:
+                            continue
+                        try:
+                            v = holder.path_resolve(p)
+                            came_from = tag
+                            break
+                        except (ValueError, AttributeError, TypeError) as e:
+                            exc = e
+                    if came_from is None:
+                        values[p] = {"error": "%s - tried the object and its %s datablock. "
+                                              "set_keyframe writes light energy and camera lens to "
+                                              "the DATA; list_keyframes reports which target a "
+                                              "curve uses."
+                                              % (str(exc)[:90],
+                                                 type(getattr(ev, "data", None)).__name__)}
                         continue
                     try:
-                        values[p] = rnd(list(v))
+                        out = rnd(list(v))
                     except TypeError:
-                        values[p] = round(float(v), 6) if isinstance(v, (int, float)) else str(v)
+                        out = round(float(v), 6) if isinstance(v, (int, float)) else str(v)
+                    # WHICH DATABLOCK ANSWERED. A bare number leaves the caller unable to tell
+                    # object.foo from data.foo when both could exist, which is exactly the
+                    # ambiguity that made this op unusable in the first place.
+                    values[p] = out if came_from == "object" else {"value": out, "from": came_from}
                 row["values"] = values
             samples.append(row)
     finally:

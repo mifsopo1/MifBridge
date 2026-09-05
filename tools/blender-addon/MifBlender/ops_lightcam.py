@@ -343,6 +343,21 @@ def op_set_light(params):
     # COMMIT. Nothing below can refuse.
     if new_type is not None:
         data.type = new_type
+        # RE-FETCH, BECAUSE THE PYTHON REFERENCE IS NOW STALE. Assigning `type` changes the ID's
+        # RNA subclass - a PointLight becomes an AreaLight - but the `data` object bound above is
+        # still the OLD wrapper, so `data.size` a few lines down raises
+        #     AttributeError: 'PointLight' object has no attribute 'size'
+        # even though the light IS an AREA by then.
+        #
+        # The order in this function was always correct and that is what made it confusing: type is
+        # applied first, exactly as intended, and the per-type keys were still refused. Retyping and
+        # setting a per-type key in one call is the case the docstring above explicitly promises
+        # ("Retyping to SPOT and setting spotAngle in one call is legitimate and has to work"), and
+        # it was the one case that could not work.
+        #
+        # Found 2026-09-05 converting bunker room lamps from POINT to AREA. The caller's workaround
+        # is two calls, which is why it looked like a caller problem for a while.
+        data = obj.data
     if set_loc is not None:
         obj.location = set_loc
     if set_rot is not None:
@@ -1108,7 +1123,8 @@ def op_set_light_ies(params):
     if out_node is None:
         out_node = nt.nodes.new("ShaderNodeOutputLight")
         out_node.location = (0, 0)
-    if not any(l.to_node is out_node and l.from_node is emit for l in nt.links):
+    # `==` not `is` - bpy re-wraps NodeLink node references, so identity fails for the same node.
+    if not any(l.to_node == out_node and l.from_node == emit for l in nt.links):
         nt.links.new(emit.outputs[0], out_node.inputs[0])
 
     ies = next((n for n in nt.nodes if n.type == "TEX_IES"), None)
@@ -1131,10 +1147,10 @@ def op_set_light_ies(params):
     if strength is not None:
         ies.inputs["Strength"].default_value = strength
 
-    linked = any(l.from_node is ies and l.to_node is emit for l in nt.links)
+    linked = any(l.from_node == ies and l.to_node == emit for l in nt.links)
     if not linked:
         nt.links.new(ies.outputs[0], emit.inputs["Strength"])
-        linked = any(l.from_node is ies and l.to_node is emit for l in nt.links)
+        linked = any(l.from_node == ies and l.to_node == emit for l in nt.links)
 
     return {
         "light": obj.name,

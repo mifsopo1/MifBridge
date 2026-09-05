@@ -31,17 +31,49 @@ def _ensure_world(name):
     return sc.world
 
 
+def _ensure_wired(world, bg):
+    """Make sure this Background node actually reaches the world output.
+
+    WHY THIS IS NOT JUST DONE AT CREATION TIME, which is what it used to be. The helper below wired
+    the node only on the branch that CREATED one. A world that already had a Background node but no
+    link from it to the output got that node handed straight back, and every value written to it was
+    inert - set_world returned ok:true, the colour and strength landed on the node, and the scene's
+    ambient did not change by any amount.
+
+    world_info could already SEE it and said so in as many words - contributesLight false, with a
+    blocker reading "the Background node exists but is NOT connected to the world output, so every
+    value on it is inert - it accepts writes and changes no light". So the diagnosis existed and the
+    op doing the writing never consulted it. Found 2026-09-05 after tuning a bunker's ambient across
+    several renders with nothing happening, and only noticing because world_info was called for an
+    unrelated reason.
+
+    Wiring it is the same judgement the creation branch already makes - there is exactly one
+    sensible answer for where a Background node's output goes - applied to the case where the node
+    exists and the link does not.
+    """
+    tree = world.node_tree
+    out = next((n for n in tree.nodes if n.type == "OUTPUT_WORLD"), None)
+    if out is None:
+        out = tree.nodes.new("ShaderNodeOutputWorld")
+    surface = out.inputs.get("Surface")
+    if surface is None:
+        return False
+    for link in tree.links:
+        if link.to_socket == surface and link.from_node == bg:
+            return False                      # already wired, nothing to do
+    tree.links.new(bg.outputs["Background"], surface)
+    return True                               # we had to connect it
+
+
 def _background_node(world):
     for n in world.node_tree.nodes:
         if n.type == "BACKGROUND":
+            _ensure_wired(world, n)
             return n
     # A world whose tree was rebuilt by hand may have no Background node; make one and wire it
     # rather than refusing, since there is exactly one sensible answer.
     bg = world.node_tree.nodes.new("ShaderNodeBackground")
-    out = next((n for n in world.node_tree.nodes if n.type == "OUTPUT_WORLD"), None)
-    if out is None:
-        out = world.node_tree.nodes.new("ShaderNodeOutputWorld")
-    world.node_tree.links.new(bg.outputs["Background"], out.inputs["Surface"])
+    _ensure_wired(world, bg)
     return bg
 
 
@@ -120,7 +152,8 @@ def op_set_world(params):
         # Unlink any environment texture first, or the flat colour is written and then overridden
         # by the texture that is still plugged in - a change that reports success and does nothing.
         for link in list(world.node_tree.links):
-            if link.to_node is bg and link.to_socket.name == "Color":
+            # See the note in _surface_source: `is` fails on NodeLink node references.
+            if link.to_node == bg and link.to_socket.name == "Color":
                 world.node_tree.links.remove(link)
         vals = [float(c) for c in col[:3]] + [1.0]
         bg.inputs["Color"].default_value = vals
@@ -193,7 +226,13 @@ def _surface_source(world):
     if out is None:
         return None
     for link in world.node_tree.links:
-        if link.to_node is out and link.to_socket.name == "Surface":
+        # `==` NOT `is`. bpy re-wraps non-ID sub-structs, so a NodeLink's .to_node/.from_node is a
+    # DIFFERENT Python object from the same node reached through tree.nodes - measured on
+    # Blender 5.0: `link.to_node is out` False, `link.to_node == out` True, different id().
+    # ID datablocks (objects, meshes, cameras) ARE interned and compare fine with `is`; node
+    # graph pieces are not. ops_nodes.py had already found this and the knowledge had not
+    # travelled.
+        if link.to_node == out and link.to_socket.name == "Surface":
             return link.from_node
     return None
 
@@ -245,7 +284,7 @@ def _trace_to_texture(tree, socket, seen=None, depth=0):
     if depth > _MAX_TRACE:
         return None
     for link in tree.links:
-        if link.to_socket is not socket:
+        if link.to_socket != socket:   # `is` fails on re-wrapped sockets, see _surface_source
             continue
         node = link.from_node
         if node.name in seen:

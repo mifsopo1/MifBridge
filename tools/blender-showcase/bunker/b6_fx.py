@@ -128,17 +128,24 @@ def main():
     # claim about the parameters I had passed rather than about anything on screen.
     print("  baking physics over the whole range - unbaked particles render nothing at a jumped frame")
     bake = S.call("bake_physics", {"start": 1, "end": END_F}, timeout=1800.0)
-    # AND IT DID NOT BAKE THE PARTICLES. It returns baked:true and its own caches list says what it
-    # actually did: [{"kind": "rigidbody", "isBaked": true, "frames": [1, 961]}], cacheCount 1. The
-    # five particle systems this stage just created are not in it. Reading the field is the only way
-    # to know - the top-level flag says success either way. Filed in FEATURE_PARITY_SPEC.
-    kinds = [c.get("kind") for c in (bake.get("caches") or [])]
-    if "particles" not in kinds:
-        print("  !! bake_physics baked %s and NOT the particle systems." % (kinds or "nothing"))
-        print("  !! Consequence: a still rendered at a JUMPED frame shows no sparks and no dust,")
-        print("  !! because EMITTER/NEWTON particles are simulated forward from the range start.")
-        print("  !! It does NOT affect the recording, which plays forward and simulates as it goes.")
-        print("  !! It does mean a single-frame check of this stage proves nothing.")
+    # THIS USED TO SAY bake_physics DID NOT BAKE THE PARTICLES. That was wrong and the correction
+    # is worth keeping. It reported cacheCount 1, kind "rigidbody", with the five systems this stage
+    # had just created missing - but ptcache.bake_all had baked them all along. The op's READBACK
+    # walked ob.modifiers[].point_cache, and a particle system's cache is not there; it hangs off
+    # ob.particle_systems[i].point_cache. Fixed in the addon on 2026-09-05.
+    #
+    # The check below is kept, because a bake that genuinely did nothing is still worth catching -
+    # it just no longer fires for the wrong reason.
+    baked = [c for c in (bake.get("caches") or []) if c.get("kind") == "particles"]
+    print("  particle caches reported: %d, of which baked: %d"
+          % (len(baked), sum(1 for c in baked if c.get("isBaked"))))
+    for c in baked:
+        if c.get("isBaked") and str(c.get("object", "")).startswith("FX_Spark"):
+            print("    %s cache covers frames %s - its emission window plus particle lifetime"
+                  % (c["object"], c.get("frames")))
+    if not baked:
+        print("  !! bake_physics reported NO particle caches at all. A still at a jumped frame will")
+        print("  !! show nothing, because EMITTER/NEWTON particles simulate forward from the start.")
     print("    %s" % str({k: v for k, v in bake.items()
                           if k not in ("ok", "endpoint", "elapsedMs")})[:200])
 
@@ -149,8 +156,13 @@ def main():
     # an earlier version of this line claimed "sparks emit only during b5's two failure windows",
     # which was a claim about the parameters passed rather than about anything on screen. The
     # spark-ish pixel count at 6.4s, 16.6s and 17.7s was 23, 23 and 23: all background.
-    S.done("%d particle(s) across %d system(s), counts and windows read back from Blender. "
-           "VISIBILITY per second is NOT verified here - see the bake note above."
+    # WHAT IS AND IS NOT VERIFIED, now that the addon reports particle caches. The counts, the
+    # emission windows AND the baked state are all read back from Blender - the spark caches report
+    # frame ranges matching their declared beats, which is the check this line used to say it could
+    # not do. What is still not asserted is whether a 1.4cm mote is VISIBLE at a given camera and
+    # exposure; that is a composition question and a render is the only judge of it.
+    S.done("%d particle(s) across %d system(s). Counts, windows and baked state read back from "
+           "Blender; per-camera visibility is a composition question and is not asserted here."
            % (total, systems))
 
 

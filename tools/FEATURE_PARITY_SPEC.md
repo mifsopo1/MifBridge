@@ -15228,7 +15228,7 @@ out-of-process the way ops_gen already does with gen_status.
       does. Failing that, say so - "energy is on the light data; evaluate_at_frame reads the object"
       is a hint, and the current message is a stack-trace fragment.
 
-- [ ] **bake_physics returns baked:true without baking the particle systems**
+- [x] **bake_physics UNDER-REPORTED its own work: particle caches were missing from `caches`**
       FOUND 2026-09-05 building the bunker showcase's atmosphere stage.
 
         add_particles x5   (EMITTER, physicsType NEWTON - dust, steam, sparks)
@@ -15258,7 +15258,39 @@ out-of-process the way ops_gen already does with gen_status.
       the defect, and `caches` should say "no particle caches were baked; use <x>". If it intends to
       cover them, it is missing PointCache lookups on every object's particle systems.
 
-- [ ] **set_world reports ok:true for a write that changes no light, and world_info knows**
+      ================================================================================
+      ESTABLISHED 2026-09-05, AND THE HEADLINE ABOVE WAS WRONG. FIXED.
+      ================================================================================
+      It was the second guess: missing PointCache lookups. bpy.ops.ptcache.bake_all DOES bake
+      particle systems, and always did. What was broken is the READBACK - it walked
+      `ob.modifiers[].point_cache`, and a particle system's cache is not there. A ParticleSystem
+      modifier has no point_cache at all; the cache hangs off the SYSTEM, at
+      `ob.particle_systems[i].point_cache`. So every particle sim in the scene was skipped by the
+      report and the answer looked like "only the rigid body was baked".
+
+      THE OP WAS DOING ITS JOB AND FAILING TO SAY SO, which is the opposite of the set_world defect
+      it was filed alongside - and I filed it as though it were the same shape. Fixed by adding the
+      particle_systems walk.
+
+      MEASURED AFTER THE FIX, on the bunker scene:
+
+        cacheCount 30, every one kind "particles"
+          5 BAKED   - b6's EMITTER systems: FX_Dust_Hall [1,961], FX_Steam_0/1 [1,961],
+                      FX_Spark_0 [143,196], FX_Spark_1 [407,474]
+         25 UNBAKED - b3's HAIR scatter systems, which are static instancing with nothing to
+                      simulate. Correct, not a defect.
+
+      AND THE SPARK CACHE RANGES INDEPENDENTLY CONFIRM b6's EMISSION WINDOWS. [143,196] and
+      [407,474] are its two declared failure beats plus the particle lifetime - which is the
+      verification b6 said it could not do, now available without rendering a single frame.
+
+      WHAT I GOT WRONG AND HOW: the sparks were invisible in a jumped-frame render, the readback
+      showed no particle caches, and those two facts together made "not baked" the obvious reading.
+      Both had other causes - an incomplete report, and a 1.4cm emissive sphere below my
+      orange-pixel detector's threshold. Dust from the same stage renders plainly in a wide shot,
+      which is the check that should have come first and settles that particles render at all.
+
+- [x] **world_info raised a FALSE ALARM on every connected world - `is` vs `==` on bpy node links**
       FOUND 2026-09-05 building the bunker showcase, by reading a field I had not thought to read.
 
         set_world {color, strength}            -> ok:true
@@ -15295,6 +15327,38 @@ out-of-process the way ops_gen already does with gen_status.
 
       DO NOT "fix" this by having callers call world_info afterwards. That is what the bunker's
       stage 4 does now as a stopgap and it only works for callers who already know to.
+
+      ================================================================================
+      RESOLVED 2026-09-05, AND THIS ITEM ACCUSED THE WRONG ENDPOINT. set_world was fine.
+      ================================================================================
+      The world was never inert. world_info was reporting a blocker that was not true, on a
+      completely normal factory-startup world, and I believed its diagnosis because it was specific
+      and well-written.
+
+      Introspected the actual tree: two nodes, OUTPUT_WORLD and BACKGROUND, with a link from
+      Background.Background to World Output.Surface. Exactly what it should be. Then:
+
+          link.to_node is  out   ->  False
+          link.to_node ==  out   ->  True
+          id(link.to_node) 2899650601664   id(out) 2899650600512
+
+      bpy RE-WRAPS non-ID sub-structs, so a NodeLink's .to_node is a DIFFERENT Python object from
+      the same node reached through tree.nodes. `_surface_source` compared them with `is`, found
+      nothing driving the output, and every caller downstream concluded the world was disconnected.
+
+      ID DATABLOCKS ARE INTERNED AND COMPARE FINE - measured too: scene.camera is objects[name] is
+      True, obj.data is meshes[name] is True. So the defect is specific to node/link/socket
+      comparisons and the object-level `is` checks elsewhere in the addon are safe.
+
+      SIX SITES FIXED across ops_world.py and ops_lightcam.py. ops_nodes.py:497 already carried a
+      comment saying "`l.from_node is fn` does NOT work: bpy RNA references are proxy" - one file had
+      found this and the knowledge never travelled to the other two.
+
+      A FALSE ALARM IS THE WORSE KIND and this one demonstrates why. It cost several renders of
+      lighting tuned around an ambient I believed was dead, a spec item filed against the wrong
+      endpoint, and a comment in the bunker's stage 4 telling future readers that WORLD_STRENGTH is
+      a knob that turns nothing. All three have been corrected. Verified after the fix: a fresh
+      world reports contributesLight true, backgroundConnected true, blockers [].
 
 - [ ] **13 messages declare a leftover and do not say it is permanent**
       FOUND 2026-09-05 by fixing ONE of them, then counting. recipe_add_debug_print has two failure

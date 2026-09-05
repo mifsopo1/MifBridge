@@ -268,6 +268,21 @@ def op_bake_physics(params):
             if pc is not None:
                 caches.append({"kind": m.type.lower(), "object": ob.name, "isBaked": bool(pc),
                                "frames": [m.point_cache.frame_start, m.point_cache.frame_end]})
+        # PARTICLE CACHES ARE NOT ON THE MODIFIER, which is why they were missing from this report
+        # entirely. A ParticleSystem modifier has no `point_cache`; the cache hangs off the SYSTEM
+        # at ob.particle_systems[i].point_cache. The loop above therefore skipped every particle
+        # sim in the scene and the answer looked like "only the rigid body was baked".
+        #
+        # Found 2026-09-05: five EMITTER/NEWTON systems were created, bake_physics returned
+        # baked:true with cacheCount 1 and kind "rigidbody", and I concluded the particles had not
+        # been baked. ptcache.bake_all does bake them - what was broken was this readback, so the
+        # op under-reported its own work and there was no way to tell that from the outside.
+        for ps in getattr(ob, "particle_systems", ()):
+            pc = getattr(ps, "point_cache", None)
+            if pc is not None:
+                caches.append({"kind": "particles", "object": ob.name, "system": ps.name,
+                               "isBaked": bool(pc.is_baked),
+                               "frames": [pc.frame_start, pc.frame_end]})
     return {"baked": True, "caches": caches, "cacheCount": len(caches),
             "emptyNote": (None if caches else
                           "bake_all reported success and NOTHING has a point cache - there was no "
