@@ -62,6 +62,28 @@ INTENT = re.compile(
 HARNESS = {"confirm", "save", "force", "overwrite", "replaceexisting", "discardunsaved"}
 
 
+
+# WHAT GETS SCANNED. Suites plus the tools that CALL ENDPOINTS AND SHIP - which the test_*.py glob
+# missed, and it cost twice on 2026-09-05: make_demo sent bevel_edges{width} and
+# create_material{assignTo}, and make_ue_demo sent capture_camera{path}. All three were the same
+# mistake, generalising a spelling from a sibling endpoint, and all three are exactly what this
+# audit finds statically instead of at a user's call.
+#
+# make_demo in particular is one of the four tools kept in the --fab package because a buyer runs
+# it. A parameter error in a shipped demo generator fails in front of a customer; the same error in
+# a suite fails in front of us.
+EXTRA_CALLERS = ("make_demo.py", "make_ue_demo.py", "verify_install.py", "scratch_confirm.py",
+                 "bench_bridge_latency.py")
+
+
+def scanned_files(here):
+    """Every file this audit reads, suites first. One list so the two scan loops cannot drift."""
+    files = sorted(glob.glob(os.path.join(here, "test_*.py")))
+    files += [os.path.join(here, n) for n in EXTRA_CALLERS
+              if os.path.isfile(os.path.join(here, n))]
+    return files
+
+
 def strip_py_comments(text):
     """Drop # comments, keeping strings. The INTENT match must read the ASSERTION, not the prose.
 
@@ -151,7 +173,7 @@ def unknown_endpoint_calls(bound):
     kr_* is skipped: those come from an external provider and are not in this module's MIF_BIND list.
     """
     rows = []
-    for f in sorted(glob.glob(os.path.join(HERE, "test_*.py"))):
+    for f in scanned_files(HERE):
         src = io.open(f, encoding="utf-8", errors="replace").read().replace("\r\n", "\n")
         for m in CALL_ANY.finditer(src):
             ep = m.group(1)
@@ -237,7 +259,7 @@ def main():
         print("   %-34s:%-5d calls %r, which is not a MIF_BIND name" % (fn, line, ep))
 
     rows = []
-    for f in sorted(glob.glob(os.path.join(HERE, "test_*.py"))):
+    for f in scanned_files(HERE):
         src = io.open(f, encoding="utf-8", errors="replace").read().replace("\r\n", "\n")
         for m in CALL.finditer(src):
             ep = m.group(1)
