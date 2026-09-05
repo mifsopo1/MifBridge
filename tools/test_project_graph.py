@@ -35,6 +35,37 @@ def check(name, cond, detail=""):
     print(("  PASS  " if cond else "  FAIL  ") + name + ("" if cond else "   " + str(detail)))
 
 
+def populated_prefix():
+    """A pathPrefix this PROJECT actually has content under, discovered rather than assumed.
+
+    FOUND ON STOCK 5.7, 2026-09-05. Four sites hardcoded a folder the cooked fork happens to have
+    and Curfew does not - its content is under /Game/CF. The endpoint answered correctly for an
+    empty prefix, so nothing crashed; T644 simply counted the nodes in a graph of nothing and
+    reported a failure, and every assertion under it verified an empty result. A suite that quietly
+    tests nothing is the failure this repo keeps finding, and here it was hiding behind a folder
+    name.
+
+    /Game itself is not usable: T641 exists because a mount root is REFUSED, deliberately. So this
+    walks one level down and returns the busiest child folder.
+
+    Scratch fixtures are excluded - a sweep leaves them under /Game/_Mif*, and pointing the graph at
+    this harness's own leftovers would measure the test rig instead of the project.
+    """
+    r = M.call("find_assets", {"pathPrefix": "/Game", "limit": 400}, timeout=180)
+    counts = {}
+    for row in (r.get("assets") or r.get("results") or []):
+        if M.is_scratch_fixture(row):
+            continue
+        pkg = row.get("packageName") or row.get("path") or ""
+        bits = [b for b in pkg.split("/") if b]
+        if len(bits) < 3 or bits[0] != "Game":       # /Game/<folder>/<asset> at minimum
+            continue
+        counts["/Game/" + bits[1]] = counts.get("/Game/" + bits[1], 0) + 1
+    if not counts:
+        return None
+    return max(counts.items(), key=lambda kv: kv[1])[0]
+
+
 def main():
     if not M.wait_for_bridge(timeout=900):
         print("bridge never came up")
@@ -44,6 +75,14 @@ def main():
     eps = M.endpoint_names()
     for e in ("project_dependency_graph", "project_asset_distribution"):
         check("T640 %s is registered" % e, e in eps, "%d endpoints" % len(eps))
+
+    PREFIX = populated_prefix()
+    check("T640 a populated pathPrefix was found to test against", bool(PREFIX),
+          "no non-scratch asset under /Game/<folder>/ - the graph assertions below would all be "
+          "measuring an empty result, which is worse than failing")
+    if not PREFIX:
+        return 1
+    print("    testing against %s (discovered, not assumed)" % PREFIX)
 
     # ------------------------------------------------------------------ T641 the guard
     print("")
@@ -70,7 +109,7 @@ def main():
     print("")
     print("=== T642 [truncation honesty]: a capped graph must not read as a complete one ===")
     g = M.call("project_dependency_graph",
-               {"pathPrefix": "/Game/Blueprints", "maxNodes": 10}, timeout=600)
+               {"pathPrefix": PREFIX, "maxNodes": 10}, timeout=600)
     check("T642 a real prefix succeeds", g.get("ok") is True, json.dumps(g)[:200])
     if g.get("ok"):
         nodes = g.get("nodes") or []
@@ -152,11 +191,11 @@ def main():
     # Default (mermaid omitted) must be byte-for-byte the old shape - no `mermaid` key at all, so an
     # existing caller reading only nodes/edges never sees a change.
     m_off = M.call("project_dependency_graph",
-                   {"pathPrefix": "/Game/Blueprints", "maxNodes": 10}, timeout=180)
+                   {"pathPrefix": PREFIX, "maxNodes": 10}, timeout=180)
     check("T644 mermaid omitted -> no mermaid field", "mermaid" not in m_off, json.dumps(m_off)[:200])
 
     m = M.call("project_dependency_graph",
-               {"pathPrefix": "/Game/Blueprints", "maxNodes": 10, "mermaid": True}, timeout=180)
+               {"pathPrefix": PREFIX, "maxNodes": 10, "mermaid": True}, timeout=180)
     check("T644 mermaid:true still succeeds", m.get("ok") is True, json.dumps(m)[:200])
     if m.get("ok"):
         text = m.get("mermaid")
@@ -199,7 +238,7 @@ def main():
     # includeExternal + mermaid together must not crash, and now CAN legitimately carry more node
     # lines than nodeCount (the first-seen-external-target case the handler documents).
     me = M.call("project_dependency_graph",
-                {"pathPrefix": "/Game/Blueprints", "maxNodes": 10,
+                {"pathPrefix": PREFIX, "maxNodes": 10,
                  "includeExternal": True, "mermaid": True}, timeout=180)
     check("T644 includeExternal + mermaid together succeeds", me.get("ok") is True,
           json.dumps(me)[:200])
