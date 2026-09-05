@@ -15763,6 +15763,30 @@ out-of-process the way ops_gen already does with gen_status.
       DO NOT run the unguarded suites against somebody's uncooked project to find out. Read the
       assertions.
 
+      MEASURED 2026-09-05 BY READING, NOT RUNNING - tools/audit_cooked_suite_shape.py. It finds every
+      check() line mentioning cooked, collects the endpoints called just above it, and classifies
+      them against the LIVE bucket list from self_audit rather than by guessing from a name:
+
+        22 suites   the cooked assertion sits on a NON-READ-ONLY endpoint
+         6 suites   read-only throughout - readability only, nothing can land
+
+      SO THE SAFETY SHAPE IS THE MAJORITY, not the exception, which is the opposite of what the item
+      above assumed when it was filed.
+
+      SAID PRECISELY, BECAUSE "22 SUITES WRITE" WOULD BE AN OVERSTATEMENT. Not-read-only means the
+      endpoint gets RunEndpoint's blanket transaction, so a call CAN land; it is a superset of
+      "mutates". list_redirectors and lighting_build_status are both in the 22 and plainly do not
+      write. The confirmed-landing count is ONE - test_anim_curve, measured directly, add and remove
+      on a real MetaHuman animation. The other 21 need their handlers read before any of them is
+      called a hazard.
+
+      AND THE FIRST RUN OF THAT TOOL PRODUCED THE ANSWER I WAS HOPING FOR, WHICH WAS THE TELL. It
+      asked self_audit for includeList/includeDetails - neither is a parameter it accepts - got no
+      endpointDetails, and every endpoint fell through to the read bucket by default. It printed
+      "0 safety, 28 readability", the reassuring result, entirely manufactured. The tool now refuses
+      to classify at all if self_audit returns fewer than 100 buckets, and prints the denominator
+      first either way.
+
 - [ ] **29 suites can only ever pass on a COOKED project, and most buyers are not on one**
       FOUND 2026-09-05, running the suites against Curfew - uncooked 5.7, 35,725 assets, a real
       game project - for the first time. Andre's prompt was "most of our testing im pretty sure has
