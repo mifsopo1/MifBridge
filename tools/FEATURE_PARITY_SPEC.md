@@ -15059,6 +15059,45 @@ out-of-process the way ops_gen already does with gen_status.
       supplied a set. Print `allowed` and `m.group(0)` together in the scan loop and it will be
       obvious in one run.
 
+- [ ] **13 messages declare a leftover and do not say it is permanent**
+      FOUND 2026-09-05 by fixing ONE of them, then counting. recipe_add_debug_print has two failure
+      paths out of the same request and only one was honest:
+
+        afterNode did not resolve   "...not removed by this failure (a self-managed transaction
+                                     commits, and a cancel would only discard the undo entry
+                                     - PM-007). Remove it with remove_node."
+        the splice failed           "...not removed by this failure. Remove it with remove_node."
+
+      The second path's own CODE COMMENT says "even a cancel would only discard the undo entry, not
+      remove the node (PM-007). Say so." - and the string did not say so. Fixed. A caller who hit
+      that path was told what was left without being told it is permanent, and would reasonably
+      reach for undo_transactions and believe it had worked.
+
+      IT WAS ONLY EVER REACHED ON STOCK 5.7. The cooked fork always took the other branch, so no
+      test touched the half-message until the suites were pointed at an uncooked project. That is
+      the whole argument for the uncooked sweep in one defect.
+
+      THE SURVEY, and it is the reason this is an item rather than a sweep. 17 sites emit
+      "WHAT IS LEFT BEHIND"; 4 explain why nothing is rolled back and 13 do not:
+
+        add_reroute                 4 sites, 2 explain, 2 do not   <- ONE handler, inconsistent
+        add_pin                     2 sites, neither explains
+        add_widget_animation_track  2 sites, neither
+        set_material_layers, create_struct, add_widget_animation, task, and 3 unattributed
+                                    1 site each, none explain
+
+      add_reroute is the strongest lead: same handler, same failure family, two spellings.
+
+      DO NOT BULK-APPEND THE CLAUSE, and this is the point of writing it down rather than doing it.
+      "a cancel would only discard the undo entry" is true where a cancel is actually attempted on a
+      transaction the handler owns. A site outside any transaction, or one whose leftover IS undone,
+      would be given a false explanation - and a false explanation of a real consequence is worse
+      than the silence it replaces, because the caller acts on it. Each site needs its bucket read
+      (describe_endpoint reports selfManaged and transacted) and its own code read for whether a
+      Cancel is reached at all. Seventeen small readings, not one regex.
+
+      The one fixed here qualified on evidence its sibling path already carried.
+
 - [ ] **a session cannot delete an asset it created, and nothing can flush the undo buffer**
       DIAGNOSED 2026-09-05, and it settles test_socket_authoring's T3104 - the failure the
       fixture-adoption item has been carrying as its outstanding case.

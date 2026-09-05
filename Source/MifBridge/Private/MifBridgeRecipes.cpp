@@ -167,8 +167,18 @@ namespace MifBridge
 						// Batch M, option (c). This endpoint is SELF-MANAGED and opens its own
 						// FScopedTransaction, which COMMITS when this returns — and even a cancel would
 						// only discard the undo entry, not remove the node (PM-007). Say so.
+						// THE COMMENT ABOVE PROMISED PM-007 AND THE STRING DID NOT SAY IT, until
+						// 2026-09-05. The sibling path below (afterNode did not resolve) explains
+						// why nothing is rolled back; this one disclosed the leftover, named
+						// remove_node, and stopped - so a caller who hit THIS path was told what
+						// was left without being told it is permanent, and would reasonably try
+						// undo_transactions and believe it worked.
+						//
+						// Found on stock UE 5.7: the fork always took the other branch, so the
+						// half-message was never reached by a test until the suites were pointed at
+						// an uncooked project. Two paths out of one failure, one of them honest.
 						Fail(Out, FString::Printf(
-							TEXT("afterNode was given but the splice failed: %s WHAT IS LEFT BEHIND: the Print String node HAS been created in the graph, unwired, and is not removed by this failure. Remove it with remove_node (confirm:true), or wire it yourself with connect_pins."),
+							TEXT("afterNode was given but the splice failed: %s WHAT IS LEFT BEHIND: the Print String node HAS been created in the graph, unwired, and is not removed by this failure (a self-managed transaction commits, and a cancel would only discard the undo entry, not apply it - PM-007). Remove it with remove_node (confirm:true), or wire it yourself with connect_pins."),
 							*SpliceError));
 						return;
 					}
