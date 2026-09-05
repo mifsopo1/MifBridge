@@ -134,41 +134,24 @@ def main():
     check("T4902 and the refusal explains Dimensions is a formatted string, pointing at includeTags",
           "includeTags" in (num.get("error") or ""), (num.get("error") or "")[:250])
 
-    # ------------------------------------------------------------------ T4903 cooked
-    # COOKED-ONLY, SKIPPED where nothing is cooked. On an uncooked project the
-    # refusal this asserts never comes, so the assertion fails for the environment
-    # rather than for a defect - and where the call is a write, it lands instead.
-    # Section confirmed self-contained by audit_cooked_section_safety before wrapping.
-    #
-    # `is not False`: project_is_cooked returns None when the question could not be
-    # asked, and an unanswerable question is not a No - None runs this as before.
-    COOKED = M.project_is_cooked()
-    if COOKED is False:
-        print("")
-        print('=== T4903 SKIPPED - nothing in this project is cooked ===')
-        print('  This section asserts what an endpoint REFUSES on cooked content. There is nothing cooked')
-        print('  here, so the refusal cannot be provoked - which is not the same as the guard being absent.')
-        print('  Where the call is a WRITE, running it unguarded would perform the write it means to see')
-        print('  refused. Run against a cooked project for this half.')
+    print("\n=== T4903: on cooked content this is what SURVIVED, not what exists ===")
+    cooked = (M.call("find_assets", {"origin": "container", "limit": 1}).get("assets")
+              or [{}])[0].get("path")
+    if cooked:
+        c = M.call("get_asset_tags", {"path": cooked})
+        check("T4903 a cooked asset reads fine - nothing is deserialised",
+              c.get("ok") is True, json.dumps(c)[:220])
+        check("T4903 it is flagged as coming from a container",
+              c.get("origin") == "container", c.get("origin"))
+        # THE assertion that stops a wrong conclusion: a short tag map on cooked content is not
+        # evidence the asset is simple.
+        check("T4903 and warns the tags were STRIPPED at cook, so a small map proves nothing",
+              "SURVIVED" in (c.get("cookedNote") or ""), (c.get("cookedNote") or "")[:220])
     else:
-        print("\n=== T4903: on cooked content this is what SURVIVED, not what exists ===")
-        cooked = (M.call("find_assets", {"origin": "container", "limit": 1}).get("assets")
-                  or [{}])[0].get("path")
-        if cooked:
-            c = M.call("get_asset_tags", {"path": cooked})
-            check("T4903 a cooked asset reads fine - nothing is deserialised",
-                  c.get("ok") is True, json.dumps(c)[:220])
-            check("T4903 it is flagged as coming from a container",
-                  c.get("origin") == "container", c.get("origin"))
-            # THE assertion that stops a wrong conclusion: a short tag map on cooked content is not
-            # evidence the asset is simple.
-            check("T4903 and warns the tags were STRIPPED at cook, so a small map proves nothing",
-                  "SURVIVED" in (c.get("cookedNote") or ""), (c.get("cookedNote") or "")[:220])
-        else:
-            print("  NOTE  no container-origin asset found, so the cooked caveat is unexercised here.")
+        print("  NOTE  no container-origin asset found, so the cooked caveat is unexercised here.")
 
-        check("T4903 - the editor is still alive", M.call("self_audit", {}).get("ok") is True,
-              "nothing here loads an asset, which is the whole safety argument")
+    check("T4903 - the editor is still alive", M.call("self_audit", {}).get("ok") is True,
+          "nothing here loads an asset, which is the whole safety argument")
 
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))

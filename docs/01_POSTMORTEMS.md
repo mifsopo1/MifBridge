@@ -5,6 +5,71 @@ Newest first.
 
 ---
 
+## PM-016 — nine "cooked" guards were skipping 48 working checks, because the rule matched the word in the check's LABEL
+
+**Date** 2026-09-05
+
+**Symptom.** `test_niagara_emitter` was guarded and ran `PASS 4 FAIL 0`. The same suite one commit
+earlier ran `PASS 13 FAIL 0` on the same editor. Nine checks had stopped running, silently, and the
+suite still reported success — so nothing about the output said coverage had been lost.
+
+**Root cause.** A section qualified for a cooked-project guard if this matched anywhere in it:
+
+```python
+re.search(r"check\([^)]*cooked", body, re.I | re.S)
+```
+
+`check(...)`'s first argument is the human-readable LABEL. T6102's label reads *"the add refusal
+names the REAL hazard — the editor-only fields that are null on cooked content"*, and what it
+actually asserts is that `add`, `remove` and `index` are refused by name. No cooked asset is
+involved. `test_create_asset` T145 was the same shape and worse: it creates eight asset classes and
+checks that an abstract class is refused, and its only tie to the word is a label saying the error
+*"explains the cooked-game consequence"* — a string assertion about error text. Guarding it skipped
+18 passing checks.
+
+The rule was measuring the presence of a word in prose, and being read as a claim about behaviour.
+
+**How the real answer was obtained.** Not by a better regex — an AST version that ignored labels did
+worse, firing on the guard's own `COOKED` variable, on `M.project_is_cooked`, and on every
+`"cooked" in (r.get("error") or "")` substring assertion: 22 candidates against a ground truth of 5.
+The question is empirical, so it was measured. `audit_cooked_guard_value` removes each guard in
+turn, runs the suite against a disposable probe editor, and compares with the fully guarded
+baseline:
+
+| | |
+|---|---|
+| new **failures** appear without it | the guard prevents them — keep |
+| only new **passes** appear | it was skipping working checks — remove |
+
+Of 23 guards: **5 keep, 9 remove, 2 inert, 7 undecidable** on an uncooked project. The nine removed
+were skipping 48 checks between them, and every one of those checks passes.
+
+A per-suite version of this ran first and was misleading: it reported `test_anim_curve` as EARNS IT
+because 9 failures appeared without its guards, and never mentioned that 5 passing checks were also
+being skipped. A suite can hold one guard that earns its place and another that does not, so the
+unit of judgement has to be the guard, not the file.
+
+**Fix.** The nine guards are gone; those suites now run 22, 47, 24, 40, 16, 19, 22, 17 and 27 checks
+with zero failures. Five measured-good guards remain. `audit_cooked_section_safety` no longer says
+"safe to wrap" — it says `wrappable - NOT a recommendation, measure it`, and its header says plainly
+that it answers a control-flow question and cannot answer whether a guard is warranted.
+
+**Prevention.**
+
+1. `audit_cooked_guard_value` is in `tools/`. It refuses to start unless `MIF_PROJECT_MARKER` names
+   the editor — it runs suites with their guards removed, which is exactly the state where "assert
+   this is refused" becomes "perform this" — and unless every `tools/test_*.py` is clean in git,
+   because it rewrites suites in place and a `finally` does not survive a kill. Both refusals were
+   provoked and watched to fire.
+2. **A guard is a claim, and claims here get measured.** This repo already refuses `ok:true` as
+   proof of a write and `rc=0` as proof a suite ran (PM-015). "This section needs a cooked project"
+   was the same kind of claim, asserted from a regex over prose and never tested. The general form:
+   *when a static rule decides what runs, check what it costs by running both ways.*
+3. The count is the tell. A guard that reduces a suite's PASS total and removes no FAILures has
+   bought nothing. That comparison is one run and it was never made.
+
+---
+
 ## PM-015 — the cooked guard swallowed main()'s return, and three suites went green with their failures thrown away
 
 **Date** 2026-09-05

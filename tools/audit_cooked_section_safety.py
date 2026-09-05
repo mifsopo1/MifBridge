@@ -1,4 +1,11 @@
-"""Which cooked sections can be WRAPPED without breaking the suite, and which carry setup.
+"""Which cooked sections CAN be wrapped without breaking the suite. Not which SHOULD be.
+
+READ THIS BEFORE ACTING ON THE OUTPUT. This tool answers a mechanical question about scope and
+control flow, and it was mistaken for an answer to a different one - "does this section need a
+cooked-project guard". It cannot answer that, and 9 of the 17 guards placed as if it could were
+measured to skip 48 working checks while preventing nothing. audit_cooked_guard_value answers that
+one, by removing each guard in turn against a live editor and reporting whether a real failure
+appears without it. Use this column as a list of candidates and that tool as the decision.
 
 BUILT BECAUSE I BROKE ONE. test_virtual_bone_authoring's T3300 is banner-titled "cooked skeletons
 are refused, and named" and looks exactly like the four sections that wrapped cleanly. It also
@@ -23,15 +30,17 @@ Anything else carries setup, and its cooked ASSERTIONS have to be guarded indivi
 This reports the split and names the leaked variables, so the next pass starts from a list rather
 than from a suite that dies at runtime.
 
-DELIBERATELY CONSERVATIVE, and the direction matters. A name that is assigned in the section and
-merely REASSIGNED later - the throwaway `r` that half these suites reuse for every response - counts
-as leaked here even though wrapping would not break it. So "carries setup" is a superset: it will
-send a few safe sections to the slower per-assertion treatment, and it will not send an unsafe one
-to the fast path. A false positive costs a careful edit; a false negative costs a suite that dies at
-runtime, which is what this exists to prevent.
+CONSERVATIVE, BUT NOT BLINDLY. A name assigned in the section and merely REASSIGNED afterwards -
+the throwaway `r` that half these suites reuse for every response - used to count as leaked, which
+sent 17 sections to the slow path that a wrap would not have broken. reassigned_first now clears
+those, under three conditions that all have to hold; anything it cannot prove keeps the old verdict.
+The asymmetry is deliberate: a false positive costs a careful edit, a false negative costs a suite
+that dies at runtime.
 
-The "already guarded" verdict is per FILE, not per section - a suite with one guarded section shows
-it against all of them. Informational only; the wrapping is decided by the leak column.
+The "already guarded" verdict is PER SECTION, read off the else-branch spans of the actual guards in
+the tree. It used to be per file, which made one guarded section report seven of its neighbours as
+guarded when they were not - and the applier skips what this calls guarded, so those were
+unreachable by the fast path for no reason.
 """
 import ast
 import glob
@@ -41,6 +50,70 @@ import re
 
 TOOLS = r"D:\DDS2SDK\Game\Plugins\MifBridge\tools"
 SECTION = re.compile(r'print\(\s*["\'](?:\\n)?=== (T\w+)')
+
+
+def guarded_spans(tree):
+    """Line spans of the else-branches of every `if COOKED is False:` in the tree.
+
+    PER SECTION, not per file, and the difference was hiding work. The verdict used to be "does
+    this FILE contain the guard marker anywhere", so one guarded section made every other section
+    in the same suite report "already guarded" - test_cooked_class_trap showed eight of them when
+    exactly one was true. The applier skips guarded files, so those seven were unreachable by the
+    fast path and were being counted towards the hand-editing backlog for no reason.
+    """
+    spans = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If) or not node.orelse:
+            continue
+        t = node.test
+        if (isinstance(t, ast.Compare) and isinstance(t.left, ast.Name) and t.left.id == "COOKED"
+                and t.comparators and isinstance(t.comparators[0], ast.Constant)
+                and t.comparators[0].value is False):
+            lo = min(b.lineno for b in node.orelse)
+            hi = max(getattr(n, "lineno", 0) for b in node.orelse for n in ast.walk(b))
+            spans.append((lo, hi))
+    return spans
+
+
+def reassigned_first(tree, name, after_line, ind):
+    """Is `name` OVERWRITTEN before it is next read, below line `after_line`?
+
+    Half these suites reuse one throwaway - `r`, `b`, `q` - for every response, so almost every
+    section "leaks" a name that the next section immediately assigns again. Counting those as
+    leaks sent 17 sections to hand-editing that a wrap would not have broken. That was the right
+    default while nothing checked it; it is not the right answer.
+
+    CONSERVATIVE ON PURPOSE, in three ways, because the cost of being wrong here is a suite that
+    dies at runtime:
+
+      - the overwrite must be a plain assignment whose target IS the bare name (not a subscript,
+        not an attribute, not an augmented assign, which reads before it writes),
+      - it must sit at the SECTION'S OWN indent, so a store inside an `if:` or a `for:` that may
+        never execute does not count,
+      - and the name must not be read anywhere in that same statement, so `r = f(r)` is a read.
+
+    Anything else keeps the old verdict and goes to the slow path.
+    """
+    first_use = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id == name and node.lineno > after_line:
+            if first_use is None or node.lineno < first_use:
+                first_use = node.lineno
+    if first_use is None:
+        return True                      # never mentioned again: not leaked at all
+    for st in ast.walk(tree):
+        if not isinstance(st, ast.Assign) or getattr(st, "col_offset", -1) != ind:
+            continue
+        if not (st.lineno <= first_use <= st.end_lineno):
+            continue
+        targets = [t.id for t in st.targets if isinstance(t, ast.Name)]
+        if name not in targets:
+            continue
+        reads = [n for n in ast.walk(st.value)
+                 if isinstance(n, ast.Name) and n.id == name]
+        if not reads:
+            return True
+    return False
 
 
 def analyse(path):
@@ -90,7 +163,12 @@ def analyse(path):
                 last = max(last or 0, st.end_lineno)
         if last is not None:
             j = min(j, last)
-        # does this section contain a cooked ASSERTION?
+        # DOES THIS SECTION MENTION COOKED CONTENT? Note what this is NOT: evidence that the
+        # section DEPENDS on a cooked project. The regex matches check() labels, and an AST
+        # version that ignored labels did worse - it fired on the guard's own COOKED variable
+        # and on every `"cooked" in (r.get("error") or "")` substring assertion, 22 candidates
+        # against a measured ground truth of 5. Neither answers the real question. Candidates
+        # only; audit_cooked_guard_value decides, by running the thing.
         body = "\n".join(lines[i:j])
         if not re.search(r"check\([^)]*cooked", body, re.I | re.S):
             continue
@@ -104,11 +182,12 @@ def analyse(path):
                     assigned.add(node.id)
                 elif isinstance(node.ctx, ast.Load) and ln > j:
                     used_after.add(node.id)
-        leaked = sorted(assigned & used_after)
+        leaked = sorted(n for n in (assigned & used_after) if not reassigned_first(tree, n, j, ind))
         # Belt and braces on the trim above: if a `return` still falls inside the block, wrapping
         # it hides an exit path, so the section is not wrappable whatever the leak column says.
         holds_return = any(isinstance(n, ast.Return) and i < n.lineno <= j for n in ast.walk(tree))
-        out.append((tag, i + 1, j, leaked, holds_return))
+        guarded = any(lo <= i + 1 <= hi for lo, hi in guarded_spans(tree))
+        out.append((tag, i + 1, j, leaked, holds_return, guarded))
     return out
 
 
@@ -118,10 +197,9 @@ for path in sorted(glob.glob(os.path.join(TOOLS, "test_*.py"))):
     rows = analyse(path)
     if not rows:
         continue
-    for tag, a, b, leaked, holds_return in rows:
+    for tag, a, b, leaked, holds_return, guarded in rows:
         name = os.path.basename(path)
-        if "COOKED = M.project_is_cooked()" in io.open(path, encoding="utf-8",
-                                                       errors="replace").read():
+        if guarded:
             verdict = "already guarded"
         elif holds_return:
             verdict = "HOLDS A RETURN - wrapping would hide an exit path"
@@ -130,8 +208,14 @@ for path in sorted(glob.glob(os.path.join(TOOLS, "test_*.py"))):
             verdict = "CARRIES SETUP - leaks %s" % ", ".join(leaked[:4])
             carry += 1
         else:
-            verdict = "safe to wrap"
+            verdict = "wrappable - NOT a recommendation, measure it"
             safe += 1
         print("%-38s %-8s %-7s %s" % (name, tag, "%d-%d" % (a, b), verdict))
 print("")
-print("safe to wrap: %d    carries setup (needs per-assertion guards): %d" % (safe, carry))
+print("wrappable: %d    carries setup (would need per-assertion guards): %d" % (safe, carry))
+print("")
+print("WRAPPABLE IS NOT A TO-DO LIST. It says a wrap would not break the suite, not that the")
+print("section needs one. 9 of 17 guards placed on that reading were measured to skip 48 working")
+print("checks and prevent nothing. Run audit_cooked_guard_value against a live editor before")
+print("adding any guard from this column - it removes each one in turn and reports whether a real")
+print("failure appears without it.")

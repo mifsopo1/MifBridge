@@ -99,51 +99,34 @@ def main():
           "%d of %d rows fully typed: %s" % (typed, len(rows), json.dumps(rows)[:180]))
     first = emitters[0] if emitters else "x"
 
-    # ------------------------------------------------------------------ T6101 the cooked reason
-    # COOKED-ONLY, SKIPPED where nothing is cooked. On an uncooked project the
-    # refusal this asserts never comes, so the assertion fails for the environment
-    # rather than for a defect - and where the call is a write, it lands instead.
-    # Section confirmed self-contained by audit_cooked_section_safety before wrapping.
-    #
-    # `is not False`: project_is_cooked returns None when the question could not be
-    # asked, and an unanswerable question is not a No - None runs this as before.
-    COOKED = M.project_is_cooked()
-    if COOKED is False:
-        print("")
-        print('=== T6101 SKIPPED - nothing in this project is cooked ===')
-        print('  This section asserts what an endpoint REFUSES on cooked content. There is nothing cooked')
-        print('  here, so the refusal cannot be provoked - which is not the same as the guard being absent.')
-        print('  Where the call is a WRITE, running it unguarded would perform the write it means to see')
-        print('  refused. Run against a cooked project for this half.')
+    print("\n=== T6101: cooked is refused, and for the right reason ===")
+    r = M.raw_post("set_niagara_emitter", {"path": target, "emitter": first, "enabled": False})
+    if r.get("ok") is False and "COOKED" in (r.get("error") or ""):
+        check("T6101 a cooked system is refused", True, "")
+        # THE assertion. A refusal that blamed a crash would invite someone to "fix" it by adding
+        # a guard the engine already has - the real reason is that the change cannot persist.
+        check("T6101 and the reason is persistence, NOT a crash",
+              "cannot be saved" in (r.get("error") or "")
+              and "cannot be recompiled" in (r.get("error") or ""),
+              (r.get("error") or "")[:250])
+        check("T6101 it says explicitly that the engine's own block self-skips there, so nobody "
+              "adds a redundant safety guard later",
+              "self-skips" in (r.get("error") or ""), (r.get("error") or "")[:280])
+        print("\n  NOT EXERCISED: the toggle itself. Every NiagaraSystem in this project is cooked,")
+        print("  so the cooked guard - checked first, correctly - answers every call. An uncooked")
+        print("  project is where the enable/disable path runs.")
     else:
-        print("\n=== T6101: cooked is refused, and for the right reason ===")
-        r = M.raw_post("set_niagara_emitter", {"path": target, "emitter": first, "enabled": False})
-        if r.get("ok") is False and "COOKED" in (r.get("error") or ""):
-            check("T6101 a cooked system is refused", True, "")
-            # THE assertion. A refusal that blamed a crash would invite someone to "fix" it by adding
-            # a guard the engine already has - the real reason is that the change cannot persist.
-            check("T6101 and the reason is persistence, NOT a crash",
-                  "cannot be saved" in (r.get("error") or "")
-                  and "cannot be recompiled" in (r.get("error") or ""),
-                  (r.get("error") or "")[:250])
-            check("T6101 it says explicitly that the engine's own block self-skips there, so nobody "
-                  "adds a redundant safety guard later",
-                  "self-skips" in (r.get("error") or ""), (r.get("error") or "")[:280])
-            print("\n  NOT EXERCISED: the toggle itself. Every NiagaraSystem in this project is cooked,")
-            print("  so the cooked guard - checked first, correctly - answers every call. An uncooked")
-            print("  project is where the enable/disable path runs.")
-        else:
-            check("T6101 an uncooked system toggles", r.get("ok") is True, json.dumps(r)[:250])
-            check("T6101 and reports the state it read back, not the one requested",
-                  r.get("enabled") is False and r.get("wasEnabled") is True, json.dumps(r)[:220])
-            back = M.raw_post("set_niagara_emitter", {"path": target, "emitter": first,
-                                                      "enabled": True})
-            check("T6101 (restore) it can be turned back on", back.get("ok") is True,
-                  json.dumps(back)[:200])
-            again = M.raw_post("set_niagara_emitter", {"path": target, "emitter": first,
-                                                       "enabled": True})
-            check("T6101 setting the state it already has succeeds with changed:false",
-                  again.get("ok") is True and again.get("changed") is False, json.dumps(again)[:200])
+        check("T6101 an uncooked system toggles", r.get("ok") is True, json.dumps(r)[:250])
+        check("T6101 and reports the state it read back, not the one requested",
+              r.get("enabled") is False and r.get("wasEnabled") is True, json.dumps(r)[:220])
+        back = M.raw_post("set_niagara_emitter", {"path": target, "emitter": first,
+                                                  "enabled": True})
+        check("T6101 (restore) it can be turned back on", back.get("ok") is True,
+              json.dumps(back)[:200])
+        again = M.raw_post("set_niagara_emitter", {"path": target, "emitter": first,
+                                                   "enabled": True})
+        check("T6101 setting the state it already has succeeds with changed:false",
+              again.get("ok") is True and again.get("changed") is False, json.dumps(again)[:200])
 
         # ------------------------------------------------------------------ T6102 the refusals
     print("\n=== T6102: what is deliberately not offered ===")
