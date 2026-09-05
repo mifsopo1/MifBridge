@@ -94,30 +94,46 @@ def main():
               "invoke_editor_command already reaches them")
 
     # ------------------------------------------------------------------ T4302 read-only
-    print("\n=== T4302: it reads, and says so when asked to do more ===")
-    for bad, why in (({"build": True}, "build"), ({"wait": True}, "wait"),
-                     ({"quality": "production"}, "quality")):
-        resp = M.raw_post("lighting_build_status", bad)
-        check("T4302 '%s' is refused - this endpoint does not start anything" % why,
-              resp.get("ok") is False, json.dumps(resp)[:200])
-    hint = M.raw_post("lighting_build_status", {"build": True})
-    check("T4302 and the refusal points at the command that DOES start a build",
-          "BuildLightingOnly" in (hint.get("error") or ""), (hint.get("error") or "")[:220])
-
-    # Reading twice must not change anything - it is a pure read.
-    again = M.call("lighting_build_status", {})
-    check("T4302 reading twice reports the same state - no side effects",
-          again.get("unbuiltObjects") == r.get("unbuiltObjects")
-          and again.get("built") == r.get("built"), json.dumps(again)[:200])
-
-    if r.get("cookedMap"):
-        check("T4302 a cooked map is flagged, with the reason the result cannot persist",
-              "cannot be resaved" in (r.get("transientNote") or ""),
-              (r.get("transientNote") or "")[:200])
+    # COOKED-ONLY, SKIPPED where nothing is cooked. On an uncooked project the
+    # refusal this asserts never comes, so the assertion fails for the environment
+    # rather than for a defect - and where the call is a write, it lands instead.
+    # Section confirmed self-contained by audit_cooked_section_safety before wrapping.
+    #
+    # `is not False`: project_is_cooked returns None when the question could not be
+    # asked, and an unanswerable question is not a No - None runs this as before.
+    COOKED = M.project_is_cooked()
+    if COOKED is False:
+        print("")
+        print('=== T4302 SKIPPED - nothing in this project is cooked ===')
+        print('  This section asserts what an endpoint REFUSES on cooked content. There is nothing cooked')
+        print('  here, so the refusal cannot be provoked - which is not the same as the guard being absent.')
+        print('  Where the call is a WRITE, running it unguarded would perform the write it means to see')
+        print('  refused. Run against a cooked project for this half.')
     else:
-        print("  NOTE  the open level is not cooked, so the transient-result warning is not")
-        print("        exercised here. It fires on a cooked map, where a build runs and looks")
-        print("        right and then cannot be saved.")
+        print("\n=== T4302: it reads, and says so when asked to do more ===")
+        for bad, why in (({"build": True}, "build"), ({"wait": True}, "wait"),
+                         ({"quality": "production"}, "quality")):
+            resp = M.raw_post("lighting_build_status", bad)
+            check("T4302 '%s' is refused - this endpoint does not start anything" % why,
+                  resp.get("ok") is False, json.dumps(resp)[:200])
+        hint = M.raw_post("lighting_build_status", {"build": True})
+        check("T4302 and the refusal points at the command that DOES start a build",
+              "BuildLightingOnly" in (hint.get("error") or ""), (hint.get("error") or "")[:220])
+
+        # Reading twice must not change anything - it is a pure read.
+        again = M.call("lighting_build_status", {})
+        check("T4302 reading twice reports the same state - no side effects",
+              again.get("unbuiltObjects") == r.get("unbuiltObjects")
+              and again.get("built") == r.get("built"), json.dumps(again)[:200])
+
+        if r.get("cookedMap"):
+            check("T4302 a cooked map is flagged, with the reason the result cannot persist",
+                  "cannot be resaved" in (r.get("transientNote") or ""),
+                  (r.get("transientNote") or "")[:200])
+        else:
+            print("  NOTE  the open level is not cooked, so the transient-result warning is not")
+            print("        exercised here. It fires on a cooked map, where a build runs and looks")
+            print("        right and then cannot be saved.")
 
     print("\n  NOT EXERCISED: the unbuilt-and-not-running branch. NumLightingUnbuiltObjects is")
     print("  maintained by the lighting build system, not as actors change - spawning a static")

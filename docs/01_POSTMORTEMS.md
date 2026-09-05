@@ -5,6 +5,62 @@ Newest first.
 
 ---
 
+## PM-015 — the cooked guard swallowed main()'s return, and three suites went green with their failures thrown away
+
+**Date** 2026-09-05
+
+**Symptom.** Three suites — `test_asset_tags`, `test_lighting_status`, `test_cooked_class_trap` —
+got a section-level "skip the cooked half" guard and were run on a disposable probe editor. Two
+returned `rc=0`, which is what I was looking for, so I nearly recorded them as verified. They had
+printed no `PASS n FAIL n` line at all. On the uncooked branch they were exiting 0 having asserted
+nothing and having discarded any failure they did find.
+
+**Root cause.** The guard wraps a section in `if COOKED is False: <banner> else: <the section>`, so
+it needs to know where the section ends. The first rule was "up to the next `=== Tnnnn ===` banner",
+which for the LAST section in a file means end-of-file, so the applier refused those three because
+the block spanned a dedent. I then "fixed" the boundary to *the first line shallower than the
+section* — and for a section that is last inside `main()`, the first shallower line is
+`if __name__ == "__main__":`. Everything between is the section **plus main()'s epilogue**:
+
+```python
+    print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
+    for name, detail in FAIL:
+        print("  FAILED: %s\n          %s" % (name, detail))
+    return 1 if FAIL else 0
+```
+
+All three lines went inside the `else:`. On an uncooked project the `else:` never runs, `main()`
+falls off the end and returns `None`, and `sys.exit(None)` means **exit code 0**. A suite that found
+failures would have reported success.
+
+**Why the analyser missed it.** `audit_cooked_section_safety` existed precisely so this judgement
+would not be made by eye — but it asked one question, *"does this section assign a name that is read
+after it ends"*, which is about setup leaking forward. The epilogue assigns nothing. It was invisible
+to the only question being asked, and `py_compile` and `rc=0` were both perfectly happy.
+
+**Fix.** The rule is now three clauses, all of which must hold, and the audit enforces them: no name
+assigned in the section is read after it; the section does not span a dedent; and the section ends at
+its **last assertion**, taking whole statements at the section's own indent, rather than running to
+the end of the enclosing function. A summary, a teardown or a return that follows the assertions was
+never something the cooked guard needed to cover. A separate belt-and-braces clause refuses outright
+any section that still contains a `return` — `test_virtual_bone_authoring` T3300 is caught by it.
+With the corrected boundary the same three sections wrap at 138-155, 97-120 and 230-269 and now run:
+`PASS 18 FAIL 0` and `PASS 14 FAIL 0`, with the summary line back where it belongs.
+
+**Prevention.** Two things, and the second is the one that generalises.
+
+1. `find_swallowed_return` walks every `if COOKED is False:` in the tree and asks whether the
+   `else:` holds a `return` that no path after the statement can reach. It reports 0 of 18 now; it
+   reported 3 before the fix, which is the only reason this entry describes a near miss.
+2. **`rc=0` is not evidence a suite ran.** This repo already refuses to treat `ok:true` as proof of a
+   write; the same standard was not being applied to a suite's own exit code. The check that found
+   this was `grep -E "^PASS [0-9]+   FAIL"` — a suite must be made to *show its summary*, not merely
+   exit quietly. The earlier version of that grep had the wrong pattern and printed nothing, and I
+   read the silence as a bug in the suite rather than in the grep; the tail of the actual run is
+   what settled it. Read the output, not the return code.
+
+---
+
 ## PM-014 — the harness relaunched somebody else's game, all evening, and I blamed the user for it
 
 **Date** 2026-09-05

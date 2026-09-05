@@ -616,6 +616,20 @@ def check_static_audits():
                        # cleared with a // MODE-PARAMS-OK marker beside the handler, so it
                        # reports zero and the strongest gate is available.
                        ("audit_mode_params.py", ["--check"]),
+                       # AND NO COOKED GUARD SWALLOWING ITS SUITE'S EXIT PATH, gated at zero on
+                       # 2026-09-05, the day I wrote three of them. See PM-015. The guards wrap a
+                       # section in `if COOKED is False: ... else:`, and for the LAST section in
+                       # main() a naive boundary takes the PASS/FAIL summary and `return 1 if FAIL`
+                       # with it - so on an uncooked project main() falls off the end, sys.exit(None)
+                       # exits ZERO, and the suite reports success having asserted nothing and
+                       # discarded any failure. Two of the three did exactly that and rc=0 is what
+                       # hid it.
+                       #
+                       # Gated rather than left as a report because this is the failure mode the
+                       # whole gate list exists to stop: not a red check, a GREEN one that means
+                       # nothing. Static, needs no editor, runs in well under a second.
+                       ("audit_guard_exit_paths.py", ["--check"]),
+                       ("audit_guard_exit_paths.py", ["--selftest"]),
                        # TWO SUITES THAT NEED NO EDITOR, joined 2026-09-03. Both were found by
                        # asking which suites have NO record in suite_results.json at all - five did,
                        # and these two turned out to be static, so they had never been run for no

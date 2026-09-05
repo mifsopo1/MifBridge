@@ -227,46 +227,62 @@ def main():
         print("  (no VehicleBoat here - not DDS2, not exercised)")
 
     print("")
-    print("=== T758: a COOKED macro library and a typo no longer read the same ===")
-    # add_macro_instance said "macro library not found" for both - a path with nothing at it, and a
-    # cooked library that exists and cannot be used. Byte-identical errors for two problems with
-    # different fixes, so the caller went hunting for a typo that was not there.
+    # COOKED-ONLY, SKIPPED where nothing is cooked. On an uncooked project the
+    # refusal this asserts never comes, so the assertion fails for the environment
+    # rather than for a defect - and where the call is a write, it lands instead.
+    # Section confirmed self-contained by audit_cooked_section_safety before wrapping.
     #
-    # The refusal is correct either way: cooking strips MacroGraphs, so there is nothing to instance.
-    # Only the reason was wrong.
-    import time as _t
-    bp = M.call("create_blueprint", {"path": "/Game/_MifMacro/BP_MT_%d" % int(_t.time() % 100000),
-                                     "parentClass": "Actor"})
-    graph = bp.get("eventGraphId")
-    if not graph:
-        print("  (could not make a scratch blueprint - not exercised)")
+    # `is not False`: project_is_cooked returns None when the question could not be
+    # asked, and an unanswerable question is not a No - None runs this as before.
+    COOKED = M.project_is_cooked()
+    if COOKED is False:
+        print("")
+        print('=== T758 SKIPPED - nothing in this project is cooked ===')
+        print('  This section asserts what an endpoint REFUSES on cooked content. There is nothing cooked')
+        print('  here, so the refusal cannot be provoked - which is not the same as the guard being absent.')
+        print('  Where the call is a WRITE, running it unguarded would perform the write it means to see')
+        print('  refused. Run against a cooked project for this half.')
     else:
-        cooked_bp = None
-        for b in (M.call("list_blueprints", {"filter": "/Game/"}).get("blueprints") or []):
-            if b.get("cooked"):
-                cooked_bp = b.get("package")
-                break
-        if not cooked_bp:
-            print("  (no cooked blueprint here - not exercised)")
+        print("=== T758: a COOKED macro library and a typo no longer read the same ===")
+        # add_macro_instance said "macro library not found" for both - a path with nothing at it, and a
+        # cooked library that exists and cannot be used. Byte-identical errors for two problems with
+        # different fixes, so the caller went hunting for a typo that was not there.
+        #
+        # The refusal is correct either way: cooking strips MacroGraphs, so there is nothing to instance.
+        # Only the reason was wrong.
+        import time as _t
+        bp = M.call("create_blueprint", {"path": "/Game/_MifMacro/BP_MT_%d" % int(_t.time() % 100000),
+                                         "parentClass": "Actor"})
+        graph = bp.get("eventGraphId")
+        if not graph:
+            print("  (could not make a scratch blueprint - not exercised)")
         else:
-            hit = M.call("add_macro_instance", {"graphId": graph, "macroLibrary": cooked_bp,
-                                                "macroName": "Anything"})
-            miss = M.call("add_macro_instance", {"graphId": graph,
-                                                 "macroLibrary": "/Game/MifNope/DoesNotExist",
-                                                 "macroName": "Anything"})
-            check("T758 both are still refused", hit.get("ok") is False and miss.get("ok") is False,
-                  "cooked=%r missing=%r" % (hit.get("ok"), miss.get("ok")))
-            check("T758 but they no longer say the same thing",
-                  str(hit.get("error")) != str(miss.get("error")),
-                  "identical errors for a cooked library and a nonexistent path")
-            check("T758 the cooked one says COOKED", "cooked" in str(hit.get("error")),
-                  str(hit.get("error"))[:200])
-            check("T758 and explains a macro library cannot be recovered",
-                  "MacroGraphs" in str(hit.get("error")), str(hit.get("error"))[:260])
-            check("T758 the missing one says no package",
-                  "no package" in str(miss.get("error")), str(miss.get("error"))[:200])
-            check("T758 and does NOT get the macro-library advice, which would be nonsense",
-                  "MacroGraphs" not in str(miss.get("error")), str(miss.get("error"))[:200])
+            cooked_bp = None
+            for b in (M.call("list_blueprints", {"filter": "/Game/"}).get("blueprints") or []):
+                if b.get("cooked"):
+                    cooked_bp = b.get("package")
+                    break
+            if not cooked_bp:
+                print("  (no cooked blueprint here - not exercised)")
+            else:
+                hit = M.call("add_macro_instance", {"graphId": graph, "macroLibrary": cooked_bp,
+                                                    "macroName": "Anything"})
+                miss = M.call("add_macro_instance", {"graphId": graph,
+                                                     "macroLibrary": "/Game/MifNope/DoesNotExist",
+                                                     "macroName": "Anything"})
+                check("T758 both are still refused", hit.get("ok") is False and miss.get("ok") is False,
+                      "cooked=%r missing=%r" % (hit.get("ok"), miss.get("ok")))
+                check("T758 but they no longer say the same thing",
+                      str(hit.get("error")) != str(miss.get("error")),
+                      "identical errors for a cooked library and a nonexistent path")
+                check("T758 the cooked one says COOKED", "cooked" in str(hit.get("error")),
+                      str(hit.get("error"))[:200])
+                check("T758 and explains a macro library cannot be recovered",
+                      "MacroGraphs" in str(hit.get("error")), str(hit.get("error"))[:260])
+                check("T758 the missing one says no package",
+                      "no package" in str(miss.get("error")), str(miss.get("error"))[:200])
+                check("T758 and does NOT get the macro-library advice, which would be nonsense",
+                      "MacroGraphs" not in str(miss.get("error")), str(miss.get("error"))[:200])
 
     print("")
     print("=" * 72)
