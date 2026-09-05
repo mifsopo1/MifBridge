@@ -14941,6 +14941,41 @@ out-of-process the way ops_gen already does with gen_status.
       jsonable's depth cap went 8 -> 24. It guards against CYCLES, not nesting, and at 8 it was about
       to start truncating real answers now that every response passes through it.
 
+- [ ] **JNum throws away every message JsonValueAsNumber writes, into a variable called `Unused`**
+      FOUND 2026-09-05 while verifying the finiteness guard against a live editor. The guard WORKS -
+      1e999 and -1e999 are refused where they used to be accepted - but the message the caller sees
+      is not the one the code wrote, and it is wrong in the exact way that code's own comment warns
+      against.
+
+      MifBridgeCommon.cpp:2073-2076:
+
+          double Parsed = 0.0;
+          FString Unused;
+          if (JsonValueAsNumber(Value, Field, Parsed, Unused)) { return Parsed; }
+          RecordParamTypeViolation(Field, Value, TEXT("a number"));
+
+      The out-parameter is literally named `Unused`. So the caller gets
+      RecordParamTypeViolation's generic text - "'drawDuration' was given the number inf, which is
+      NOT A NUMBER - it was IGNORED and the default was used instead" - while JsonValueAsNumber had
+      written "was given a number that is not FINITE ... 1e999 and similar are valid JSON literals
+      that overflow to infinity as a double". The finiteness branch's own comment says why the
+      substitute is wrong: "NOT 'is not a number' - Infinity IS a number, and a caller who sent
+      1e999 on purpose deserves to know it overflowed rather than being told their arithmetic is
+      not arithmetic." That comment describes a message nobody receives.
+
+      IT IS NOT ONLY THE FINITENESS ONE. Every message that function composes is discarded the same
+      way, including the string branch's - "a partly-numeric string like \"12abc\" is refused on
+      purpose: UE's parsers accept the prefix and discard the rest, which is how a bad value becomes
+      a plausible one". A caller who sends "12abc" is told only that it is not a number.
+
+      THE BEHAVIOUR IS RIGHT AND THE EXPLANATION IS LOST, which is the least dangerous version of
+      this and still worth fixing: these messages are the part of a refusal that stops somebody
+      filing a bug. Wants JNum to pass the composed error through where there is one, falling back
+      to RecordParamTypeViolation only when it is empty. Check the other readers at 2090, 2095 and
+      2113 for the same shape before changing any of them.
+
+      Needs a rebuild, so it is filed rather than done.
+
 - [ ] **the C++ number reader guards a string "1e999" and not the number 1e999** (built, awaiting one call)
       Found 2026-09-04 while fixing the addon's NaN handling, by reading the UE twin of the same
       question rather than assuming it shared the defect - it has HALF the guard.
