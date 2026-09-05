@@ -12124,7 +12124,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       That is the shape PM-016 is about, and the count is not worth it. It stays listed with its
       measurement, which is the honest state.
 
-- [ ] **a freshly built landscape reports NO edit layers on 5.7 while having one, and the response says to trust it** (an hour, needs a build)
+- [x] **a freshly built landscape reports NO edit layers on 5.7 while having one, and the response says to trust it** (an hour, needs a build)
       FOUND 2026-09-05 while building the fixture for the claim above. The fixture the note asks for
       is "a landscape with NO EDIT LAYERS", and the spec's own note beside it said create_landscape
       "deliberately turns them off". On 5.7 it cannot, and it says it did.
@@ -12150,11 +12150,26 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       that a merged-heightmap write into a layered landscape is DISCARDED by the next composite. So
       a caller is told their sculpt landed when it may not have.
 
-      NOT FIXED HERE, deliberately. The fix is to re-read the edit layers after the engine has
-      finished registering the actor, and where exactly that point is cannot be established without
-      building and running the change. Guessing at an engine lifecycle in a write path that cannot
-      be tested is the more expensive mistake; the measurement above is what the next session needs
-      and it did not exist before.
+      FIXED the same day, once a build became possible - no editor was running, so 5.3 and the 5.7
+      probe could both be rebuilt. The point turned out to be readable from the source after all,
+      and it is one line up from where the guess would have put it:
+
+        Landscape->Import(...)              <- 5.6+ creates the DEFAULT EDIT LAYER here
+        Landscape->CreateLandscapeInfo()
+        Landscape->RegisterAllComponents()
+        Landscape->RecreateCollisionComponents()
+        Landscape->PostEditChange()
+        EditLayerNames(Landscape)           <- the read now sits HERE; it used to sit above Import
+
+      The comment on the Import() call was corrected in the same commit, because it is what put the
+      read in the wrong place: it asserted "edit layers are switched off immediately above", which
+      has not been true since 5.6 turned ToggleCanHaveLayersContent into an empty stub. Passing no
+      import layers is still right, for the different reason that a brand new landscape has no
+      PRE-EXISTING layers to import.
+
+      Merged with two other Source corrections that were waiting on the same rebuild - the Niagara
+      note and the PhysicsAsset note - so both engines were re-recorded once rather than three
+      times.
       FOUND 2026-09-03 by `audit_cross_endpoint_claims`, which was not in the release gate then and
       exited 0 either way - so its reading list had never been read.
 
