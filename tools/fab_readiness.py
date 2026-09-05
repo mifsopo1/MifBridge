@@ -216,7 +216,28 @@ def check_third_party_ip(names, members):
             per[n] = c
     if not per:
         return "OK", False, ["no third-party game IP named in the payload"]
+
+    # THE VERDICT IS THE EMITTED COUNT, NOT THE TOTAL. 3(g)(i) is about infringing another party's
+    # marks, and what reaches a buyer is what the plugin EMITS - error text, describe output, the
+    # help an agent reads. This tool already computed that split under --ip-detail and was not using
+    # it for the verdict, so it blocked a package whose buyer-visible count is zero on comments in
+    # source nobody but a reader of the source will see.
+    #
+    # Not a declaration that comments are harmless: they are still counted, the worst files are
+    # still named, and they are still called a presentation problem. What stops is REFUSING for
+    # them, because a check that cannot be satisfied gets --force'd past, and then it is not
+    # checking the emitted strings either.
+    emitted, commented, unsure = ip_detail(members)
     worst = sorted(per.items(), key=lambda kv: -kv[1])[:10]
+    if not emitted:
+        return "OK", False, [
+            "no third-party name in any string the plugin EMITS - that is the count 3(g)(i) turns",
+            "on, and it is what a buyer can encounter.",
+            "%d reference(s) remain in comments and internal docs across %d file(s), plus %d line(s)"
+            % (sum(per.values()), len(per), len(unsure)),
+            "this could not classify. A presentation problem for anyone reading the source, not an",
+            "infringement risk in what the product does. Run --ip-detail to see the split.",
+        ] + ["  %-58s %d" % (n, c) for n, c in worst[:5]]
     return "FINDING", True, (
         ["3(g)(i): Content must not infringe another party's trademark. This package names the game",
          "it was developed against %d time(s) across %d file(s). Comments are a presentation problem;"
@@ -272,11 +293,17 @@ def check_update_parity(state):
             "who uses the plugin, or the SDK installer bundles it, list them under otherChannels so",
             "this can be measured instead of assumed."]
     if not pub:
-        return "FINDING", True, [
-            "channels declared (%s) but no publishedCommit recorded, so how far Fab has fallen"
+        # NOT BLOCKING BEFORE THE FIRST PUBLICATION, and this used to be. 3(b) requires updates to
+        # reach Epic no later than any other channel - there is no listing yet to be later than, so
+        # there is nothing to breach. The only way to set publishedCommit is to post, which this was
+        # refusing to allow: a gate that can only be cleared by the act it gates is not a gate.
+        return "NOTE", False, [
+            "channels declared: %s. Nothing is published yet, so there is no parity obligation to"
             % ", ".join(state["otherChannels"]),
-            "behind cannot be measured. 3(b) requires Epic gets updates NO LATER than any other",
-            "third party."]
+            "breach - 3(b) is about being LATER than another channel, and there is no listing to be",
+            "later than.",
+            "AT UPLOAD: run `git rev-parse HEAD` and put it in publishedCommit. From then on this",
+            "measures how far ahead HEAD is and blocks when the listing falls behind."]
     if head and pub == head:
         return "OK", False, ["Fab is published from HEAD (%s) - parity holds" % pub[:12]]
     if not head:
@@ -420,8 +447,20 @@ def selftest():
     # ---- 3(b) update parity -------------------------------------------------------------------
     # No declared channel is UNKNOWN, not OK: the obligation may exist and nothing here can see it.
     expect("parity/no-channels", check_update_parity({})[0], "UNKNOWN")
-    expect("parity/channel-no-commit",
-           check_update_parity({"otherChannels": ["github"]})[0], "FINDING")
+    # NOT BLOCKING BEFORE THE FIRST PUBLICATION. This asserted FINDING until 2026-09-05 and the
+    # assertion was wrong: nothing can breach 3(b) before there is a listing to be later than, and
+    # the only way to set publishedCommit is to post - so the check was refusing the act that would
+    # clear it.
+    expect("parity/not-published-yet",
+           check_update_parity({"otherChannels": ["github"]})[0], "NOTE")
+    expect("parity/not-published-yet-quiet",
+           check_update_parity({"otherChannels": ["github"]})[1], False)
+    # AND IT MUST STILL BLOCK ONCE PUBLISHED AND BEHIND, or the change above would be a silent
+    # weakening rather than a correction. A commit that is not an ancestor of HEAD means the listing
+    # is behind, which is the condition 3(b) is actually about.
+    behind = check_update_parity({"otherChannels": ["github"],
+                                  "publishedCommit": "0000000000000000000000000000000000000000"})
+    expect("parity/published-and-behind", behind[0] in ("FINDING", "UNKNOWN"), True)
 
     # ---- 3(f)(i) completeness -----------------------------------------------------------------
     expect("complete/no-readme", check_completeness([], {}, {"listingPrice": "$29.99"})[0],
