@@ -76,7 +76,7 @@ def main():
     # ---------------------------------------------------------------- W910 the shape
     print("\n=== W910: the shape, against a real WidgetBlueprint ===")
     found = M.call("find_assets", {"class": "WidgetBlueprint", "limit": 25}).get("assets") or []
-    wbps = [a["path"] for a in found if not a["path"].startswith("/Game/_Mif")]
+    wbps = [a["path"] for a in found if not M.is_scratch_fixture(a)]
     check("(setup) the project has a WidgetBlueprint to read", len(wbps) > 0, len(wbps))
     if not wbps:
         print("  SKIPPED the shape half - no WidgetBlueprint in this project.")

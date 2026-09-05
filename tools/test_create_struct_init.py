@@ -126,7 +126,7 @@ def main():
         for cand in [x["path"] for x in
                      (M.call("find_assets", {"class": "UserDefinedStruct",
                                              "limit": 25}).get("assets") or [])
-                     if not x["path"].startswith("/Game/_Mif")]:
+                     if not M.is_scratch_fixture(x)]:
             probe = M.raw_post("list_struct_members", {"struct": cand})
             if probe.get("ok") is False and "COOKED" in (probe.get("error") or ""):
                 c, chosen = probe, cand

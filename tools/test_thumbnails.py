@@ -69,6 +69,9 @@ def cleanup_scratch(prefix):
     removed = 0
     for a in (M.call("find_assets", {"pathPrefix": prefix, "limit": 500}, timeout=120).get("assets") or []):
         path = a.get("path") or ""
+        # ADOPTION-OK: a DELETE guard, same as test_textures. is_scratch_fixture is BROADER -
+        # it would let this loop remove more, not less - and a cleanup guard is the one place where
+        # sharing the more permissive definition is a downgrade.
         if not path.startswith("/Game/_Mif"):
             print("  cleanup REFUSED a non-scratch path: %s" % path)
             continue

@@ -91,7 +91,7 @@ def main():
         print("\n=== setup: a scratch retargeter wired to two scratch IK rigs ===")
         meshes = [a["path"] for a in
                   (M.call("find_assets", {"class": "SkeletalMesh", "limit": 25}).get("assets") or [])
-                  if not a["path"].startswith("/Game/_Mif")][:2]
+                  if not M.is_scratch_fixture(a)][:2]
         check("(setup) two distinct SkeletalMeshes exist", len(meshes) == 2, meshes)
         if len(meshes) < 2:
             return 1
@@ -150,7 +150,7 @@ def main():
         print("\n=== T3202: the cooked check - the guard that stops an editor kill ===")
         anims = [a["path"] for a in
                  (M.call("find_assets", {"class": "AnimSequence", "limit": 5}).get("assets") or [])
-                 if not a["path"].startswith("/Game/_Mif")][:2]
+                 if not M.is_scratch_fixture(a)][:2]
         check("T3202 (setup) the project has AnimSequences to point at", len(anims) > 0, len(anims))
         if anims:
             # NO confirm, deliberately. The cooked check runs BEFORE the confirm check, so this call

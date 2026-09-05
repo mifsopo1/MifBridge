@@ -11383,7 +11383,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       uncooked project (filed), 12 are genuine uncooked-5.7 candidates (filed), and they are
       failures of environment and coverage rather than of cross-suite state.
 
-- [ ] **22 hand-rolled copies of the scratch filter that mifaudit already owns** (2 hours)
+- [x] **22 hand-rolled copies of the scratch filter that mifaudit already owns** (2 hours)
       SURVEYED 2026-09-03 WITHOUT CHANGING ANYTHING, because "22 copies of one filter" turns out to
       describe three different things and a naive replace would change behaviour at five sites. 29
       sites match the hand-rolled shapes today:
@@ -11430,6 +11430,44 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       before anything has run doubles what a red sweep would have to be bisected against, for zero
       behavioural gain. Consolidate AFTER the sweep is green, when the diff is the only thing that
       changed since a known-good run.
+
+      ================================================================================
+      DONE 2026-09-05, AND IT WAS NINE SITES RATHER THAN TWENTY.
+      ================================================================================
+      The sweep has run, so the blocker above is lifted. Reading all 26 sites the detector lists -
+      which is what this item kept insisting on - splits them four ways, and only one group is
+      duplication:
+
+        9  CANDIDATE SELECTION - `not a["path"].startswith("/Game/_Mif")` while choosing an asset
+           to point at. Genuinely equivalent for find_assets rows, and now
+           `not M.is_scratch_fixture(a)`. test_anim_curve, test_create_struct_init,
+           test_physics_asset, test_physics_primitive_collision, test_run_retarget x2,
+           test_socket_authoring, test_virtual_bone_authoring, test_widget_bindings.
+
+        5  WORLD-NAME tests - `world.startswith("_Mif")`. Not asset filtering at all; the helper
+           answers a question about a row and has nothing to offer a world name. Left.
+
+        3  ALREADY SHARED - they use SC.SCRATCH_PREFIXES, which is an owner, just a different one.
+           Left.
+
+        2  DELETE GUARDS, and this is the one worth writing down. test_textures and test_thumbnails
+           use the hand-rolled test to decide what a CLEANUP LOOP MAY REMOVE, and their own
+           docstring says "the guard matters more than the tidiness". is_scratch_fixture is BROADER
+           - it also treats a level actor's LABEL as scratch - so substituting it would let those
+           loops delete MORE. Sharing the more permissive definition is a downgrade wherever the
+           test guards a deletion. Marked ADOPTION-OK with that reason.
+
+        4  BROADER ON PURPOSE - `"_Mif" not in path` in the two cooked-guard suites, which need a
+           genuinely real asset to try a cooked refusal against. "_Mif" anywhere also excludes
+           /Game/Props/SM_MifRock, and erring toward skipping a candidate costs one candidate while
+           adopting a scratch asset would test the guard against the wrong kind of object. Marked.
+
+      SO THE ITEM'S OWN ESTIMATE WAS THE THING THAT NEEDED CHECKING. It said "roughly 20 sites, not
+      22 or 29". It is nine, and the interesting finding is not the count - it is that two of the
+      sites are deletion guards where the shared helper would have been strictly worse. A sed would
+      have widened them both.
+
+      26 hand-rolled sites -> 15. Offline suites 18/18 green, gates green.
 
       WHAT WAS VERIFIED WITHOUT AN EDITOR, because some of it can be: audit_suite_payloads (0 calls
       passing a key any endpoint refuses, across 427 accept-lists), audit_undefined_names (250 files,

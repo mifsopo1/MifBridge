@@ -65,6 +65,11 @@ def cleanup_scratch(prefix):
     removed = 0
     for a in (M.call("find_assets", {"pathPrefix": prefix, "limit": 500}, timeout=120).get("assets") or []):
         path = a.get("path") or ""
+        # ADOPTION-OK: a DELETE guard, and deliberately stricter than is_scratch_fixture.
+        # The helper answers "is this somebody's scratch" and also treats a level actor's LABEL as
+        # scratch; this decides what a cleanup loop is allowed to remove. Widening the test that
+        # guards a deletion is the wrong direction, and the docstring above already says the guard
+        # matters more than the tidiness.
         if not path.startswith("/Game/_Mif"):
             print("  cleanup REFUSED a non-scratch path: %s" % path)
             continue

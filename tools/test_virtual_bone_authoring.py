@@ -76,7 +76,7 @@ def main():
         print("=== T3300: cooked skeletons are refused, and named ===")
         src = None
         for a in (M.call("find_assets", {"class": "Skeleton", "limit": 25}).get("assets") or []):
-            if not a["path"].startswith("/Game/_Mif"):
+            if not M.is_scratch_fixture(a):
                 src = a["path"]
                 break
         check("T3300 (setup) the project has a real Skeleton", bool(src), src)

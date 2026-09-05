@@ -69,7 +69,7 @@ def main():
         print("=== setup: scratch copies, so the shared rig is never touched ===")
         mesh = None
         for a in (M.call("find_assets", {"class": "SkeletalMesh", "limit": 25}).get("assets") or []):
-            if a["path"].startswith("/Game/_Mif"):
+            if M.is_scratch_fixture(a):
                 continue
             s0 = M.call("list_sockets", {"path": a["path"]})
             if s0.get("ok") and s0.get("skeleton"):

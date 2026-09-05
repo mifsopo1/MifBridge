@@ -78,7 +78,7 @@ def main():
         # real ragdolls. The asset this reads must be one the PROJECT authored.
         real = [a for a in (M.call("find_assets", {"class": "PhysicsAsset", "limit": 25})
                             .get("assets") or [])
-                if not a["path"].startswith("/Game/_Mif")]
+                if not M.is_scratch_fixture(a)]
         check("T2900 (setup) the project has a real PhysicsAsset to read", len(real) > 0, len(real))
         if real:
             d = M.call("describe_physics_asset", {"assetPath": real[0]["path"]})

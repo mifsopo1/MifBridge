@@ -73,7 +73,7 @@ def main():
         print("=== setup: a scratch COPY of a real PhysicsAsset, since it needs real primitives ===")
         src = None
         for a in (M.call("find_assets", {"class": "PhysicsAsset", "limit": 20}).get("assets") or []):
-            if not a["path"].startswith("/Game/_Mif"):
+            if not M.is_scratch_fixture(a):
                 d0 = M.call("describe_physics_asset", {"assetPath": a["path"]})
                 if any(b.get("primitives") for b in (d0.get("bodies") or [])):
                     src = a["path"]

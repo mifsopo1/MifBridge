@@ -48,6 +48,11 @@ def main():
 
     # ------------------------------------------------------------------ T940 cooked StaticMesh
     print("\n=== T940: duplicate_asset refuses a cooked StaticMesh - the exact crash reproduction ===")
+    # ADOPTION-OK for the three `"_Mif" not in path` tests below. They are BROADER than
+    # is_scratch_fixture on purpose: this suite needs a genuinely REAL asset to try a cooked guard
+    # against, and "_Mif" anywhere in the path also excludes something like /Game/Props/SM_MifRock.
+    # Erring toward skipping a candidate costs one candidate; adopting a scratch asset here would
+    # test the guard against the wrong kind of object entirely.
     meshes = M.call("find_assets", {"class": "StaticMesh", "pathPrefix": "/Game/", "limit": 5}).get("assets") or []
     real_mesh = next((a.get("path") for a in meshes if "_Mif" not in (a.get("path") or "")), None)
     check("T940 (setup) a real StaticMesh exists to try", bool(real_mesh), real_mesh)

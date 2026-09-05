@@ -58,7 +58,7 @@ def main():
 
     anims = [a["path"] for a in
              (M.call("find_assets", {"class": "AnimSequence", "limit": 10}).get("assets") or [])
-             if not a["path"].startswith("/Game/_Mif")]
+             if not M.is_scratch_fixture(a)]
     check("(setup) the project has AnimSequences to point at", len(anims) > 0, len(anims))
     if not anims:
         print("SKIPPED - no AnimSequence in this project.")
