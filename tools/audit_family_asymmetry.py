@@ -127,6 +127,92 @@ def families(names):
     return fam
 
 
+
+# ---------------------------------------------------------------------------- the addon half
+# THE PORT SPLITS IN TWO AND ONLY ONE HALF WORKS. Established 2026-09-05 by building both.
+#
+#   WRITERS WITH NO READER    - what this tool asks of the C++. Ports cleanly to the addon once the
+#                               match is against the VALUES a reader emits rather than its field
+#                               KEYS. 4 raw candidates, 0 survive, and every suppression is
+#                               inspectable: driver -> "drivers", mesh -> "MESH", node_group ->
+#                               "nodeGroup"/"node_groups", texture -> "textures".
+#
+#   CONSUMERS WITH NO CREATOR - the direction that actually paid four times here (nothing could
+#                               create a COLLECTION, an EMPTY, a VERTEX GROUP while ops required
+#                               them). NOT shipped, and not for want of trying: keyed on parameter
+#                               names it produces 161 candidates, nearly all option flags - align,
+#                               angle, color, dry_run. The signal needed is "this parameter names a
+#                               DATABLOCK", which a name alone does not carry. That is worse than
+#                               the 13 false findings the first port was reverted for, so it is left
+#                               out on the same rule.
+#
+# So the addon is no longer wholly unread - it is read in one direction, and REACH says which.
+ADDON_DIR = os.path.join(HERE, "blender-addon", "MifBlender")
+
+
+def addon_families():
+    """(families, source-text) for the addon, or (None, None) if it cannot be read."""
+    try:
+        sys.path.insert(0, HERE)
+        import parity_check as PC
+        table = PC.load_addon_ops([])
+    except Exception:                                  # noqa: BLE001 - absent addon is not a finding
+        return None, None
+    if not table:
+        return None, None
+    src = ""
+    try:
+        for fn in sorted(os.listdir(ADDON_DIR)):
+            if fn.endswith(".py"):
+                src += io.open(os.path.join(ADDON_DIR, fn), encoding="utf-8",
+                               errors="replace").read()
+    except OSError:
+        return None, None
+    return families(sorted(table.keys())), src
+
+
+def emitted_spellings(fam, src):
+    """The spellings of `fam` that some addon op can EMIT as a quoted string value.
+
+    THE FIELD-KEY TEST CANNOT WORK HERE, which is why the first port failed. The addon's readers are
+    generic - physics_info reads cloth AND collision AND rigid bodies - so the thing they report
+    appears as a VALUE ("CLOTH" in a modifier type) rather than as a response-field key. Matching
+    values is what takes this from 13 nearly-all-false findings to 0 explainable ones.
+
+    A plain substring test for the quoted token, deliberately: a regex here needs escaped quote
+    classes and this repo has lost time to exactly that escaping more than once.
+    """
+    parts = fam.split("_")
+    camel = parts[0] + "".join(x.capitalize() for x in parts[1:])
+    base = {fam, camel, parts[-1]}
+    cand = set()
+    for b in base:
+        cand |= {b, b + "s", b.upper(), b.capitalize()}
+        if b.endswith("y"):
+            cand.add(b[:-1] + "ies")
+    hits = []
+    for c in sorted(cand):
+        if ('"' + c + '"') in src or ("'" + c + "'") in src:
+            hits.append(c)
+    return hits
+
+
+def addon_report():
+    """Print the addon half. Returns (raw, survivors) or (None, None) when the addon is unreadable."""
+    fam, src = addon_families()
+    if fam is None:
+        return None, None
+    raw = [(f, d["w"]) for f, d in sorted(fam.items()) if len(d["w"]) >= 2 and not d["r"]]
+    survivors = []
+    for f, w in raw:
+        hits = emitted_spellings(f, src)
+        if not hits:
+            survivors.append((f, w))
+            print("  ADDON  %-22s %d writer(s), no reader and nothing emits the noun: %s"
+                  % (f, len(w), ", ".join(w[:4])))
+    return raw, survivors
+
+
 def main():
     only_read = "--read" in sys.argv
     names = endpoints()
@@ -196,19 +282,32 @@ def main():
     except Exception:
         pass
     print("")
+    print("THE ADDON HALF, one direction of it:")
+    a_raw, a_surv = addon_report()
+    if a_raw is None:
+        print("  the addon could not be read - no verdict about it either way")
+    else:
+        print("  %d family/families with 2+ writers and no reader in the family; %d survive after"
+              % (len(a_raw), len(a_surv)))
+        print("  suppressing the ones a reader can EMIT as a value.")
+
+    print("")
     print("REACH - what this audit can and cannot judge:")
     print("  covered      %d UE endpoints, read from MIF_BIND in the C++" % len(names))
     if ops:
-        print("  NOT covered  %d Blender addon ops. This tool does not read the addon at all, so"
+        print("  PARTLY       %d Blender addon ops - read for writers-without-a-reader, NOT read"
               % ops)
     else:
-        print("  NOT covered  the Blender addon. This tool does not read it at all, so")
-    print("               every verdict above - including 'none' - is about the UE half only.")
-    print("  AND THE PATTERN HAS PAID FOUR TIMES IN THE HALF IT CANNOT SEE, all found by hand on")
-    print("  2026-09-03/04: nothing could create a COLLECTION, an EMPTY, a CURVE, an ARMATURE, a")
-    print("  VERTEX GROUP or a SHAPE KEY, while ops required every one of them. Porting the check")
-    print("  was tried and reverted - the addon's readers are generic where these are specific, so")
-    print("  it produced 13 findings that were nearly all false. See FEATURE_PARITY_SPEC.")
+        print("  PARTLY       the Blender addon - read for writers-without-a-reader, NOT read")
+    print("               for the CONSUMER-WITHOUT-CREATOR direction. The writer-without-reader")
+    print("               direction above now DOES cover them.")
+    print("  THE DIRECTION STILL MISSING IS THE ONE THAT PAID, and that is the honest shape of this")
+    print("  gap. All four hand-found cases on 2026-09-03/04 were consumers with no creator -")
+    print("  nothing could create a COLLECTION, an EMPTY, a CURVE, an ARMATURE, a VERTEX GROUP or a")
+    print("  SHAPE KEY while ops required every one. Keying that on parameter NAMES was built and")
+    print("  measured on 2026-09-05: 161 candidates, nearly all option flags (align, angle, color,")
+    print("  dry_run). The signal needed is 'this parameter names a DATABLOCK', which a name does")
+    print("  not carry - so it is left out on the same rule that reverted the first port.")
     print("")
     print("A hit is a READING LIST entry, not a defect. Deciding whether the missing half is worth")
     print("building is a judgement call, which is why this exits 0 either way.")

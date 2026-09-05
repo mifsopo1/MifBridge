@@ -12578,6 +12578,41 @@ out-of-process the way ops_gen already does with gen_status.
       Costs nothing and removes the false impression. The item stays OPEN because the tool is still
       blind; it just no longer sounds like it isn't.
 
+      ================================================================================
+      2026-09-05: THE PORT SPLITS IN TWO, AND ONE HALF NOW SHIPS.
+      ================================================================================
+      Both directions were built and measured, which is what the earlier attempt could not say.
+
+      WRITERS WITH NO READER - shipped. It is the direction this tool asks of the C++, and it ports
+      cleanly once the match is against the VALUES a reader emits rather than its field KEYS. That
+      one change is the difference between the reverted attempt's 13 nearly-all-false findings and
+      5 raw candidates of which 0 survive, each suppression inspectable:
+
+        driver     -> "drivers"        (list_animation_data reports them, as Tier 4 records)
+        mesh       -> "MESH", "mesh"
+        node_group -> "nodeGroup", "node_groups", "group", "groups"
+        texture    -> "textures", "Texture"
+
+      Demonstrated firing rather than assumed: a planted family (create_/remove_zzwidgetron, a noun
+      no source emits) is reported, and a real one that IS emitted is suppressed.
+
+      CONSUMERS WITH NO CREATOR - NOT shipped, and this is the direction that actually paid. All
+      four hand-found cases were of this shape: nothing could CREATE a collection, an empty, a
+      curve, an armature, a vertex group or a shape key while ops required every one. Keyed on
+      parameter names it produces 161 candidates, nearly all option flags - align, angle, color,
+      dry_run, boundary_only. That is WORSE than the 13 the first port was reverted for, so it is
+      left out on the same rule.
+
+      WHY IT RESISTS, stated so the next attempt does not start from scratch: the signal needed is
+      "this parameter names a DATABLOCK", and a parameter NAME does not carry it. `collection` and
+      `color` are indistinguishable by spelling. What would carry it is the addon's own type
+      information - a parameter the op resolves through bpy.data.<collection> is naming a datablock,
+      and one it reads as a float is not. That is a source-analysis job on the ops, not a naming
+      heuristic, and it is the thing to build if this is picked up.
+
+      So the item stays OPEN, but it is now open on a NAMED sub-problem with a measured reason
+      rather than on "the tool is blind".
+
 - [ ] **Tier 3 - motion worth rendering** (1 of 11 left)
       DONE 2026-09-03: evaluate_at_frame, edit_fcurve, add_fcurve_modifier, create_action /
       assign_action / list_actions, set_bone_pose, set_shape_key, bake_to_keyframes, markers with
