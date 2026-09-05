@@ -205,7 +205,7 @@ not what it was planned to be.
 |---|---|---|
 | 1 | An agent wiring and **compiling** a Blueprint, real compiler output mapped to node and pin | needs a scratch project — see below |
 | 2 | The in-editor panel mid-session: live call transcript, timings, the Flag button | **DONE** — Andre, 2026-09-05 |
-| 3 | Blender before/after: `mesh_quality` findings, then `recipe_game_ready`, with the numbers | **`make_demo.py`** |
+| 3 | Blender: `mesh_quality` findings, then `recipe_game_ready`, with the numbers | **`make_mesh_card.py`** |
 | 4 | Round trip — an asset authored in Blender, landing in Unreal | needs a scratch project |
 | 5 | The API refusing a wrong call and naming what it accepts | **`make_api_card.py`** |
 | 6 | MifBridge driving a real project on stock UE 5.7 | **DROPPED** — bought assets, see below |
@@ -231,6 +231,25 @@ deliberately wrong parameters to read-only endpoints and renders the refusals ve
 hardcoded, and if the bridge is unreachable it refuses rather than falling back to text I typed. It
 draws a transcript and does **not** imitate the editor's UI: an image that looked like a panel I
 never photographed would be a fabricated screenshot even with genuine text in it.
+
+**Image 3 stopped being a before/after pair on 2026-09-05, and make_demo said why itself.** It
+reports `silhouetteIoU 1.0` and explains it — *"applying a transform is a visual no-op by design, the
+render is identical and the export problem is gone, which is the whole point"*. It is right, and that
+makes the pair actively misleading as a gallery entry: a buyer sees two identical pictures captioned
+before and after and concludes the tool did nothing. The two files are 187,240 and 187,032 bytes of
+the same shape.
+
+Everything that CHANGED — two ngons gone, a non-uniform scale of `[1.8, 1.0, 1.0]` baked into the
+mesh data — is invisible in a picture and perfectly legible as text. `make_mesh_card.py` makes the
+text the subject and the renders the evidence: the claim is *"your asset still looks exactly the
+same"*, and two identical thumbnails are the proof of it. The weakness becomes the point. It reads
+`demo_facts.json` and the PNGs from the same run, so a number on the card cannot drift from the
+picture beside it, and it refuses rather than inventing one if the facts file is missing.
+
+The most persuasive line on that card is the step that did **nothing**. `recipe_game_ready` declined
+to unwrap because a UV layer already existed — *"re-unwrapping a layout somebody made by hand is
+destructive and silent, so it is opt-in"*. A pipeline tool that knows when not to touch your work is
+a different product from one that runs every step.
 
 **Photographed by Andre** — image 2, the panel, delivered 2026-09-05. I do not take self-initiated
 screenshots of the editor, and there is no honest way around that for a picture of a UI. Four shots
