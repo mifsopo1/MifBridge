@@ -20,7 +20,7 @@ measured by hand and was not.
 
 | version | date | UE endpoints | Blender ops |
 |---|---|---|---|
-| [Unreleased](#unreleased) | — | 453 | 154 |
+| [Unreleased](#unreleased) | — | 453 | 155 |
 | [0.9.0](#090) | 2026-09-04 | 453 | 151 |
 | [0.8.1](#081) | 2026-09-01 | 440 | 68 |
 | [0.8.0](#080) | 2026-09-01 | 440 | 68 |
@@ -35,7 +35,15 @@ measured by hand and was not.
 
 ## Unreleased
 
-**Not tagged.** Three new Blender ops and the tooling around them, all landed after 0.9.0 shipped.
+**Not tagged.** Four new Blender ops and the tooling around them, all landed after 0.9.0 shipped.
+
+### The last entity a caller could name and not create
+
+`render_animation` takes a scene BY NAME and resolves it through `bpy.data.scenes.get()`, and nothing in the addon could make a scene. So a caller could render a scene somebody else had made and never make one, and setting up a second render configuration - a different resolution, frame range or output path - meant editing the only scene there was.
+
+* **`create_scene`** - `bpy.data.scenes.new()`, not `bpy.ops.scene.new()`: the operator needs a window and does nothing under `blender -b`, which is the path every suite and showcase stage takes. The new scene is EMPTY and is NOT activated, and the response says both rather than leaving a caller to find out. Blender appends `.001` on a name collision rather than failing, so the reported `name` is the one it actually got - a caller who then rendered by the string they sent would otherwise render the OLD scene. Verified against Blender 3.6.23, 4.2.17 LTS, 4.4.0 and 5.0.1: 13 postcondition checks green on each.
+
+It was found by a tool rather than by hand, which is the first time for this class. `audit_blender_consumer_no_creator` asks which entity types a caller can NAME but not CREATE - the direction of `audit_family_asymmetry` that had failed to port twice - and it is scored against ground truth: run at the commit before `create_collection` existed it reports that gap and exits 1. With `create_scene` in, its baseline is empty and it is a gate at zero.
 
 ### The addon can SEE its own work now
 

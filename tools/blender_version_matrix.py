@@ -325,6 +325,7 @@ PAYLOADS = {
     "render_status": {},
     "file_info": {},
     "scene_info": {},
+    "create_scene": {"name": "MifMatrixScene"},
     "list_objects": {},
     "list_lights": {},
     "list_cameras": {},

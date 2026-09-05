@@ -12731,14 +12731,20 @@ out-of-process the way ops_gen already does with gen_status.
       the caller's back. The name test remains only as a second route in, for a create_* op that
       reports nothing, and is never used to invent a creator - only to rescue one.
 
-      THE ONE OPEN GAP, ratcheted in audit_blender_consumer_no_creator_baseline.txt and accepted as
-      KNOWN rather than as correct:
+      THE ONE REAL GAP IS CLOSED, and the tool is now a gate at ZERO rather than a ratchet.
+      render_animation takes a scene BY NAME and nothing in the addon could make one, so
+      create_scene is that op: bpy.data.scenes.new() rather than bpy.ops.scene.new(), which needs a
+      window and does nothing under `blender -b` - the path every suite and showcase stage takes.
+      The new scene is EMPTY and is NOT activated, and the response says both rather than leaving a
+      caller to find out their objects are missing.
 
-        scenes          render_animation takes a scene BY NAME and nothing in the addon creates a
-                        scene. Wants a create_scene op and a Blender run to verify, so it is left
-                        for that rather than half-built here.
+      RUN AGAINST REAL BLENDER, 3.6.23 / 4.2.17 LTS / 4.4.0 / 5.0.1, 13 postcondition checks green
+      on each - including the one no stub can answer: create the same name TWICE and the second
+      response must carry the .001 name Blender actually assigned, because a caller who then
+      rendered by the string they sent would render the OLD scene. B132 in test_blender_refusals
+      covers the three refusals offline; the rename is Blender's and stays a live check.
 
-      A NEW entity type of this shape now fails the release gate.
+      The baseline file is empty. A NEW entity type of this shape fails the release gate.
 
       WHAT IT STILL DOES NOT COVER, and the tool prints this itself rather than implying a clean
       bill: a collection WITH a creator can still be uncreatable for the case a consumer needs.

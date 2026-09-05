@@ -605,6 +605,74 @@ def op_set_custom_property(params):
     }
 
 
+def op_create_scene(params):
+    """Create a scene. The only entity type a caller could NAME and not create.
+
+    FOUND BY audit_blender_consumer_no_creator, which asks what the addon consumes and cannot
+    produce - the same question that found collections, empties, armatures and vertex groups, and
+    the fifth time it has paid. render_animation takes `scene` BY NAME and resolves it through
+    bpy.data.scenes.get(), so a caller could render a scene somebody else had made and never make
+    one, and there was no way to set up a second render configuration - a different resolution, a
+    different frame range, a different output path - without editing the only scene there was.
+
+    bpy.data.scenes.new(), NOT bpy.ops.scene.new(). The operator needs a window context and does
+    nothing useful under `blender -b`, which is the path every suite and every showcase stage takes.
+    The data-level call works identically in both, and this addon's threading contract runs jobs
+    inline in background mode.
+
+    THE NEW SCENE IS EMPTY AND THAT IS NOT A LIMITATION BEING HIDDEN. bpy.data.scenes.new() makes a
+    scene with its own master collection holding nothing, its own render settings, its own frame
+    range. It does not copy the current scene, and there is no supported data-level way to do a full
+    copy without the operator and its context. The response says so rather than leaving a caller to
+    discover that their objects are missing.
+
+    NOT ACTIVATED EITHER. Switching bpy.context.window.scene needs a window, so it cannot work in
+    background mode, and nothing here needs it: render_animation, and everything else that takes a
+    scene, takes it by NAME. Activation would be a GUI-only side effect that the same script could
+    not reproduce headless, which is exactly the kind of asymmetry this addon refuses elsewhere.
+
+    params:
+      name (str)   required. The scene name. Blender appends .001 on a collision rather than
+                   failing, so the name you get back may not be the name you asked for.
+    """
+    reject_unknown(params, {"name", "scene", "sceneName"}, "create_scene")
+    want = take(params, "name", "scene", "sceneName", required=True, kind=str)
+    want = str(want).strip()
+    if not want:
+        raise MifOpError("'name' is empty. A scene needs a name - it is how every other op that "
+                         "takes a scene resolves it. NOTHING was changed.")
+
+    before = [s.name for s in bpy.data.scenes]
+    scene = bpy.data.scenes.new(want)
+    if scene is None:
+        # Documented as always returning the new scene; checked rather than assumed, because a
+        # None here would otherwise surface as an AttributeError from the read-back below.
+        raise MifOpError("bpy.data.scenes.new(%r) returned None. NOTHING was changed." % want)
+
+    # THE NAME BLENDER ACTUALLY GAVE IT. A duplicate name gets a .001 suffix and the incumbent is
+    # left alone, so a caller who then asks for their scene by the string they sent would get the
+    # OLD one. Reported rather than refused - a second scene called "Render" is a legitimate thing
+    # to want - but reported loudly, because silence here is how the wrong scene gets rendered.
+    renamed = scene.name != want
+    return {
+        "name": scene.name,
+        "requestedName": want,
+        "renamed": renamed,
+        "renamedNote": ("Blender already had a scene called '%s', so the new one is '%s'. Use the "
+                        "name in `name`, not the one you sent." % (want, scene.name))
+                       if renamed else None,
+        "objectCount": len(scene.objects),
+        "emptyNote": "A new scene is EMPTY - it does not copy the current one. Link objects into "
+                     "it, or build it up, before rendering.",
+        "activeScene": bpy.context.scene.name if bpy.context.scene else None,
+        "activeNote": "The new scene is NOT activated - that needs a window and cannot work under "
+                      "blender -b. Ops that take a scene take it by name.",
+        "sceneCountBefore": len(before),
+        "sceneCountAfter": len(bpy.data.scenes),
+        "scenes": [s.name for s in bpy.data.scenes],
+    }
+
+
 OPS = {
     "list_custom_properties": op_list_custom_properties,
     "set_custom_property": op_set_custom_property,
@@ -616,4 +684,5 @@ OPS = {
     "delete_object": op_delete_object,
     "run_python": op_run_python,
     "set_object_visibility": op_set_object_visibility,
+    "create_scene": op_create_scene,
 }

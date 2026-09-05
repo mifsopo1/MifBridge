@@ -2160,6 +2160,33 @@ def main():
           "None beside a value")
 
     print("")
+    print("=== B132: create_scene - the last entity a caller could NAME and not create ===")
+    # ADDED WITH THE OP, 2026-09-05. audit_blender_consumer_no_creator found that render_animation
+    # takes `scene` by name and resolves it through bpy.data.scenes.get(), while nothing in the
+    # addon could make a scene. These are the refusals; the POSTCONDITIONS - that the reported name
+    # is the one Blender actually gave the scene, which matters because a duplicate name silently
+    # becomes .001 and a caller rendering by their own string would get the OLD scene - were run
+    # against real Blender 3.6.23, 4.2.17 LTS, 4.4.0 and 5.0.1, 13 checks green on each. A stub
+    # cannot answer that one: the rename is Blender's, not ours.
+    for payload, want, why in (
+            # QUOTED, and not the bare word. `name` alone is also in "name 'ops_scene' is not
+            # defined", so a NameError from a missing import would have PASSED this check while
+            # proving nothing ran - the vacuous shape audit_vacuous_checks exists for. The live
+            # message is "'name' is required (aliases: scene, sceneName)".
+            ({}, "'name' is required", "a missing name"),
+            ({"name": "   "}, "NOTHING was changed", "a blank name"),
+            ({"name": "X", "bogus": 1}, "bogus", "an unknown parameter")):
+        try:
+            ops_scene.op_create_scene(dict(payload))
+            outcome = "RETURNED without refusing"
+        except MifOpError as exc:
+            outcome = str(exc)
+        except Exception as exc:                   # noqa: BLE001
+            outcome = "%s: %s" % (type(exc).__name__, exc)
+        check("B132 %s is refused, and the message names %r" % (why, want),
+              want in outcome, outcome[:170])
+
+    print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
     # THE NEGATIVE CONTROL. Every check above proves something is refused; without this, a guard
     # that refused EVERYTHING would score full marks. Retyping to SPOT while setting spotAngle is

@@ -6191,6 +6191,14 @@ def bl_export_mesh(object_name: str, file: str, object_types: list = None,
 
 
 @mcp.tool()
+def bl_create_scene(name: str) -> dict:
+    "Create a new, EMPTY Blender scene and return the name it actually got. Every op that takes a scene - bl_render_animation among them - takes it BY NAME, and until this existed nothing in the addon could make one, so a second render configuration (different resolution, frame range or output path) meant editing the only scene there was. The new scene does NOT copy the current one and is NOT activated: activation needs a window and would not work under blender -b. Blender appends .001 on a name collision rather than failing, so use the returned `name`, not the string you sent - `renamed` tells you when they differ."
+    # ops_scene.py:op_create_scene. bpy.data.scenes.new(), not bpy.ops.scene.new() - the operator
+    # needs a window context and does nothing under blender -b, which is the path every suite takes.
+    return _blender("create_scene", name=name)
+
+
+@mcp.tool()
 def bl_delete_object(object_name: str, purge_orphans: bool = None) -> dict:
     "Delete one object from the Blender scene by name. purge_orphans also frees the datablocks the deletion orphaned - the addon defaults it to FALSE here (unlike bl_clear_scene, which defaults it true), so a mesh deleted this way leaves its mesh data behind until something purges it. Use it to clean up a specific import; bl_clear_scene is the whole-scene form. Deleting is not undo-able through this bridge."
     # ops_scene.py:219 - `take_bool(params, "purgeOrphans", "purge", default=False)`. The differing

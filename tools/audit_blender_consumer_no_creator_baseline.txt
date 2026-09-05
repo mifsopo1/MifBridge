@@ -4,4 +4,3 @@
 # creating one; until then a caller can only get one as a side effect of an
 # op that means to do something else, which is the shape set_light_linking
 # was fixed for.
-scenes

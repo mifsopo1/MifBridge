@@ -647,9 +647,19 @@ def check_static_audits():
                        # str() coercions, local aliases, nested helper functions, and `data` being
                        # excluded as a receiver name when in a Blender addon it IS the datablock.
                        #
-                       # Ratcheted rather than gated at zero because the two open gaps each need a
-                       # new addon op plus a Blender run, and a gate nobody can turn green is one
-                       # people learn to skip.
+                       # AT ZERO, the same day it was written. It opened with two candidates and
+                       # neither survived contact: vertex_groups was set_vertex_weights, the op
+                       # that CLOSED that hole - `create` parameter, `created` field, .001 suffix
+                       # reported - which the tool had accused on the strength of its `set_`
+                       # prefix, and fixing that rule is what made the creator test read a
+                       # caller-controlled REPORTED outcome instead of a name. The other, `scenes`,
+                       # was real: render_animation takes a scene BY NAME and nothing could make
+                       # one. create_scene is that op, run against Blender 3.6.23, 4.2.17 LTS,
+                       # 4.4.0 and 5.0.1 - 13 postcondition checks green on each, including the
+                       # one a stub cannot answer, that a colliding name comes back as the .001
+                       # Blender actually assigned rather than the string the caller sent.
+                       #
+                       # So the baseline is empty and this is a gate at zero rather than a ratchet.
                        ("audit_blender_consumer_no_creator.py", ["--check"]),
                        # TWO SUITES THAT NEED NO EDITOR, joined 2026-09-03. Both were found by
                        # asking which suites have NO record in suite_results.json at all - five did,
