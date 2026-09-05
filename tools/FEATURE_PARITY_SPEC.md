@@ -14858,7 +14858,7 @@ out-of-process the way ops_gen already does with gen_status.
       jsonable's depth cap went 8 -> 24. It guards against CYCLES, not nesting, and at 8 it was about
       to start truncating real answers now that every response passes through it.
 
-- [ ] **the C++ number reader guards a string "1e999" and not the number 1e999** (10 min + a rebuild)
+- [ ] **the C++ number reader guards a string "1e999" and not the number 1e999** (built, awaiting one call)
       Found 2026-09-04 while fixing the addon's NaN handling, by reading the UE twin of the same
       question rather than assuming it shared the defect - it has HALF the guard.
 
@@ -14879,8 +14879,19 @@ out-of-process the way ops_gen already does with gen_status.
       untested edit to the shared number parser every numeric parameter passes through is worth less
       than a filed one.
 
-      NOW ON THE BRANCH pending/source-needs-a-build, applied and committed, waiting only on a
-      build. To land it: close the editor, merge, build 5.3, then `make_release.py --record-53`.
+      BUILT AND COMMITTED 2026-09-04. The branch was merged when the editor freed up, 5.3
+      compiled and linked, the 5.7 probe returned Result: Succeeded, and both engine records cover
+      the commit. The guard is live at MifBridgeCommon.cpp:1862.
+
+      STILL OPEN ON PURPOSE, because this spec closes an item only when it has been BUILT, TESTED
+      and COMMITTED, and the third has not happened. Nothing has yet sent an unquoted 1e999 through
+      a running bridge and watched it refuse. That is one call against any live editor:
+
+          {"scale": 1e999}   must now be refused, naming the value as not FINITE
+          {"scale": "1e999"} was already refused, and must still be
+
+      A compiler agreeing that the code is well-formed is not the same as the endpoint refusing the
+      payload, which is the distinction this file exists to keep.
 
       WRITTEN AND REVERTED ON 2026-09-04 BEFORE THAT, which is worth recording rather than
       repeating. The one-line guard was applied, and before it could be built an editor appeared on
