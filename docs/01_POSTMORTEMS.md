@@ -5,6 +5,69 @@ Newest first.
 
 ---
 
+## PM-014 — the harness relaunched somebody else's game, all evening, and I blamed the user for it
+
+**Date** 2026-09-05
+
+**Symptom.** Andre closed a UE 5.3 editor holding `DrugDealerSimulator2`. It came back. He closed it
+again; two came back, started in the same second. I looked at the process list, saw
+`D:\UE532\...\UnrealEditor.exe D:\DDS2SDK\Game\DrugDealerSimulator2.uproject`, and told him *"that
+one's yours — I'm not touching it"*, then asked him to close it so I could rebuild. He said he had
+not started it. I asked again. He said it a second time, in capitals, and he was right both times.
+
+**What was actually happening.** Two orphaned `run_all_suites.py` processes from earlier sweeps were
+still alive. I had killed the Curfew editor they were driving, in order to free the Live Coding
+mutex for a rebuild. Losing the bridge, each sweep took its recovery path — `launch_editor()` — which
+starts a **hardcoded** project: DDS2. `require_sdk_bridge` then refused the editor it had just
+started, because `MIF_PROJECT_MARKER` named Curfew. So it launched another. Forever, in duplicate.
+
+**Root cause: a change that aimed half a system.** `PROJECT_MARKER` had been made overridable
+earlier the same day, so the harness could be pointed at a project other than DDS2 — the whole reason
+the 5.7 sweep was possible at all. Its comment celebrates this at length: *"What changes is that it
+can be AIMED."* But `UPROJECT` and `EDITOR_EXE` were left as bare constants beside it. The guard and
+the launcher described different editors and nothing in the system compared them.
+
+The irony is on the page. `launch_editor` is a careful function — it kills survivors rather than
+racing them, it clears the restore modal first, it refuses to launch if a kill fails, and it
+explicitly reports editors from *other projects* as **"left alone"**. Then it launches one of them.
+
+**Fix.** `MIF_PROJECT_PATH` and `MIF_EDITOR_EXE` aim the launcher, defaulting to what they always
+were. `launch_target()` refuses when the basename of the project it would START does not equal the
+marker it will then ENFORCE. Those two strings describe the same editor, so a disagreement is always
+a bug, and refusing is always the safe side: not launching costs a wait and a printed reason;
+launching the wrong game opens somebody's real project, holds its packages, and takes the mutex a
+build needs.
+
+Separately, `SWEEP_LOCK` was **written and never read** by `run_all_suites` itself. Every other
+caller respected it — suites warn through `warn_if_sweep_running`, `mifwatch` refuses to touch the
+editor while it is held — and the one process it exists to exclude simply overwrote the previous
+owner's pid. That is why there were *two* sweeps relaunching, not one. It now refuses, using the
+existing `sweep_owner()` (which checks the pid is alive, so a lock left by a killed sweep does not
+block the next run).
+
+**Prevention, and why it is not "be more careful".** Three separate guards were already in place and
+all three were satisfied while this ran: the marker check (correctly refused each editor), the
+survivor check (correctly killed duplicates of *its* project), and the other-projects report
+(correctly named DDS2 as somebody else's). Every individual check passed. What was missing was a
+check on the **relationship between two constants** — and that is the transferable rule:
+
+> When you make one half of a pair configurable, the other half is now a bug waiting for the first
+> person who uses the configuration. A guard that ACCEPTS X and a launcher that STARTS Y are not two
+> settings; they are one setting written twice.
+
+Both fixes were shown failing before being believed — mismatch refuses, live lock refuses, dead lock
+and no lock proceed — because a guard nobody has watched fail is not a guard.
+
+**The part that stings, and it is not the code.** The process list gave me a command line and I read
+provenance into it that was not there. A path tells you *what* a process is running; it says nothing
+about *who* started it. I had killed an editor sixty seconds earlier and had two of my own sweeps
+unaccounted for, and I still reached for "this must be the user's" — the one explanation that
+required no work from me. Andre had to assert it twice before I checked, and the check took one
+command. **The evidence for "not mine" is a list of my own processes, not a guess about somebody
+else's.**
+
+---
+
 ## A guard I had just written would have refused every landscape on 5.7
 
 **Date** 2026-08-31
