@@ -15010,11 +15010,26 @@ out-of-process the way ops_gen already does with gen_status.
       it at an uncooked project. The suite set is weighted toward the environment almost none of
       them are in.
 
-      WHAT IT WANTS is the same shape run_all_suites already uses for PIE and for a missing Blender:
-      a suite that needs a cooked project should say so and SKIP with rc=2 when there is not one,
-      rather than fail. `find_assets {cooked: true, limit: 1}` answers the question in one call at
-      startup. Then an uncooked sweep reports "N skipped - this project is not cooked", which is a
-      readable result, and a red line means something again.
+      THE PROBE IS list_blueprints, NOT find_assets, and that was got wrong first. find_assets has
+      no `cooked` parameter - it was guessed, refused by name, and mifaudit.project_is_cooked
+      correctly answered None rather than "uncooked", which is the only reason a wrong probe did not
+      silently skip 29 suites on a cooked project. list_blueprints says it in its own help: every
+      row carries cooked true/false and cookedCount says how many. Curfew: count 459, cookedCount 0.
+      `origin` on find_assets rows is NOT the signal even though it looks like one - it reports
+      loose vs container, and containers appear in an uncooked project because engine and plugin
+      content ships that way, 26 of a 400-row sample.
+
+      AND SKIPPING THE WHOLE SUITE IS TOO COARSE, which the first version of this item got wrong.
+      test_anim_curve on Curfew is PASS 8 FAIL 9: every one of the nine failures is in the T4200
+      section, which needs a cooked sequence, and the other eight checks - T4201's read/write
+      agreement, T4202's discarded curve type - are engine-neutral and passed. A suite-level skip
+      would throw those eight away and report the suite as verifying nothing, which trades one wrong
+      answer for another.
+
+      So the guard belongs at the SECTION, not the suite. mifaudit.require_cooked_project exists and
+      is right for a suite that is cooked-only end to end; a mixed suite wants the same question
+      asked around its cooked block, so an uncooked run reports "8 passed, 9 not applicable here"
+      instead of either "9 failed" or "skipped entirely".
 
       Do NOT close this by marking the suites cooked-only and moving on: the second half is finding
       out what the uncooked numbers actually are once the noise is gone, which is the coverage
