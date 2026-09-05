@@ -283,6 +283,37 @@ def main():
     # Claim the editor for the duration. See mifaudit.warn_if_sweep_running for why: a second process
     # driving the same editor corrupts THIS run's results, not just its own, because the undo buffer
     # is one stack for the whole editor.
+    #
+    # THE LOCK WAS WRITTEN AND NEVER READ, until 2026-09-05. A second sweep simply overwrote the
+    # first one's pid and both ran. Every OTHER caller respected it - suites warn through
+    # warn_if_sweep_running, mifwatch refuses to touch the editor while it is held - and the one
+    # process it exists to exclude was the one that ignored it.
+    #
+    # What that produced, the same night the launcher bug landed: two orphaned sweeps, each losing
+    # its editor and each taking its own recovery path, launching editors in parallel and racing for
+    # the port. Two came up in the same second. A human closing them could not win.
+    #
+    # A REFUSAL, not a warning, and the difference is deliberate. warn_if_sweep_running only warns
+    # because a person running ONE suite during a sweep may genuinely mean it. There is no version
+    # of "two full sweeps at once" that anybody means: they drive the same editor, share one undo
+    # stack, and each relaunches the editor the other is using.
+    #
+    # sweep_owner() is the owner of this question already - it checks the pid is ALIVE, so a lock
+    # left behind by a killed sweep does not block the next one, and it exempts this process's own
+    # children via MIF_SWEEP. Not reimplemented here.
+    other = M.sweep_owner()
+    if other is not None:
+        print("")
+        print("REFUSING - a full sweep is already running (pid %d) and owns this editor." % other)
+        print("")
+        print("  Two sweeps cannot share one editor. They drive the same undo stack, so each")
+        print("  corrupts the other's results, and when one loses the bridge its recovery path")
+        print("  relaunches the editor the other is using. On 2026-09-05 two of them did exactly")
+        print("  that for an hour, reopening a project every time a human closed it.")
+        print("")
+        print("  Wait for pid %d, or stop it. The lock clears by itself once that process is" % other)
+        print("  gone - it is checked for liveness, not merely for existence.")
+        return 2
     try:
         with open(M.SWEEP_LOCK, "w") as f:
             f.write(str(os.getpid()))
