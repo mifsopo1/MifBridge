@@ -15931,7 +15931,7 @@ out-of-process the way ops_gen already does with gen_status.
       to classify at all if self_audit returns fewer than 100 buckets, and prints the denominator
       first either way.
 
-- [ ] **29 suites can only ever pass on a COOKED project, and most buyers are not on one**
+- [x] **29 suites can only ever pass on a COOKED project, and most buyers are not on one**
       FOUND 2026-09-05, running the suites against Curfew - uncooked 5.7, 35,725 assets, a real
       game project - for the first time. Andre's prompt was "most of our testing im pretty sure has
       been done in the cooked editor"; the measurement is the inverse of that and worse.
@@ -15994,6 +15994,51 @@ out-of-process the way ops_gen already does with gen_status.
       Do NOT close this by marking the suites cooked-only and moving on: the second half is finding
       out what the uncooked numbers actually are once the noise is gone, which is the coverage
       nobody has ever had.
+
+      **CLOSED 2026-09-05, and the count in the heading was the first thing to go.** Five sections
+      need a cooked-project guard. Not 29, not 17. The rest of this item was reasoning from a
+      number that was never measured.
+
+      WHAT WAS BUILT. audit_cooked_section_safety decides whether a section CAN be wrapped without
+      breaking the suite - it took three tries to state and each miss was a hazard the previous rule
+      could not see: a section must leak no name it assigns, must not span a dedent, and must end at
+      its LAST ASSERTION rather than at the end of the enclosing function. The third clause is
+      PM-015: for the last section in main(), the naive boundary swallows the PASS/FAIL summary and
+      `return 1 if FAIL else 0`, so the uncooked run falls off the end of main() and sys.exit(None)
+      exits ZERO - a suite reporting success having asserted nothing and discarded every failure.
+      Two suites shipped that way for ten minutes. audit_guard_exit_paths is gated at zero against
+      it, with a selftest that drives the broken shape and two good ones.
+
+      AND THEN THE MEASUREMENT SAID MOST OF THE GUARDS SHOULD NOT EXIST. A section qualified via a
+      regex matching `check([^)]*cooked` - which matches the check's DESCRIPTION STRING.
+      test_create_asset T145 creates eight asset classes and asserts an abstract class is refused;
+      its only tie to the word is a label saying the error "explains the cooked-game consequence".
+      Guarding it skipped 18 passing checks. test_niagara_emitter T6102 took its suite from PASS 13
+      to PASS 4. An AST rewrite that ignored labels did worse - it fired on the guard's own COOKED
+      variable and on every `"cooked" in (r.get("error") or "")` substring assertion, 22 candidates
+      against a ground truth of 5. See PM-016.
+
+      SO IT IS MEASURED, not argued. audit_cooked_guard_value removes each guard in turn, runs the
+      suite against a disposable probe editor and compares with the fully guarded baseline: new
+      FAILURES mean the guard earns its place, only new PASSES mean it was a coverage hole. Per
+      GUARD, not per suite - test_anim_curve prevents 9 failures with one guard and was skipping 5
+      passing checks with the other, and a suite-level total reported only the first.
+
+        23 guards:  5 keep    9 remove    2 inert    7 undecidable on an uncooked project
+
+      The nine are gone. Those suites now run 22, 47, 24, 40, 16, 19, 22, 17 and 27 checks with zero
+      failures - 48 checks restored. The five that remain were each measured to prevent a real
+      failure.
+
+      WHAT THIS ITEM GOT RIGHT: the guard belongs at the SECTION, not the suite, and a mixed suite
+      should report "not applicable here" rather than failing. WHAT IT GOT WRONG: it assumed the
+      number of such sections was large, and every later estimate - 29, then 17 - was inherited
+      rather than checked. The uncooked numbers it asked for are above, and they are much better
+      than it feared, because most of those suites were never cooked-dependent in the first place.
+
+      audit_cooked_section_safety no longer prints "safe to wrap"; it prints "wrappable - NOT a
+      recommendation, measure it", and its header says it answers a control-flow question and cannot
+      answer whether a guard is warranted. That distinction is the whole lesson.
 
 - [x] **JNum throws away every message JsonValueAsNumber writes, into a variable called `Unused`**
       FOUND 2026-09-05 while verifying the finiteness guard against a live editor. The guard WORKS -
