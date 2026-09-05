@@ -99,7 +99,8 @@ def main():
     # in a kit, not a different set of defects. The ngon caps and the unapplied non-uniform scale
     # below are exactly as they were, because they are what the demo is about - a demo that tidied
     # away the defects would be showing a tool solving a problem it had already removed.
-    setup("create_primitive", {"kind": "cylinder", "name": "Demo_Part", "radius": 1.0})
+    setup("create_primitive", {"kind": "cylinder", "name": "Demo_Part", "radius": 0.95,
+                               "depth": 2.3, "vertices": 48})
     # The bevel is part of the claim, not decoration: it is one more op in the chain this demo says
     # works, so if it breaks the demo stops producing an image rather than quietly producing a
     # worse one.
@@ -108,22 +109,58 @@ def main():
     # demo stopped instead of rendering something worse. bevel_edges takes `offset`, and
     # create_material creates the material - assign_material_to_faces is a separate op.
     setup("bevel_edges", {"object": "Demo_Part", "offset": 0.04, "allEdges": True})
-    setup("create_material", {"name": "Demo_Steel", "baseColor": [0.32, 0.30, 0.28, 1.0],
-                              "metallic": 0.85, "roughness": 0.42})
+    setup("create_material", {"name": "Demo_Steel", "baseColor": [0.42, 0.40, 0.38, 1.0],
+                              "metallic": 0.9, "roughness": 0.32})
+    # THE STEP THIS DEMO NEVER MADE, until 2026-09-05. create_material CREATES a material; nothing
+    # here ever put it on the object, so every render since the barrel landed used Blender's default
+    # grey and the "steel" in the name was a claim about a material nobody could see.
+    #
+    # The addon reports it in as many words and I had not read it: list_materials returns
+    # users 0 with "1 material(s) have no users. A material with no users is NOT written to an FBX,
+    # so one created and never assigned will not arrive in Unreal." That is the export defect this
+    # demo exists to talk about, committed by the demo itself.
+    #
+    # allowResize BECAUSE THE GUARD ASKED FOR IT. set_material_slots refuses a count change without
+    # it: "changing the COUNT re-indexes every polygon's material_index, and a face left pointing
+    # past the end renders as the last slot with no error". The object starts with zero slots, so
+    # going to one IS a count change, and saying so explicitly is the point of the guard.
+    setup("set_material_slots", {"object": "Demo_Part", "slots": ["Demo_Steel"],
+                                 "allowResize": True})
     setup("transform_object", {"object": "Demo_Part", "scale": [1.8, 1.0, 1.0]})
-    # TWO LIGHTS, NOT ONE. The first version used a single sun and the subject's shadow side came
-    # back almost pure black - legible as a technical render, useless as a listing image. I could
-    # only tell because the render comes back and I looked at it, which is exactly the capability
-    # this demo exists to show off.
-    setup("create_light", {"kind": "SUN", "name": "Demo_Key",
-                           "location": {"x": 4, "y": -4, "z": 6}, "energy": 3.0})
+    # A FLOOR, so the subject sits somewhere instead of floating. It also catches the shadow, which
+    # is most of what makes a product shot read as three-dimensional.
+    setup("create_primitive", {"kind": "plane", "name": "Demo_Floor", "size": 40,
+                               "location": {"x": 0, "y": 0, "z": -1.17}})
+    setup("create_material", {"name": "Demo_Floor_Mat", "baseColor": [0.055, 0.058, 0.065, 1.0],
+                              "metallic": 0.0, "roughness": 0.55})
+    setup("set_material_slots", {"object": "Demo_Floor", "slots": ["Demo_Floor_Mat"],
+                                 "allowResize": True})
+
+    # THREE LIGHTS, NOT TWO, and area lights rather than a sun. Two got the shadow side off pure
+    # black; it still read as a technical render because nothing separated the subject from the
+    # background. The rim light behind it is what makes the silhouette, and it is the difference
+    # between "a render" and "a product shot".
+    setup("create_light", {"kind": "AREA", "name": "Demo_Key",
+                           "location": {"x": 4.5, "y": -4.5, "z": 5.5},
+                           "rotation": {"x": 0.9, "y": 0.0, "z": 0.8},
+                           "energy": 1400.0, "size": 6.0})
     setup("create_light", {"kind": "AREA", "name": "Demo_Fill",
-                           "location": {"x": -5, "y": -2, "z": 2}, "energy": 200.0})
+                           "location": {"x": -5.5, "y": -3.0, "z": 2.0},
+                           "rotation": {"x": 1.3, "y": 0.0, "z": -1.0},
+                           "energy": 260.0, "size": 7.0})
+    setup("create_light", {"kind": "AREA", "name": "Demo_Rim",
+                           "location": {"x": -2.0, "y": 5.0, "z": 3.6},
+                           "rotation": {"x": -1.2, "y": 0.0, "z": -0.4},
+                           "energy": 700.0, "size": 4.0})
+    # A DIM WORLD RATHER THAN A TRANSPARENT FILM. filmTransparent:True gave a subject floating on
+    # nothing, which composites to a black blob on a dark page and a cut-out on a light one - the
+    # single biggest reason the old pair looked unusable.
+    setup("set_world", {"color": [0.035, 0.038, 0.048], "strength": 1.0})
     # lookAt takes COORDINATES, not an object name - asked, after guessing wrong. The subject is at
     # the origin, so that is what the camera is aimed at.
-    setup("create_camera", {"name": "Demo_Cam", "location": {"x": 5, "y": -5, "z": 3.5},
-                            "lookAt": {"x": 0, "y": 0, "z": 0}, "makeActive": True})
-    setup("set_render_settings", {"filmTransparent": True})
+    setup("create_camera", {"name": "Demo_Cam", "location": {"x": 4.6, "y": -5.4, "z": 2.9},
+                            "lookAt": {"x": 0, "y": 0, "z": 0.05}, "makeActive": True})
+    setup("set_render_settings", {"filmTransparent": False, "useDenoising": True})
     if problems:
         print("")
         print("scene setup failed, so nothing below would mean anything:")
@@ -131,7 +168,9 @@ def main():
             print("  - %s" % p_)
         return 1
 
-    shot = {"resolutionX": a.px, "resolutionY": a.px, "samples": 16,
+    # 96 SAMPLES, NOT 16. Sixteen is a preview: the metal reads flat and the shadow is noisy, which
+    # is fine for "did the render come back" and not for an image on a store page.
+    shot = {"resolutionX": a.px, "resolutionY": a.px, "samples": 96,
             "returnImage": True, "previewMaxPx": a.px}
 
     # ---- 2. render it, and SEE it ----------------------------------------------------------
