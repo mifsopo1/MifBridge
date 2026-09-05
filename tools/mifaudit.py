@@ -43,8 +43,25 @@ import urllib.request
 BRIDGE_PORT = int(os.environ.get("MIF_BRIDGE_PORT", "8791"))
 BASE = "http://127.0.0.1:%d/api" % BRIDGE_PORT
 TOKEN = "dev"
-UPROJECT = r"D:\DDS2SDK\Game\DrugDealerSimulator2.uproject"
-EDITOR_EXE = r"D:\UE532\Engine\Binaries\Win64\UnrealEditor.exe"
+# THESE ARE NOW AIMABLE TOO, AND LEAVING THEM BARE COST AN INCIDENT ON 2026-09-05.
+#
+# PROJECT_MARKER below was made overridable so the harness could be pointed at another project. The
+# LAUNCHER was not, so the two halves disagreed: the guard would only ACCEPT a Curfew editor while
+# launch_editor could only ever START DrugDealerSimulator2. Nothing reconciled them.
+#
+# What that produced. A sweep was running against Curfew; its editor was killed for a rebuild; the
+# sweep lost the bridge and took its recovery path, which launched ANDRE'S GAME instead. The marker
+# check then refused the editor it had just started, so it launched again - and again, every time a
+# human closed it. Two orphaned sweeps did this in parallel, so two DDS2 editors came up at the same
+# second, and from the outside it looked exactly like somebody else had opened them. It cost an hour
+# and I blamed the user for a process I had started.
+#
+# The guard against it is one line, in launch_target(): the basename of the project being LAUNCHED
+# must equal the marker being ENFORCED. They describe the same editor, so a disagreement is always a
+# bug, and refusing is always safe - not launching costs a wait, launching the wrong game costs
+# somebody's session.
+UPROJECT = os.environ.get("MIF_PROJECT_PATH", r"D:\DDS2SDK\Game\DrugDealerSimulator2.uproject")
+EDITOR_EXE = os.environ.get("MIF_EDITOR_EXE", r"D:\UE532\Engine\Binaries\Win64\UnrealEditor.exe")
 # WHICH EDITOR THIS HARNESS IS WILLING TO DRIVE, and it is overridable as of 2026-09-05.
 #
 # It was a bare constant, and the consequence was larger than it looked: require_sdk_bridge matches
@@ -441,7 +458,47 @@ def _surviving_editor_pids():
     return mine
 
 
+def launch_target():
+    """(exe, uproject, refusal). refusal is None when launching is safe, else the reason.
+
+    THE ONE QUESTION THIS ASKS: does the project we would START match the marker we ENFORCE?
+
+    require_sdk_bridge accepts an editor only if PROJECT_MARKER appears in its command line. So if
+    the launcher starts a project whose name is not the marker, the resulting editor is guaranteed
+    to be rejected by the very next check - and the recovery path will launch another. That is not a
+    hypothetical: it ran all evening on 2026-09-05, relaunching DrugDealerSimulator2 for a run
+    pointed at Curfew, and it fought a human who kept closing it.
+
+    Refusing is always the safe side. Not launching costs a wait and a clear message; launching the
+    wrong game opens somebody's real project, holds its packages, and takes the Live Coding mutex a
+    build needs.
+    """
+    want = os.path.basename(UPROJECT)
+    if want.lower() != PROJECT_MARKER.lower():
+        return EDITOR_EXE, UPROJECT, (
+            "the harness is enforcing MIF_PROJECT_MARKER=%s but the launcher would start %s.\n"
+            "  Those name different editors, so anything launched here would be refused by\n"
+            "  require_sdk_bridge and relaunched forever. Set the project AND its engine:\n"
+            "    MIF_PROJECT_PATH=<full path to %s>\n"
+            "    MIF_EDITOR_EXE=<that engine's UnrealEditor.exe>\n"
+            "  or start that editor yourself and re-run." % (PROJECT_MARKER, want, PROJECT_MARKER))
+    if not os.path.isfile(UPROJECT):
+        return EDITOR_EXE, UPROJECT, "MIF_PROJECT_PATH points at no file: %s" % UPROJECT
+    if not os.path.isfile(EDITOR_EXE):
+        return EDITOR_EXE, UPROJECT, "MIF_EDITOR_EXE points at no file: %s" % EDITOR_EXE
+    return EDITOR_EXE, UPROJECT, None
+
+
 def launch_editor(write_mode=None):
+    # WHICH PROJECT, BEFORE ANYTHING ELSE. Everything below this is careful about how many editors
+    # exist and none of it was ever careful about WHICH one it was starting. See launch_target.
+    _exe, _proj, refusal = launch_target()
+    if refusal:
+        print("!! launch_editor REFUSED to start an editor:")
+        for line in refusal.split("\n"):
+            print("!! %s" % line)
+        return False
+
     # LEAVE EXACTLY ONE EDITOR BEHIND. This function is the recovery path, called when
     # wait_for_bridge has already failed, and it used to assume that meant the editor was dead -
     # true when a suite CRASHES it, which is the case it was written for.
