@@ -214,8 +214,15 @@ def io_open(path):
 
 
 def main():
-    check_modifier_tables()
-
+    # check_modifier_tables() USED TO BE THE FIRST LINE HERE, AND IT MUTATES. It was a source-only
+    # comparison when it was placed there; the 2026-09-04 rewrite made it ask the RUNNING addon
+    # instead - which is the stronger question and the right change - and it kept its position
+    # ahead of both guards. So against somebody's interactive Blender this suite deleted an object
+    # and created a cube in their live scene, and only THEN refused with "REFUSED ... INTERACTIVE".
+    #
+    # test_blender_headless_guard's G2 caught it: "sent NOTHING but ping/scene_info" failed with
+    # ['delete_object', 'create_primitive']. Exactly the mutate-then-deny shape being fixed on the
+    # C++ side the same day, except what it damages is a session that is not ours.
     print("MifBlender rig ops (ops_rig.py) - %s:%d" % (HOST, PORT))
     if not reachable():
         print("")
@@ -232,6 +239,10 @@ def main():
         "test_blender_rig", lambda op, params=None: call(op, **(params or {})))
     if stop is not None:
         return stop
+
+    # ONLY NOW. Reachability is confirmed and the session is headless, so a suite that rebuilds an
+    # empty scene to self-heal is entitled to write.
+    check_modifier_tables()
 
     print("")
 

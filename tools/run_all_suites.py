@@ -293,6 +293,46 @@ def main():
 
     results = []
     note = " - the second pass is what catches state surviving between runs" if passes > 1 else ""
+    # IS BLENDER LISTENING? Said HERE rather than discovered twenty suites in. The sweep already
+    # does this for the editor - "the bridge is not usable yet: nothing is listening on port 8791" -
+    # and the addon half had no equivalent, so a run with no Blender looked healthy until the
+    # rc=2s started arriving one at a time. They are honestly counted as SKIPPED in the summary;
+    # the problem is learning it AFTER committing half an hour of CPU to a sweep that was always
+    # going to leave every addon suite unverified.
+    #
+    # It does not refuse. A UE-only sweep is a reasonable thing to want, and a check that blocks
+    # something legitimate is one people learn to bypass. It states the consequence and continues.
+    _bl_port = int(os.environ.get("MIF_BLENDER_PORT", "8792"))
+    _bl_up = False
+    try:
+        import socket as _socket
+        _s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        _s.settimeout(0.4)
+        _bl_up = _s.connect_ex(("127.0.0.1", _bl_port)) == 0
+        _s.close()
+    except OSError:
+        pass
+    # NOT every test_blender_* suite needs Blender, and this file already knows which. Two of them
+    # are in OFFLINE_SUITES precisely because they do not - headless_guard starts its own fake
+    # servers and refusals stubs bpy entirely - so counting by name prefix told an --offline run
+    # that 2 suites would skip when neither would. Reusing the list beats re-deriving it.
+    _bl_suites = [n for n in suites
+                  if n.startswith("test_blender_") and n not in OFFLINE_SUITES]
+    if _bl_suites and not _bl_up:
+        print("")
+        print("NOTHING IS LISTENING ON %d, so %d addon suite(s) will report SKIPPED rather than run."
+              % (_bl_port, len(_bl_suites)))
+        print("  They are counted as skipped, not passed - but a sweep that leaves them unverified")
+        print("  is worth knowing about BEFORE it starts, not after.")
+        print("  Start one first:  blender --background --factory-startup --python-expr \\")
+        print("      \"import sys; sys.path.insert(0, r'<repo>/tools/blender-addon'); \"")
+        print("      \"import MifBlender; MifBlender.serve_forever(port=%d)\"" % _bl_port)
+        print("  MIF_BLENDER_PORT overrides the port. 8792 is the default the addon suites use -")
+        print("  NOT 8799, which is easy to reach for and is nothing.")
+        print("")
+    elif _bl_suites:
+        print("Blender is answering on %d - %d addon suite(s) will run." % (_bl_port, len(_bl_suites)))
+
     print("running %d suites, %d pass(es) each%s" % (len(suites), passes, note))
     print("")
 

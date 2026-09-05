@@ -364,9 +364,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "29 PASS  0 FAIL",
-  "seconds": 0.7,
+  "seconds": 1.1,
   "editorSurvived": null,
-  "ranAt": 1788522077.2505186,
+  "ranAt": 1788571134.2651885,
   "tail": ""
  },
  {
@@ -374,9 +374,9 @@
   "pass": 2,
   "rc": 0,
   "summary": "29 PASS  0 FAIL",
-  "seconds": 0.7,
+  "seconds": 1.0,
   "editorSurvived": null,
-  "ranAt": 1788522078.8602657,
+  "ranAt": 1788571136.4217653,
   "tail": ""
  },
  {
@@ -443,20 +443,20 @@
   "suite": "test_blender_refusals.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 256   FAIL 0",
+  "summary": "PASS 261   FAIL 0",
   "seconds": 0.2,
   "editorSurvived": null,
-  "ranAt": 1788522077.4263372,
+  "ranAt": 1788571134.444272,
   "tail": ""
  },
  {
   "suite": "test_blender_refusals.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 256   FAIL 0",
-  "seconds": 0.1,
+  "summary": "PASS 261   FAIL 0",
+  "seconds": 0.2,
   "editorSurvived": null,
-  "ranAt": 1788522079.0009375,
+  "ranAt": 1788571136.5886571,
   "tail": ""
  },
  {
@@ -1106,7 +1106,7 @@
   "summary": "PASS 22   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788522077.5064602,
+  "ranAt": 1788571134.5428777,
   "tail": ""
  },
  {
@@ -1116,7 +1116,7 @@
   "summary": "PASS 22   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788522079.079359,
+  "ranAt": 1788571136.6816585,
   "tail": ""
  },
  {
@@ -1186,7 +1186,7 @@
   "summary": "PASS 24   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788522077.6083894,
+  "ranAt": 1788571134.673951,
   "tail": ""
  },
  {
@@ -1196,7 +1196,7 @@
   "summary": "PASS 24   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788522079.178262,
+  "ranAt": 1788571136.8056688,
   "tail": ""
  },
  {
@@ -1866,7 +1866,7 @@
   "summary": "PASS 25   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788522077.6690612,
+  "ranAt": 1788571134.7525911,
   "tail": ""
  },
  {
@@ -1876,7 +1876,7 @@
   "summary": "PASS 25   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788522079.238091,
+  "ranAt": 1788571136.8748553,
   "tail": ""
  },
  {
@@ -2186,7 +2186,7 @@
   "summary": "PASS 29   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788522077.7806993,
+  "ranAt": 1788571134.8863223,
   "tail": ""
  },
  {
@@ -2196,7 +2196,7 @@
   "summary": "PASS 29   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788522079.3474934,
+  "ranAt": 1788571136.9974625,
   "tail": ""
  },
  {
@@ -2466,7 +2466,7 @@
   "summary": "PASS 16   FAIL 0",
   "seconds": 0.2,
   "editorSurvived": null,
-  "ranAt": 1788522077.9562309,
+  "ranAt": 1788571135.104064,
   "tail": ""
  },
  {
@@ -2476,7 +2476,7 @@
   "summary": "PASS 16   FAIL 0",
   "seconds": 0.2,
   "editorSurvived": null,
-  "ranAt": 1788522079.5182812,
+  "ranAt": 1788571137.2013288,
   "tail": ""
  },
  {
@@ -2503,20 +2503,20 @@
   "suite": "test_report_intake.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 40   FAIL 0",
+  "summary": "PASS 47   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788522078.057938,
+  "ranAt": 1788571135.238678,
   "tail": ""
  },
  {
   "suite": "test_report_intake.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 40   FAIL 0",
+  "summary": "PASS 47   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788522079.616446,
+  "ranAt": 1788571137.3280103,
   "tail": ""
  },
  {
@@ -2603,20 +2603,20 @@
   "suite": "test_scratch_discrimination.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 16   FAIL 0",
+  "summary": "PASS 30   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788522078.1601458,
+  "ranAt": 1788571135.3748422,
   "tail": ""
  },
  {
   "suite": "test_scratch_discrimination.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 16   FAIL 0",
+  "summary": "PASS 30   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788522079.712245,
+  "ranAt": 1788571137.4464283,
   "tail": ""
  },
  {
