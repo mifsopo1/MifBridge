@@ -94,7 +94,22 @@ def main():
         return r
 
     B.call("clear_scene", {})
+    # A BARREL RATHER THAN A CYLINDER, and the difference is only what a reader recognises. This
+    # file's own header warns "nobody publishes a cylinder"; the answer is a shape a buyer has seen
+    # in a kit, not a different set of defects. The ngon caps and the unapplied non-uniform scale
+    # below are exactly as they were, because they are what the demo is about - a demo that tidied
+    # away the defects would be showing a tool solving a problem it had already removed.
     setup("create_primitive", {"kind": "cylinder", "name": "Demo_Part", "radius": 1.0})
+    # The bevel is part of the claim, not decoration: it is one more op in the chain this demo says
+    # works, so if it breaks the demo stops producing an image rather than quietly producing a
+    # worse one.
+    # PARAMETER NAMES ASKED FOR, NOT GUESSED. The first attempt sent `width` and `assignTo`; both
+    # were refused by name with the accepted list, which is the guard doing its job and is why the
+    # demo stopped instead of rendering something worse. bevel_edges takes `offset`, and
+    # create_material creates the material - assign_material_to_faces is a separate op.
+    setup("bevel_edges", {"object": "Demo_Part", "offset": 0.04, "allEdges": True})
+    setup("create_material", {"name": "Demo_Steel", "baseColor": [0.32, 0.30, 0.28, 1.0],
+                              "metallic": 0.85, "roughness": 0.42})
     setup("transform_object", {"object": "Demo_Part", "scale": [1.8, 1.0, 1.0]})
     # TWO LIGHTS, NOT ONE. The first version used a single sun and the subject's shadow side came
     # back almost pure black - legible as a technical render, useless as a listing image. I could
