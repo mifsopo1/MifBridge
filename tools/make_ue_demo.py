@@ -154,7 +154,12 @@ def main():
 
     written, rejected = [], []
     for i, angle in enumerate(ANGLES, 1):
-        want = os.path.join(args.out, "ue-%02d.png" % i).replace("\\", "/")
+        # `name` IS A FILENAME STEM, not a path. capture_camera writes to
+        # <Project>/Saved/MifBridge/<name>.png and tells you where in the response - it does not
+        # take a destination. Asked the endpoint rather than assuming a second time: the first
+        # version sent a full path as `name` and then looked for the file where it had asked,
+        # which is how three captures that SUCCEEDED were reported as rejected.
+        want = "MifGallery_%02d" % i
         # `name`, NOT `path`. capture_camera's guard accepts x/y/z, location, rotation, lookAt,
         # useViewportCamera, fov, width, height and name - and nothing else. The first version of
         # this sent `path`, which capture_viewport takes as an alias and this endpoint does not;
@@ -165,10 +170,15 @@ def main():
             print("  shot %d REFUSED: %s" % (i, str(r.get("error") if isinstance(r, dict) else r)[:150]))
             rejected.append((want, "refused"))
             continue
-        # WHERE IT ACTUALLY LANDED, from the response, rather than where we asked. The endpoint
-        # returns `file`, and trusting the request over the reply is how a tool reports success
-        # about a file it never looked at.
-        path = r.get("file") or want
+        # WHERE IT ACTUALLY LANDED, from the response. The field is `path`, and the response also
+        # carries wroteFile and exists - so the endpoint answers "did this work" three ways and a
+        # caller that trusts its own request instead is reporting on a file it never opened.
+        path = r.get("path")
+        if not path or r.get("wroteFile") is False or r.get("exists") is False:
+            print("  shot %d REJECTED  the endpoint says it wrote nothing (path=%r wroteFile=%r)"
+                  % (i, path, r.get("wroteFile")))
+            rejected.append((path or want, "endpoint reported no file"))
+            continue
         # AND THE ENDPOINT'S OWN VERDICT FIRST. It reports allBlack, so the plugin already answers
         # the crudest form of this question; png_is_interesting below is the wider net that also
         # catches a near-uniform frame - a camera inside geometry is not black, it is one colour.
