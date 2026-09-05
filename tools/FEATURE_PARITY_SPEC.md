@@ -15868,6 +15868,23 @@ out-of-process the way ops_gen already does with gen_status.
       Caught by RUNNING each guarded suite on the probe. A suite that fails to import or dies on a
       NameError still "compiles", and py_compile said all of them were fine.
 
+      AND THE REMAINING WORK IS NOW A LIST, NOT A JUDGEMENT - tools/audit_cooked_section_safety.py.
+      The question "can this section be wrapped" is mechanical and should not be answered by eye:
+
+        a section is SAFE TO WRAP if no name it ASSIGNS is READ after it ends.
+
+      Measured across every suite with a cooked assertion: 14 sections safe to wrap, 19 carrying
+      setup and needing their assertions guarded individually.
+
+      IT REPRODUCES THE MISTAKE THAT CAUSED IT, which is the only reason to believe it:
+      test_virtual_bone_authoring T3300 comes back "CARRIES SETUP - leaks B1, B2, B3, a". That is
+      exactly the wrap that died on UnboundLocalError, flagged before the edit rather than after.
+
+      DELIBERATELY CONSERVATIVE. A name merely REASSIGNED later - the throwaway `r` half these
+      suites reuse for every response - counts as leaked, so "carries setup" is a superset. It sends
+      a few safe sections to the slower treatment and never sends an unsafe one to the fast path. A
+      false positive costs a careful edit; a false negative costs a suite that dies at runtime.
+
       EIGHTEEN LEFT of the 22 with the write shape.
 
       MEASURED 2026-09-05 BY READING, NOT RUNNING - tools/audit_cooked_suite_shape.py. It finds every
