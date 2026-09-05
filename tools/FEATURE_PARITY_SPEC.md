@@ -11266,7 +11266,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       That leaves the UE gap at: 0 unreachable parameters, 0 uncovered endpoints, 8 consequence
       fields, and the editor-closed batch.
 
-- [ ] **every adoption site has now been read - and not one of the fixes is verified** (the sweep)
+- [x] **every adoption site has now been read - and not one of the fixes is verified** (the sweep)
       TRIAGE ORDER FOR A RED SWEEP, built 2026-09-03 from the day's diff so a failure is attributable
       rather than a bisect. 46 suites were touched, and they are not equally risky:
 
@@ -11349,6 +11349,39 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       WHAT IS NOT DONE: any of it. Thirty-one suites changed and not one has been run. That is the
       same two-pass sweep the parent item is blocked on, and these fixes make its result more
       informative rather than less - it now measures the whole class at once.
+
+      ================================================================================
+      RUN 2026-09-05. THE ADOPTION CLASS IS CLEAR, AND THAT IS A MEASUREMENT NOW.
+      ================================================================================
+      Two passes against Curfew - Andre's own uncooked UE 5.7 project, 35,725 assets - because the
+      whole point of this item is that a single pass cannot see the defect:
+
+        354 run(s) across 177 suites, 47 failed, 12 skipped, 0 took the editor down
+        PASSED alone -> FAILED in company: 0
+
+      ZERO. Not "none noticed" - the runner compares pass 1 against pass 2 per suite and prints the
+      transitions, so the number is computed rather than eyeballed, and it covers all 177 suites
+      rather than the 31 that were touched. The defining property of an adoption defect is that it
+      appears only on the second pass; two passes over the whole corpus is the experiment that can
+      show it, and it showed nothing.
+
+      THE INVERSE CASE TURNED UP INSTEAD and is worth more than a clean line. test_ported_anim
+      fails ALONE and PASSES in company: it consumes state another suite leaves behind. Same family
+      of coupling, opposite sign, and invisible to every run this item anticipated - a suite that
+      only ever passes in a sweep is a suite whose green is somebody else's.
+
+      AND THE TWO NAMED WATCH CASES BOTH RESOLVED, neither one adoption:
+        T8002 test_landscape_heightmap  passes. It was measuring another suite's terrain; it names
+                                        the terrain it measured now, which is what fixed it.
+        T3104 test_socket_authoring     STILL fails 33/1 - and fails 33/1 STANDALONE too, so this
+                                        item's premise for it has expired. delete_asset's blockedBy
+                                        names /Engine/Transient.TransBuffer_0 holding 51 references:
+                                        the editor's own undo history, which no endpoint can flush.
+                                        Filed as its own item. Not adoption, and never was.
+
+      The 47 failures are not this item's: 8 are suites asserting on COOKED assets against an
+      uncooked project (filed), 12 are genuine uncooked-5.7 candidates (filed), and they are
+      failures of environment and coverage rather than of cross-suite state.
 
 - [ ] **22 hand-rolled copies of the scratch filter that mifaudit already owns** (2 hours)
       SURVEYED 2026-09-03 WITHOUT CHANGING ANYTHING, because "22 copies of one filter" turns out to
@@ -15025,6 +15058,42 @@ out-of-process the way ops_gen already does with gen_status.
       call should have been SKIPPED by the no-guard rule, and it was judged anyway. Something
       supplied a set. Print `allowed` and `m.group(0)` together in the scan loop and it will be
       obvious in one run.
+
+- [ ] **a session cannot delete an asset it created, and nothing can flush the undo buffer**
+      DIAGNOSED 2026-09-05, and it settles test_socket_authoring's T3104 - the failure the
+      fixture-adoption item has been carrying as its outstanding case.
+
+      T3104 asserts "the mesh and skeleton THIS run made are gone" and it cannot be satisfied.
+      delete_asset now says exactly why, which is the memoryReferencers work paying off:
+
+        blockedBy.memoryReferencers  [{referencer: /Engine/Transient.TransBuffer_0,
+                                       class: TransBuffer, references: 51}]
+        error  "the editor's TRANSACTION BUFFER (undo history) is holding it - with object
+                serialization disabled nothing else references it"
+
+      THE ADOPTION ITEM'S PREMISE HAS EXPIRED and should stop being repeated. It says
+      test_socket_authoring "passes 34/34 alone and fails 33/1 in a sweep", which made it look like
+      cross-suite state. Measured against Curfew on 2026-09-05 it fails 33/1 STANDALONE as well.
+      Nothing about it is sweep-dependent; it is the same failure every time, and it is not
+      adoption.
+
+      WHAT IS ACTUALLY MISSING IS AN ENDPOINT. The bridge binds list_transactions,
+      undo_transactions and redo_transactions - and nothing that CLEARS the buffer. So any suite or
+      caller that creates a scratch asset and then tries to remove it in the same session is blocked
+      by its own undo history, with no way through. `GEditor->ResetTransaction()` is the engine call;
+      the guard rails it needs are the interesting part, since discarding undo history is
+      destructive to a person's session in exactly the way this codebase refuses elsewhere.
+
+      TWO WAYS FORWARD AND THEY ARE NOT EXCLUSIVE:
+        * the suite asserts what is TRUE - that delete_asset refuses and names the transaction
+          buffer - rather than that the asset is gone. That is a real postcondition and it tests the
+          diagnosis this item is built on.
+        * an endpoint that flushes the buffer, refused unless the caller confirms, so a scratch
+          workflow can clean up after itself. That is a capability a buyer wants too: anyone driving
+          this from an agent accumulates undo history they cannot clear.
+
+      Do NOT "fix" T3104 by deleting the assertion. A suite that stops checking its own cleanup is
+      how /Game/_Mif* fills up with 51-reference orphans nobody notices.
 
 - [ ] **13 suites fail on uncooked 5.7 for reasons that are NOT the cooked guards**
       THE FIRST UNCOOKED NUMBERS THIS PROJECT HAS EVER HAD, from the 2026-09-05 sweep against
