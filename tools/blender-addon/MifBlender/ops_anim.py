@@ -1582,7 +1582,14 @@ def op_add_nla_strip(params):
       action (str, required)    the action to place
       track (str)               track name; a new track is created if it does not exist
       start (int)               first frame, default the action's own start
-      name (str)                strip name, default the action's name
+      stripName (str)           name the strip, default the action's name. NOT `name`.
+      name (str)                an ALIAS FOR `object`, not for the strip.
+
+    THE SAME CONTRACT ERROR add_constraint had, found by sweeping for it. This documented
+    `name` as the strip name while line 1666 reads `stripName`, and `name` is an alias for
+    `object` - so the documented spelling is refused as an alias conflict, and alone it
+    names the wrong thing. Measured against a live Blender on 2026-09-04: `name` fails,
+    `stripName` works.
       blendType (str)           REPLACE | ADD | SUBTRACT | MULTIPLY
       influence (float)         0..1
       pushDownActive (bool)     default FALSE. See below - this is the trap.

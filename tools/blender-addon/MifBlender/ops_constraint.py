@@ -137,7 +137,18 @@ def op_add_constraint(params):
       target (str)             the object it follows
       subtarget (str)          a bone on the target, for an armature target
       influence (float)        0..1, default 1
-      name (str)               constraint name
+      constraintName (str)     name the constraint. NOT `name` - see below.
+      name (str)               an ALIAS FOR `object`, not for the constraint.
+
+    THE PARAMETER THAT NAMES THE CONSTRAINT IS `constraintName`, AND THIS SAID `name`. Measured
+    2026-09-04 against a live Blender, the documented spelling was unusable in every form: passing
+    object and name together is refused as an alias conflict ("two names for the same parameter"),
+    and passing name alone is read as the OBJECT, so it fails with "no object named 'MifConA'".
+    A caller following the contract could not name a constraint at all - and the implementation
+    below has always read `constraintName`.
+
+    `name` stays an alias for `object` because that is what every op in this addon means by it and
+    changing it here would make this the one that differs. The contract is what was wrong.
 
     THE POSTCONDITION IS MOVEMENT, MEASURED THROUGH THE DEPSGRAPH. A constraint does not touch
     obj.matrix_world, so reading the object's own transform reports no change for every constraint

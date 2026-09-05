@@ -15402,7 +15402,7 @@ out-of-process the way ops_gen already does with gen_status.
 
       test_blender_scene 66 PASS / 1 FAIL -> 69 PASS / 0 FAIL.
 
-- [ ] **14 modifier types can be WRITTEN but not READ BACK**
+- [x] **14 modifier types can be WRITTEN but not READ BACK** DONE - verified 2026-09-04
       test_blender_rig R901 fails at HEAD, and is nobody's regression - it was simply not being
       looked at, the same as S105. _MODIFIER_WRITES accepts ARRAY, BOOLEAN, CAST, CURVE, DISPLACE,
       HOOK, LATTICE, MASK, MESH_DEFORM, SHRINKWRAP, SIMPLE_DEFORM, SMOOTH, WELD and WIREFRAME;
@@ -15417,6 +15417,26 @@ out-of-process the way ops_gen already does with gen_status.
       reason invalidCount exists, because every other field still looks healthy" - and the response
       shows target:null with the constraint not counted as invalid. Needs reading before it is
       called a defect: the fixture may not be arranging what the check believes.
+
+      BOTH HALVES MEASURED CLOSED 2026-09-04, against a live headless Blender 5.0 rather than by
+      reading the source. _generated_fields already derives the read side from _MODIFIER_WRITES, so
+      the question was whether it WORKS, not whether it exists.
+
+        modifiers   all 14 of ARRAY, BOOLEAN, CAST, CURVE, DISPLACE, HOOK, LATTICE, MASK,
+                    MESH_DEFORM, SHRINKWRAP, SIMPLE_DEFORM, SMOOTH, WELD and WIREFRAME were added
+                    and read back with a populated settings dict, 3 to 8 fields each. ARRAY returns
+                    count, curve, endCap, fitType, mergeThreshold and three more.
+        S105        a constraint whose target is deleted now reports invalidCount 1, isValid false
+                    and targetMissing true. It was target:null and silent when this was written.
+
+      AND THE PROBE FOUND A DEFECT OF ITS OWN, fixed the same day. add_constraint documented
+      `name (str) constraint name` while take() reads `name` as a spelling of `object`, so the
+      documented spelling was refused as an alias conflict when sent with `object`, and read as the
+      object when sent alone - the promised parameter was unreachable in every form. The one that
+      works is `constraintName`. add_nla_strip had the identical error (`stripName`), found by
+      sweeping for the shape rather than waiting for it. Both contracts corrected, and
+      tools/audit_blender_alias_contract.py now refuses any op that documents an alias as though it
+      were a parameter of its own.
 
 - [x] **audit_blender_postconditions independently re-verifies 7 of 93 write ops** DONE 2026-09-04
       It ended on "all 7 write ops' claimed effects independently re-verified", which reads as the
