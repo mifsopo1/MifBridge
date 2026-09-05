@@ -15009,10 +15009,22 @@ out-of-process the way ops_gen already does with gen_status.
       file already records three times - detectors producing 23, 22 and 12 false findings in one
       run - and a check people learn to scroll past stops guarding the half that worked.
 
-      WHOEVER PICKS THIS UP: the cause is somewhere between the key extractor and the lookup, not in
-      load_addon_ops, which was verified correct in isolation. Start by printing `allowed` for
-      create_camera inside the scan loop - the puzzle is that accepts.get returns None for it and it
-      was still judged, so something is supplying a set that should not be.
+      WHOEVER PICKS THIS UP, here is the search narrowed. Both tables were checked in isolation
+      afterwards and BOTH ARE CORRECT:
+
+        param_reach.endpoint_accepts()   plain dict, 427 entries, .get(missing) -> None
+        parity_check.load_addon_ops([])  plain dict, 154 entries, create_camera's accepts is a
+                                         set and 'fStop' is in it
+
+      So neither table is the fault, and neither is a surprising container default. That leaves the
+      merge expression `accepts.get(ep) or addon.get(ep)`, the key extractor that decides which
+      dict literal belongs to a matched call, and the bare-call regex - whose escaping was awkward
+      to write through a patch script and is the least-verified of the three.
+
+      The specific contradiction to resolve first: accepts.get('create_camera') is None, so the
+      call should have been SKIPPED by the no-guard rule, and it was judged anyway. Something
+      supplied a set. Print `allowed` and `m.group(0)` together in the scan loop and it will be
+      obvious in one run.
 
 - [ ] **13 suites fail on uncooked 5.7 for reasons that are NOT the cooked guards**
       THE FIRST UNCOOKED NUMBERS THIS PROJECT HAS EVER HAD, from the 2026-09-05 sweep against
