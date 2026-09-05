@@ -4,9 +4,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 3.7,
   "editorSurvived": true,
-  "ranAt": 1788258299.4020243,
+  "ranAt": 1788572392.128907,
   "tail": ""
  },
  {
@@ -24,9 +24,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 34   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 3.2,
   "editorSurvived": true,
-  "ranAt": 1788258302.5210373,
+  "ranAt": 1788572397.1483119,
   "tail": ""
  },
  {
@@ -42,12 +42,12 @@
  {
   "suite": "test_anim_curve.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 16   FAIL 0",
-  "seconds": 1.7,
+  "rc": 1,
+  "summary": "PASS 8   FAIL 9",
+  "seconds": 2.8,
   "editorSurvived": true,
-  "ranAt": 1788258305.3826282,
-  "tail": ""
+  "ranAt": 1788572401.8143244,
+  "tail": "  NOT EXERCISED, and stated rather than implied: the SUCCESS path of all three\n  endpoints. All 514 AnimSequences in this project are cooked and create_asset cannot\n  produce a usable uncooked one, so creating a curve and writing keys is unreachable\n  here by construction. Curfew (uncooked 5.7) is where that half runs.\n\n========================================================================\nPASS 8   FAIL 9\n  FAILED: T4200 add_anim_curve refuses a cooked sequence\n          {\"ok\": true, \"assetPath\": \"/MetaHumanCharacter/Face/ARKit/AS_MetaHuman_ARKit_Mapping.AS_MetaHuman_ARKit_Mapping\", \"curve\": \"MifTestCurve\", \"type\": \"float\", \"created\": true, \"curveCountBefore\": 1172, \"curveCount\": 1173, \"note\": \"the curve exists and h\n  FAILED: T4200 add_anim_curve names the data model as the reason\n          \n  FAILED: T4200 set_anim_curve_keys refuses a cooked sequence\n          {\"ok\": true, \"assetPath\": \"/MetaHumanCharacter/Face/ARKit/AS_MetaHuman_ARKit_Mapping.AS_MetaHuman_ARKit_Mapping\", \"curve\": \"MifTestCurve\", \"type\": \"float\", \"append\": false, \"keyCountBefore\": 0, \"keyCount\": 1, \"assetNote\": \"the animation is dirty and \n  FAILED: T4200 set_anim_curve_keys names the data model as the reason\n          \n  FAILED: T4200 remove_anim_curve refuses a cooked sequence\n          {\"ok\": true, \"assetPath\": \"/MetaHumanCharacter/Face/ARKit/AS_MetaHuman_ARKit_Mapping.AS_MetaHuman_ARKit_Mapping\", \"curve\": \"MifTestCurve\", \"type\": \"float\", \"removed\": true, \"keysDestroyed\": 1, \"curveCountBefore\": 1173, \"curveCount\": 1172, \"assetNote\"\n  FAILED: T4200 remove_anim_curve names the data model as the reason\n          \n  FAILED: T4200 and the refusal explains that the alternative was TERMINATION, not an error\n          \n  FAILED: T4200 it identifies the package as cooked, so the caller knows it is not a typo\n          \n  FAILED: T4202 on THIS project the data-model guard answers first, which is the right order - the guard that prevents a crash outranks the one that prevents a useless curve\n          vector curves are not supported, and the engine would let you make one. FRawCurveTracks::VectorCurves is UPROPERTY(transient) and the engine's own note says they are \"not evaluated"
  },
  {
   "suite": "test_anim_curve.py",
@@ -63,10 +63,10 @@
   "suite": "test_anim_nodes.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 26   FAIL 0",
-  "seconds": 1.9,
+  "summary": "",
+  "seconds": 2.5,
   "editorSurvived": true,
-  "ranAt": 1788258308.3840938,
+  "ranAt": 1788572406.2668066,
   "tail": ""
  },
  {
@@ -82,12 +82,12 @@
  {
   "suite": "test_anim_notify.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 21   FAIL 0",
-  "seconds": 1.9,
+  "rc": 1,
+  "summary": "",
+  "seconds": 2.5,
   "editorSurvived": true,
-  "ranAt": 1788258311.3806038,
-  "tail": ""
+  "ranAt": 1788572410.6168077,
+  "tail": "bridge up on pid 36932 (MifProbe.uproject) - 453 endpoints, compiled Sep  4 2026 21:28:02 (banner: __DATE__ of one TU, NOT the link time)\n  FAIL  T1900 (setup) a real AnimSequence is available to author against\n        0 AnimSequence(s) found"
  },
  {
   "suite": "test_anim_notify.py",
@@ -102,12 +102,12 @@
  {
   "suite": "test_anim_state.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 20   FAIL 0",
-  "seconds": 1.9,
+  "rc": 1,
+  "summary": "",
+  "seconds": 2.5,
   "editorSurvived": true,
-  "ranAt": 1788258314.4632962,
-  "tail": ""
+  "ranAt": 1788572415.147493,
+  "tail": "bridge up on pid 36932 (MifProbe.uproject) - 453 endpoints, compiled Sep  4 2026 21:28:02 (banner: __DATE__ of one TU, NOT the link time)\n  FAIL  T2000 (setup) a Skeleton exists to parent an Anim Blueprint to\n        0"
  },
  {
   "suite": "test_anim_state.py",
@@ -124,9 +124,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 1.8,
+  "seconds": 3.1,
   "editorSurvived": true,
-  "ranAt": 1788258317.4639273,
+  "ranAt": 1788572420.0669136,
   "tail": ""
  },
  {
@@ -144,9 +144,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 4.8,
+  "seconds": 2.8,
   "editorSurvived": true,
-  "ranAt": 1788258323.4669747,
+  "ranAt": 1788572424.7503157,
   "tail": ""
  },
  {
@@ -164,9 +164,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 2.9,
   "editorSurvived": true,
-  "ranAt": 1788258326.5500047,
+  "ranAt": 1788572429.766486,
   "tail": ""
  },
  {
@@ -182,12 +182,12 @@
  {
   "suite": "test_audio_nav.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 22   FAIL 0",
-  "seconds": 2.0,
+  "rc": 1,
+  "summary": "PASS 19   FAIL 3",
+  "seconds": 3.1,
   "editorSurvived": true,
-  "ranAt": 1788258329.7620025,
-  "tail": ""
+  "ranAt": 1788572434.8948255,
+  "tail": "=== T172b: nav_project_point guards ===\n  PASS  T172b no point refused\n  PASS  T172b no point explains\n  PASS  T172b malformed point refused\n  PASS  T172b malformed point explains\n\n=== T173 [teeth]: partial is NOT reachable ===\n   {\"ok\": false, \"error\": \"the navigation system returned no path object at all - that is a query failure rather than an unreachable destination.\"}\n  PASS  T173 a query failure is reported as such, not as 'unreachable'\n\n=== T173b: nav_find_path guards ===\n  PASS  T173b no start refused\n  PASS  T173b no start explains\n  PASS  T173b no end refused\n  PASS  T173b no end explains\n\n========================================================================\nPASS 19   FAIL 3\n  FAILED: T170 playing\n          {\"ok\": false, \"error\": \"path is required (any USoundBase), or pass stop:true\"}\n  FAILED: T170 it identifies the sound and its class\n          {\"ok\": false, \"error\": \"path is required (any USoundBase), or pass stop:true\"}\n  FAILED: T170 and reports a real duration\n          None\n========================================================================"
  },
  {
   "suite": "test_audio_nav.py",
@@ -203,10 +203,10 @@
   "suite": "test_audit_fixes.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 35   FAIL 0",
-  "seconds": 3.3,
+  "summary": "PASS 40   FAIL 0",
+  "seconds": 5.6,
   "editorSurvived": true,
-  "ranAt": 1788258334.3790057,
+  "ranAt": 1788572442.6409626,
   "tail": ""
  },
  {
@@ -224,9 +224,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 1.8,
+  "seconds": 2.9,
   "editorSurvived": true,
-  "ranAt": 1788258337.4590054,
+  "ranAt": 1788572447.5927112,
   "tail": ""
  },
  {
@@ -244,9 +244,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 3.3,
   "editorSurvived": true,
-  "ranAt": 1788258340.741963,
+  "ranAt": 1788572453.0557804,
   "tail": ""
  },
  {
@@ -263,10 +263,10 @@
   "suite": "test_blender_anim.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 32   FAIL 0",
-  "seconds": 1.8,
+  "summary": "PASS 35   FAIL 0",
+  "seconds": 0.4,
   "editorSurvived": true,
-  "ranAt": 1788258343.8240592,
+  "ranAt": 1788572455.5868266,
   "tail": ""
  },
  {
@@ -284,9 +284,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 79   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 0.6,
   "editorSurvived": true,
-  "ranAt": 1788258347.8362505,
+  "ranAt": 1788572458.5163565,
   "tail": ""
  },
  {
@@ -302,12 +302,12 @@
  {
   "suite": "test_blender_consequence.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 68   FAIL 0",
-  "seconds": 2.6,
+  "rc": 1,
+  "summary": "PASS 64   FAIL 1",
+  "seconds": 0.5,
   "editorSurvived": true,
-  "ranAt": 1788258351.8181055,
-  "tail": ""
+  "ranAt": 1788572461.2184048,
+  "tail": "  PASS  C108 and the plane is repopulated, so 'removed' never meant 'plane is now empty'\n  PASS  C108 extrude_skirt succeeds\n  PASS  C108 extrude_skirt reports the same nested block\n  PASS  C108 X: a skirt destroys no tracked vert, so the count is 0\n  PASS  C108 X: and it had verts to destroy, so the 0 is measured not vacuous\n  PASS  C108 Y: a skirt destroys no tracked vert, so the count is 0\n  PASS  C108 Y: and it had verts to destroy, so the 0 is measured not vacuous\n  PASS  C108 Z: a skirt destroys no tracked vert, so the count is 0\n  PASS  C108 Z: and it had verts to destroy, so the 0 is measured not vacuous\n\n  PASS  C199 (cleanup) no MifC_* object is left behind\n\n=== C110: face_info says when its figures are the last OBJECT-mode state ===\n  PASS  C110 face_info in OBJECT mode does NOT claim staleness - the negative control, without which a flag that was always on would pass this whole section\n  PASS  C110 (skipped) the stale-read check needs run_python, which is disabled here\n\n=== C111: an edit to a SHARED mesh says which other objects it changed ===\n  PASS  C111 a single-user mesh does NOT claim to be shared - the negative control, without which a note that was always present would pass\n  PASS  C111 (skipped) the shared-mesh check needs run_python, which is disabled here\n\n========================================================================\nPASS 64   FAIL 1\n  FAILED: C107 (setup) run_python authored the weights - the runner enables it by default, so a refusal here is a finding about the runner, not a reason to skip\n          {\"ok\": false, \"endpoint\": \"run_python\", \"error\": \"run_python is disabled. Enable it in Edit > Preferences > Add-ons > MifBlender > 'Allow run_python'. It executes arbitrary code inside Blender with your user's privileges -- only enable it o\n========================================================================"
  },
  {
   "suite": "test_blender_consequence.py",
@@ -323,10 +323,10 @@
   "suite": "test_blender_creation.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 56   FAIL 0",
-  "seconds": 4.1,
+  "summary": "PASS 52   FAIL 0",
+  "seconds": 0.5,
   "editorSurvived": true,
-  "ranAt": 1788258357.3268054,
+  "ranAt": 1788572464.0644279,
   "tail": ""
  },
  {
@@ -344,9 +344,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 13.1,
+  "seconds": 12.4,
   "editorSurvived": true,
-  "ranAt": 1788258371.8458445,
+  "ranAt": 1788572478.8663177,
   "tail": ""
  },
  {
@@ -364,9 +364,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "29 PASS  0 FAIL",
-  "seconds": 1.1,
-  "editorSurvived": null,
-  "ranAt": 1788571134.2651885,
+  "seconds": 1.2,
+  "editorSurvived": true,
+  "ranAt": 1788572482.432885,
   "tail": ""
  },
  {
@@ -383,10 +383,10 @@
   "suite": "test_blender_material.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 45   FAIL 0",
-  "seconds": 2.4,
+  "summary": "PASS 44   FAIL 0",
+  "seconds": 0.4,
   "editorSurvived": true,
-  "ranAt": 1788258378.138924,
+  "ranAt": 1788572485.2508373,
   "tail": ""
  },
  {
@@ -402,12 +402,12 @@
  {
   "suite": "test_blender_mesh.py",
   "pass": 1,
-  "rc": 2,
+  "rc": 1,
   "summary": "",
-  "seconds": 0.2,
+  "seconds": 0.1,
   "editorSurvived": true,
-  "ranAt": 1788258379.8110905,
-  "tail": "MifBlender mesh pipeline - 127.0.0.1:8792\n\nREFUSED - nothing was verified, and nothing was changed.\n  test_blender_mesh MUTATES the scene (it opens with clear_scene), and\n  this Blender is INTERACTIVE - a person may have unsaved work open in it\n  The Blender answering 127.0.0.1:8792.\n  Start a throwaway one instead:  python tools/run_blender_suites.py\n  Or, if you really do mean this one:  set MIF_BLENDER_ALLOW_INTERACTIVE=1\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
+  "ranAt": 1788572487.7610023,
+  "tail": "MifBlender mesh pipeline - 127.0.0.1:8792\n\n=== T760: the handshake reports what it is ===\n  PASS T760 ping answers\n  PASS T760 and names the addon\n  PASS T760 with a protocol version\n  PASS T760 and the Blender version\n  PASS T760 as a version tuple too\n       serving: Blender 5.0.1\n  PASS T760 echo comes back\n\n=== T761: scene_info describes the running Blender ===\n  PASS T761 scene_info answers\n  PASS T761 it names the scene\n  PASS T761 and counts what is in it\n  PASS T761 broken down by type\n  PASS T761 and says it is running headless\n       scene 'Scene', 2 objects {\"MESH\": 2}\n\n=== T762: there is a mesh to work with ===\n       no MESH in the scene - trying clear_scene + factory Cube is not possible\n       headlessly without run_python, so this suite cannot proceed.\n  FAIL T762 a mesh exists to test against\n       scene has no MESH object; start Blender with --factory-startup"
  },
  {
   "suite": "test_blender_mesh.py",
@@ -422,12 +422,12 @@
  {
   "suite": "test_blender_ops.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 12   FAIL 0",
-  "seconds": 0.6,
+  "rc": 2,
+  "summary": "",
+  "seconds": 0.1,
   "editorSurvived": true,
-  "ranAt": 1788258381.8411753,
-  "tail": ""
+  "ranAt": 1788572490.285959,
+  "tail": "MifBlender addon ops - 127.0.0.1:8792\n\n\nSKIPPED - nothing was verified.\n  run_python is disabled (that is the correct default) and this scene has no mesh\n  object to adopt instead, so there is nothing to exercise set_material_slots on.\n  Reason given: run_python is disabled. Enable it in Edit > Preferences > Add-ons > MifBlender > 'Allow run_python'. It executes arbitrary code inside Blender with yo"
  },
  {
   "suite": "test_blender_ops.py",
@@ -445,8 +445,8 @@
   "rc": 0,
   "summary": "PASS 261   FAIL 0",
   "seconds": 0.2,
-  "editorSurvived": null,
-  "ranAt": 1788571134.444272,
+  "editorSurvived": true,
+  "ranAt": 1788572492.9469624,
   "tail": ""
  },
  {
@@ -463,10 +463,10 @@
   "suite": "test_blender_reject_unknown.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 68   FAIL 0",
-  "seconds": 3.8,
+  "summary": "PASS 154   FAIL 0",
+  "seconds": 1.3,
   "editorSurvived": true,
-  "ranAt": 1788258387.0512571,
+  "ranAt": 1788572496.688509,
   "tail": ""
  },
  {
@@ -482,12 +482,12 @@
  {
   "suite": "test_blender_rename_bones.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 12   FAIL 0",
-  "seconds": 1.0,
+  "rc": 2,
+  "summary": "",
+  "seconds": 0.1,
   "editorSurvived": true,
-  "ranAt": 1788258389.482963,
-  "tail": ""
+  "ranAt": 1788572499.4227889,
+  "tail": "[mif] answering Blender: pid 30584, 5.0.1, file (unsaved), 2 object(s) - 127.0.0.1:8792\narmature: None\n\nSKIPPED - no ARMATURE with at least two bones is in this scene, and one could not\n  be built: the addon cannot create an armature, and run_python - the only way to\n  make one from here - is off. That is a deliberate security default and this suite\n  does not turn it on; it only USES it where it is already available. Load a rig,\n  enable the hatch, or use run_blender_suites.py, which enables it inside its own\n  headless Blender. Exit 2 means SKIPPED, distinct from 0 (passed) and 1 (failed)."
  },
  {
   "suite": "test_blender_rename_bones.py",
@@ -502,12 +502,12 @@
  {
   "suite": "test_blender_rig.py",
   "pass": 1,
-  "rc": 2,
-  "summary": "",
-  "seconds": 0.1,
+  "rc": 0,
+  "summary": "PASS 16   FAIL 0",
+  "seconds": 0.5,
   "editorSurvived": true,
-  "ranAt": 1788258391.0966713,
-  "tail": "  PASS R900 both modifier tables are found in ops_rig.py\n  PASS R901 the read and write modifier tables describe the SAME types - a type on one side and not the other is a silent asymmetry\nMifBlender rig ops (ops_rig.py) - 127.0.0.1:8792\n\nREFUSED - nothing was verified, and nothing was changed.\n  test_blender_rig MUTATES the scene (it opens with clear_scene), and\n  this Blender is INTERACTIVE - a person may have unsaved work open in it\n  The Blender answering 127.0.0.1:8792.\n  Start a throwaway one instead:  python tools/run_blender_suites.py\n  Or, if you really do mean this one:  set MIF_BLENDER_ALLOW_INTERACTIVE=1\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
+  "ranAt": 1788572502.48883,
+  "tail": ""
  },
  {
   "suite": "test_blender_rig.py",
@@ -523,10 +523,10 @@
   "suite": "test_blender_scene.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 49   FAIL 0",
-  "seconds": 2.4,
+  "summary": "PASS 82   FAIL 0",
+  "seconds": 2.0,
   "editorSurvived": true,
-  "ranAt": 1788258395.0300872,
+  "ranAt": 1788572507.2670016,
   "tail": ""
  },
  {
@@ -543,10 +543,10 @@
   "suite": "test_blueprint_breakpoint.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 24   FAIL 0",
-  "seconds": 2.4,
+  "summary": "PASS 27   FAIL 0",
+  "seconds": 4.1,
   "editorSurvived": true,
-  "ranAt": 1788258398.889169,
+  "ranAt": 1788572514.1133976,
   "tail": ""
  },
  {
@@ -563,10 +563,10 @@
   "suite": "test_blueprint_watch.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 20   FAIL 0",
-  "seconds": 2.3,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 4.0,
   "editorSurvived": true,
-  "ranAt": 1788258402.7201262,
+  "ranAt": 1788572520.823015,
   "tail": ""
  },
  {
@@ -584,9 +584,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 5.3,
   "editorSurvived": true,
-  "ranAt": 1788258406.9605317,
+  "ranAt": 1788572528.999777,
   "tail": ""
  },
  {
@@ -604,9 +604,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 4.7,
   "editorSurvived": true,
-  "ranAt": 1788258411.333006,
+  "ranAt": 1788572536.354485,
   "tail": ""
  },
  {
@@ -622,12 +622,12 @@
  {
   "suite": "test_collections.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 27   FAIL 0",
-  "seconds": 4.9,
+  "rc": 1,
+  "summary": "PASS 22   FAIL 5",
+  "seconds": 3.7,
   "editorSurvived": true,
-  "ranAt": 1788258417.954777,
-  "tail": ""
+  "ranAt": 1788572542.8166704,
+  "tail": "  PASS  T5402 and the refusal says so rather than just 'not found'\n  PASS  T5402 an unknown share type is refused with the three real ones\n  PASS  T5402 and warns that shared needs revision control\n  PASS  T5402 adding to a collection that does not exist is refused\n\n=== T5403: destroying the label, not the assets ===\n  PASS  T5403 destroying without confirm is refused, naming the size\n  PASS  T5403 and the refusal makes clear the ASSETS are untouched\n  PASS  T5403 destroying works\n  PASS  T5403 and it really is gone\n  PASS  T5403 the assets it named still exist - a collection is a label, not a container\n  PASS  T5404 (cleanup) the test collection is gone\n\n========================================================================\nPASS 22   FAIL 5\n  FAILED: T5400 and the asset count is read back from the collection\n          {\"ok\": true, \"name\": \"MifTest72542\", \"shareType\": \"local\", \"created\": true, \"assetsAdded\": 1, \"assetCount\": 0}\n  FAILED: T5400 describe_collection lists its assets\n          {\"ok\": true, \"name\": \"MifTest72542\", \"shareType\": \"local\", \"assets\": [], \"assetCount\": 0, \"note\": \"a collection stores SOFT OBJECT PATHS and never loads the assets, so it can hold cooked container content that most write endpoints would refuse to tou\n  FAILED: T5401 `added` is the measured change in the set's own size\n          {\"added\": 2, \"assetCountBefore\": 0, \"assetCount\": 2}\n  FAILED: T5401 the count did not move\n          2\n  FAILED: T5401 removing works and is measured the same way\n          {\"removed\": 0, \"assetCount\": 2}"
  },
  {
   "suite": "test_collections.py",
@@ -644,9 +644,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 3.6,
   "editorSurvived": true,
-  "ranAt": 1788258422.0249228,
+  "ranAt": 1788572549.1151876,
   "tail": ""
  },
  {
@@ -664,9 +664,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 42   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 4.1,
   "editorSurvived": true,
-  "ranAt": 1788258426.3602984,
+  "ranAt": 1788572555.8316996,
   "tail": ""
  },
  {
@@ -684,9 +684,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 41   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 4.9,
   "editorSurvived": true,
-  "ranAt": 1788258430.7696,
+  "ranAt": 1788572563.3208933,
   "tail": ""
  },
  {
@@ -703,10 +703,10 @@
   "suite": "test_consolidate.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 23   FAIL 0",
-  "seconds": 2.7,
+  "summary": "PASS 20   FAIL 0",
+  "seconds": 9.9,
   "editorSurvived": true,
-  "ranAt": 1788258435.0432515,
+  "ranAt": 1788572575.9019873,
   "tail": ""
  },
  {
@@ -722,12 +722,12 @@
  {
   "suite": "test_cooked_class_trap.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 37   FAIL 0",
-  "seconds": 5.5,
+  "rc": 2,
+  "summary": "",
+  "seconds": 3.4,
   "editorSurvived": true,
-  "ranAt": 1788258442.1700492,
-  "tail": ""
+  "ranAt": 1788572582.17481,
+  "tail": "bridge up on pid 36932 (MifProbe.uproject) - 453 endpoints, compiled Sep  4 2026 21:28:02 (banner: __DATE__ of one TU, NOT the link time)\n  WidgetBlueprint    plain=17     generated=0\n  AnimBlueprint      plain=9      generated=0\n  Blueprint          plain=290    generated=0\n\nSKIPPED - nothing was verified.\n  No blueprint family here has more generated-class assets than plain ones, so this\n  project is not cooked in the way the trap needs. Nothing to demonstrate."
  },
  {
   "suite": "test_cooked_class_trap.py",
@@ -742,12 +742,12 @@
  {
   "suite": "test_crash_journal.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 21   FAIL 0",
-  "seconds": 5.3,
+  "rc": 1,
+  "summary": "PASS 12   FAIL 6",
+  "seconds": 6.1,
   "editorSurvived": true,
-  "ranAt": 1788258449.0785086,
-  "tail": ""
+  "ranAt": 1788572590.9812505,
+  "tail": "  FAIL  T622 an end record was written   []\n  FAIL  T622 and the start names the endpoint we called   starts seen: []\n\n=== T623: mifwatch reads it and reports the current session as live ===\n  PASS  T623 mifwatch parses the journal\n  FAIL  T623 the newest session has no shutdown yet - the editor is still running   {\"pid\": 38068, \"ended\": \"2026-09-05T01:27:11.505Z\"}\n  FAIL  T623 and it counted the calls   {\"pid\": 38068, \"port\": 8791, \"engine\": \"5.3\", \"started\": \"2026-09-05T01:27:07.102Z\", \"ended\": \"2026-09-05T01:27:11.505Z\", \"unfinished\": [], \"calls\": 0, \"slowest\": [\"\", 0.0], \"failu\n  PASS  T623 no call in the live session started without finishing\n  PASS  T623 the bridge is still answering\n\n========================================================================\nPASS 12   FAIL 6\n  FAILED: T622 the journal grew\n          676927 -> 676927 records - if this did not grow, nothing is being recorded\n  FAILED: T622 a start record was written\n          []\n  FAILED: T622 an end record was written\n          []\n  FAILED: T622 and the start names the endpoint we called\n          starts seen: []\n  FAILED: T623 the newest session has no shutdown yet - the editor is still running\n          {\"pid\": 38068, \"ended\": \"2026-09-05T01:27:11.505Z\"}\n  FAILED: T623 and it counted the calls\n          {\"pid\": 38068, \"port\": 8791, \"engine\": \"5.3\", \"started\": \"2026-09-05T01:27:07.102Z\", \"ended\": \"2026-09-05T01:27:11.505Z\", \"unfinished\": [], \"calls\": 0, \"slowest\": [\"\", 0.0], \"failu\n========================================================================"
  },
  {
   "suite": "test_crash_journal.py",
@@ -764,9 +764,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 47   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 3.8,
   "editorSurvived": true,
-  "ranAt": 1788258453.0884137,
+  "ranAt": 1788572597.47804,
   "tail": ""
  },
  {
@@ -784,9 +784,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 4.5,
   "editorSurvived": true,
-  "ranAt": 1788258456.8560097,
+  "ranAt": 1788572605.0248911,
   "tail": ""
  },
  {
@@ -804,9 +804,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 4.1,
   "editorSurvived": true,
-  "ranAt": 1788258460.7542634,
+  "ranAt": 1788572612.113014,
   "tail": ""
  },
  {
@@ -823,10 +823,10 @@
   "suite": "test_create_struct_init.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 14   FAIL 0",
-  "seconds": 2.2,
+  "summary": "PASS 11   FAIL 0",
+  "seconds": 4.2,
   "editorSurvived": true,
-  "ranAt": 1788258464.5161161,
+  "ranAt": 1788572619.2582004,
   "tail": ""
  },
  {
@@ -844,9 +844,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 3.6,
   "editorSurvived": true,
-  "ranAt": 1788258467.7896912,
+  "ranAt": 1788572625.5765264,
   "tail": ""
  },
  {
@@ -864,9 +864,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 3.7,
   "editorSurvived": true,
-  "ranAt": 1788258471.2905927,
+  "ranAt": 1788572631.9147518,
   "tail": ""
  },
  {
@@ -884,9 +884,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 4.8,
   "editorSurvived": true,
-  "ranAt": 1788258475.2962468,
+  "ranAt": 1788572639.394479,
   "tail": ""
  },
  {
@@ -903,10 +903,10 @@
   "suite": "test_dependency_edges.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 27   FAIL 0",
-  "seconds": 3.2,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 3.6,
   "editorSurvived": true,
-  "ranAt": 1788258479.8112774,
+  "ranAt": 1788572645.7257724,
   "tail": ""
  },
  {
@@ -924,9 +924,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 3.9,
   "editorSurvived": true,
-  "ranAt": 1788258483.260239,
+  "ranAt": 1788572652.2487206,
   "tail": ""
  },
  {
@@ -942,12 +942,12 @@
  {
   "suite": "test_duplicate_cooked_guard.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 16   FAIL 0",
-  "seconds": 2.2,
+  "rc": 1,
+  "summary": "PASS 3   FAIL 3",
+  "seconds": 3.8,
   "editorSurvived": true,
-  "ranAt": 1788258486.797881,
-  "tail": ""
+  "ranAt": 1788572658.6499135,
+  "tail": "bridge up on pid 36932 (MifProbe.uproject) - 453 endpoints, compiled Sep  4 2026 21:28:02 (banner: __DATE__ of one TU, NOT the link time)\n\n=== T940: duplicate_asset refuses a cooked StaticMesh - the exact crash reproduction ===\n  FAIL  T940 (setup) a real StaticMesh exists to try   None\n\n=== T941: duplicate_asset refuses a cooked NiagaraSystem - the guard this one was modelled on ===\n  FAIL  T941 (setup) a real NiagaraSystem exists to try   None\n\n=== T943: duplicate_asset refuses a cooked AnimSequence - the third of the family ===\n  FAIL  T943 (setup) a real AnimSequence exists to try   None\n\n=== T942: a normal, NOT-cooked scratch Blueprint still duplicates successfully ===\n  PASS  T942 (setup) a scratch source blueprint is created\n  PASS  T942 the duplicate succeeds - the guard did not widen to refuse everything\n  PASS  T942 and the new asset really exists - confirmed against the asset registry, not against duplicate_asset's own response\n\n========================================================================\nPASS 3   FAIL 3\n  FAILED: T940 (setup) a real StaticMesh exists to try\n          None\n  FAILED: T941 (setup) a real NiagaraSystem exists to try\n          None\n  FAILED: T943 (setup) a real AnimSequence exists to try\n          None\n========================================================================"
  },
  {
   "suite": "test_duplicate_cooked_guard.py",
@@ -964,9 +964,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 3.6,
   "editorSurvived": true,
-  "ranAt": 1788258490.2873533,
+  "ranAt": 1788572664.8816779,
   "tail": ""
  },
  {
@@ -984,9 +984,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 3.8,
   "editorSurvived": true,
-  "ranAt": 1788258493.4679794,
+  "ranAt": 1788572671.3075998,
   "tail": ""
  },
  {
@@ -1004,9 +1004,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 15   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 3.5,
   "editorSurvived": true,
-  "ranAt": 1788258496.7148805,
+  "ranAt": 1788572677.6571229,
   "tail": ""
  },
  {
@@ -1024,9 +1024,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 4.3,
   "editorSurvived": true,
-  "ranAt": 1788258500.364261,
+  "ranAt": 1788572684.8101304,
   "tail": ""
  },
  {
@@ -1044,9 +1044,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 4.3,
   "editorSurvived": true,
-  "ranAt": 1788258504.1753778,
+  "ranAt": 1788572691.78147,
   "tail": ""
  },
  {
@@ -1064,9 +1064,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 4.5,
   "editorSurvived": true,
-  "ranAt": 1788258507.80388,
+  "ranAt": 1788572698.7826707,
   "tail": ""
  },
  {
@@ -1084,9 +1084,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 4.4,
   "editorSurvived": true,
-  "ranAt": 1788258511.3505065,
+  "ranAt": 1788572705.6029127,
   "tail": ""
  },
  {
@@ -1105,8 +1105,8 @@
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
   "seconds": 0.1,
-  "editorSurvived": null,
-  "ranAt": 1788571134.5428777,
+  "editorSurvived": true,
+  "ranAt": 1788572708.0694485,
   "tail": ""
  },
  {
@@ -1122,12 +1122,12 @@
  {
   "suite": "test_foliage_modes.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 37   FAIL 0",
-  "seconds": 2.6,
+  "rc": 3,
+  "summary": "",
+  "seconds": 2.9,
   "editorSurvived": true,
-  "ranAt": 1788258516.7489226,
-  "tail": ""
+  "ranAt": 1788572713.2929542,
+  "tail": "bridge up on pid 36932 (MifProbe.uproject) - 453 endpoints, compiled Sep  4 2026 21:28:02 (banner: __DATE__ of one TU, NOT the link time)\nscratch level confirmed: Untitled_1\nsetup failed: foliageType=None staticMesh=/Engine/EditorMeshes/MatineeCam_SM.MatineeCam_SM"
  },
  {
   "suite": "test_foliage_modes.py",
@@ -1144,9 +1144,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 6.0,
   "editorSurvived": true,
-  "ranAt": 1788258520.4990444,
+  "ranAt": 1788572721.557444,
   "tail": ""
  },
  {
@@ -1164,9 +1164,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 3.4,
   "editorSurvived": true,
-  "ranAt": 1788258523.9250243,
+  "ranAt": 1788572727.1644619,
   "tail": ""
  },
  {
@@ -1184,9 +1184,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 0.1,
-  "editorSurvived": null,
-  "ranAt": 1788571134.673951,
+  "seconds": 0.2,
+  "editorSurvived": true,
+  "ranAt": 1788572729.4939613,
   "tail": ""
  },
  {
@@ -1203,10 +1203,10 @@
   "suite": "test_game_features.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 68   FAIL 0",
-  "seconds": 1.9,
+  "summary": "PASS 52   FAIL 0",
+  "seconds": 2.9,
   "editorSurvived": true,
-  "ranAt": 1788258528.5963774,
+  "ranAt": 1788572734.614844,
   "tail": ""
  },
  {
@@ -1224,9 +1224,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 3.1,
   "editorSurvived": true,
-  "ranAt": 1788258531.9484432,
+  "ranAt": 1788572740.1178274,
   "tail": ""
  },
  {
@@ -1244,9 +1244,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 8.9,
   "editorSurvived": true,
-  "ranAt": 1788258535.4548156,
+  "ranAt": 1788572751.6157877,
   "tail": ""
  },
  {
@@ -1263,10 +1263,10 @@
   "suite": "test_geometryscript.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 41   FAIL 0",
-  "seconds": 2.8,
+  "summary": "PASS 40   FAIL 0",
+  "seconds": 5.0,
   "editorSurvived": true,
-  "ranAt": 1788258539.576967,
+  "ranAt": 1788572760.5296552,
   "tail": ""
  },
  {
@@ -1284,9 +1284,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 0.7,
+  "seconds": 1.5,
   "editorSurvived": true,
-  "ranAt": 1788258541.922977,
+  "ranAt": 1788572764.5594718,
   "tail": ""
  },
  {
@@ -1304,9 +1304,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 3.5,
   "editorSurvived": true,
-  "ranAt": 1788258545.4371471,
+  "ranAt": 1788572770.503341,
   "tail": ""
  },
  {
@@ -1324,9 +1324,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 32   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 3.8,
   "editorSurvived": true,
-  "ranAt": 1788258549.0110831,
+  "ranAt": 1788572776.799089,
   "tail": ""
  },
  {
@@ -1343,10 +1343,10 @@
   "suite": "test_ik_authoring.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 67   FAIL 0",
-  "seconds": 2.6,
+  "summary": "",
+  "seconds": 3.3,
   "editorSurvived": true,
-  "ranAt": 1788258552.9729028,
+  "ranAt": 1788572782.4245632,
   "tail": ""
  },
  {
@@ -1363,10 +1363,10 @@
   "suite": "test_ik_goals_solvers.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 56   FAIL 0",
-  "seconds": 2.6,
+  "summary": "",
+  "seconds": 3.2,
   "editorSurvived": true,
-  "ranAt": 1788258556.8927124,
+  "ranAt": 1788572788.0872123,
   "tail": ""
  },
  {
@@ -1384,9 +1384,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 31   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 4.0,
   "editorSurvived": true,
-  "ranAt": 1788258560.5973346,
+  "ranAt": 1788572794.5539515,
   "tail": ""
  },
  {
@@ -1404,9 +1404,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 76   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 4.6,
   "editorSurvived": true,
-  "ranAt": 1788258564.5234318,
+  "ranAt": 1788572801.4675972,
   "tail": ""
  },
  {
@@ -1424,9 +1424,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 34   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 4.2,
   "editorSurvived": true,
-  "ranAt": 1788258568.152981,
+  "ranAt": 1788572808.0807962,
   "tail": ""
  },
  {
@@ -1444,9 +1444,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 3.5,
   "editorSurvived": true,
-  "ranAt": 1788258571.591348,
+  "ranAt": 1788572814.0147042,
   "tail": ""
  },
  {
@@ -1464,9 +1464,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 4.6,
   "editorSurvived": true,
-  "ranAt": 1788258575.7425601,
+  "ranAt": 1788572821.1420925,
   "tail": ""
  },
  {
@@ -1483,10 +1483,10 @@
   "suite": "test_landscape_heightmap.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 25   FAIL 0",
-  "seconds": 2.4,
+  "summary": "",
+  "seconds": 3.2,
   "editorSurvived": true,
-  "ranAt": 1788258579.5992692,
+  "ranAt": 1788572826.911624,
   "tail": ""
  },
  {
@@ -1504,9 +1504,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 3.8,
   "editorSurvived": true,
-  "ranAt": 1788258583.3313344,
+  "ranAt": 1788572833.1167092,
   "tail": ""
  },
  {
@@ -1522,12 +1522,12 @@
  {
   "suite": "test_landscape_layer_register.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 26   FAIL 0",
-  "seconds": 3.1,
+  "rc": 1,
+  "summary": "PASS 12   FAIL 14",
+  "seconds": 3.8,
   "editorSurvived": true,
-  "ranAt": 1788258587.829841,
-  "tail": ""
+  "ranAt": 1788572839.3225093,
+  "tail": "  FAILED: L901 and the refusal LISTS what the material does declare\n          this landscape's material declares no layer called 'NoSuchLayer72838', and registration writes into the entry the MATERIAL created - so there is nothing to register against. It declares: <no layers at all - the material has no landscape layer nodes>. Add the l\n  FAILED: L903 register_landscape_layer succeeds\n          {\"ok\": false, \"error\": \"this landscape's material declares no layer called 'MifTestLayer72838', and registration writes into the entry the MATERIAL created - so there is nothing to register against. It declares: <no layers at all - the material has no landscap\n  FAILED: L903 it created the LayerInfo asset\n          None\n  FAILED: L903 it honoured layerInfoPath - the asset is inside the scratch prefix\n          {\"ok\": false, \"error\": \"this landscape's material declares no layer called 'MifTestLayer72838', and registration writes into the entry the MATERIAL created - so there is nothing to register against. It declares: <no layers at all - the material has no landscape layer nodes>. Add the layer to the lan\n  FAILED: L903 paintable:true - the same predicate paint_landscape checks, not a restatement\n          {\"ok\": false, \"error\": \"this landscape's material declares no layer called 'MifTestLayer72838', and registration writes into the entry the MATERIAL created - so there is nothing to register against. It declares: <no layers at all - the material has no landscap\n  FAILED: L903 and it says the asset is unsaved\n          None\n  FAILED: L903 landscape_info now reports a LayerInfo for the layer - read back independently\n          []\n  FAILED: L904 paint_landscape succeeds on the layer it refused a moment ago\n          {\"ok\": false, \"error\": \"could not load LandscapeLayerInfoObject '' \\u2014 it must be one of the layers this landscape's material declares\"}\n  FAILED: L904 and it really touched vertices, not zero\n          None\n  FAILED: L905 a second register succeeds\n          {\"ok\": false, \"error\": \"this landscape's material declares no layer called 'MifTestLayer72838', and registration writes into the entry the MATERIAL created - so there is nothing to register against. It declares: <no laye\n  FAILED: L905 and NAMES the LayerInfo it replaced\n          {\"ok\": false, \"error\": \"this landscape's material declares no layer called 'MifTestLayer72838', and registration writes into the entry the MATERIAL created - so there is nothing to register against. It declares: <no layers at all - the material has no landscap\n  FAILED: L905 with a note that painted weights survive the swap\n          None\n========================================================================"
  },
  {
   "suite": "test_landscape_layer_register.py",
@@ -1544,9 +1544,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 3.5,
   "editorSurvived": true,
-  "ranAt": 1788258591.552031,
+  "ranAt": 1788572845.2273824,
   "tail": ""
  },
  {
@@ -1564,9 +1564,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 3.6,
   "editorSurvived": true,
-  "ranAt": 1788258595.265323,
+  "ranAt": 1788572851.3015454,
   "tail": ""
  },
  {
@@ -1584,9 +1584,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 18   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 3.3,
   "editorSurvived": true,
-  "ranAt": 1788258598.6527898,
+  "ranAt": 1788572856.953946,
   "tail": ""
  },
  {
@@ -1604,9 +1604,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 3.4,
   "editorSurvived": true,
-  "ranAt": 1788258601.9836128,
+  "ranAt": 1788572862.8155844,
   "tail": ""
  },
  {
@@ -1624,9 +1624,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 3.7,
   "editorSurvived": true,
-  "ranAt": 1788258605.6203218,
+  "ranAt": 1788572868.9671228,
   "tail": ""
  },
  {
@@ -1644,9 +1644,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 3.3,
   "editorSurvived": true,
-  "ranAt": 1788258609.0992134,
+  "ranAt": 1788572874.821653,
   "tail": ""
  },
  {
@@ -1664,9 +1664,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 68   FAIL 0",
-  "seconds": 5.5,
+  "seconds": 4.9,
   "editorSurvived": true,
-  "ranAt": 1788258616.1164055,
+  "ranAt": 1788572882.048244,
   "tail": ""
  },
  {
@@ -1684,9 +1684,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 6   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 3.3,
   "editorSurvived": true,
-  "ranAt": 1788258620.0728962,
+  "ranAt": 1788572887.8475187,
   "tail": ""
  },
  {
@@ -1702,12 +1702,12 @@
  {
   "suite": "test_load_partition_actors.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 24   FAIL 0",
-  "seconds": 2.4,
+  "rc": 2,
+  "summary": "",
+  "seconds": 3.1,
   "editorSurvived": true,
-  "ranAt": 1788258623.9125519,
-  "tail": ""
+  "ranAt": 1788572893.3849716,
+  "tail": "bridge up on pid 36932 (MifProbe.uproject) - 453 endpoints, compiled Sep  4 2026 21:28:02 (banner: __DATE__ of one TU, NOT the link time)\ndescriptors: 138   unloaded: 0\n\nSKIPPED - every descriptor in this map is already loaded, so pinning cannot\n  change anything and NOTHING would be verified. Exit 2 means skipped."
  },
  {
   "suite": "test_load_partition_actors.py",
@@ -1724,9 +1724,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 1.0,
+  "seconds": 5.3,
   "editorSurvived": true,
-  "ranAt": 1788258626.430123,
+  "ranAt": 1788572901.1446404,
   "tail": ""
  },
  {
@@ -1742,12 +1742,12 @@
  {
   "suite": "test_material_graph.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 35   FAIL 0",
-  "seconds": 2.5,
+  "rc": 1,
+  "summary": "PASS 25   FAIL 1",
+  "seconds": 3.8,
   "editorSurvived": true,
-  "ranAt": 1788258630.5819635,
-  "tail": ""
+  "ranAt": 1788572907.36232,
+  "tail": "\n=== T354: recompiling ===\n  PASS  T354 the material recompiles\n  PASS  T354 and the async status can be polled\n  PASS  T354 numRemainingJobs is a real, non-negative number\n  PASS  T354 and it AGREES with `compiling` - idle means nothing remaining\n\n=== T355: deleting an expression, and guards ===\n  PASS  T355 deleting an expression removes it\n\n=== T356: all=true has to actually empty the graph ===\n  PASS  T356 the graph has several expressions to clear\n  PASS  T356 ok:true means the graph is actually empty\n  PASS  T356 the clear removed something rather than nothing\n  PASS  T355 unknown expression class is refused\n  PASS  T355 unknown expression class says something usable\n  PASS  T355 missing material is refused\n  PASS  T355 missing material says something usable\n  PASS  T355 connecting from an expression that does not exist is refused\n\n========================================================================\nPASS 25   FAIL 1\n  FAILED: T351 a cooked material was found to test against\n          None\n========================================================================"
  },
  {
   "suite": "test_material_graph.py",
@@ -1764,9 +1764,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 27   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 3.9,
   "editorSurvived": true,
-  "ranAt": 1788258634.7238529,
+  "ranAt": 1788572913.6027339,
   "tail": ""
  },
  {
@@ -1783,10 +1783,10 @@
   "suite": "test_material_params.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 24   FAIL 0",
-  "seconds": 2.5,
+  "summary": "",
+  "seconds": 6.7,
   "editorSurvived": true,
-  "ranAt": 1788258638.6813962,
+  "ranAt": 1788572922.6761837,
   "tail": ""
  },
  {
@@ -1802,12 +1802,12 @@
  {
   "suite": "test_material_statistics.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 16   FAIL 0",
-  "seconds": 2.8,
+  "rc": 1,
+  "summary": "PASS 8   FAIL 7",
+  "seconds": 4.3,
   "editorSurvived": true,
-  "ranAt": 1788258642.9727473,
-  "tail": ""
+  "ranAt": 1788572929.4581354,
+  "tail": "  PASS  T7403 a missing path is refused\n  PASS  T7403 an unknown parameter is refused by name rather than ignored\n\n  NOT EXERCISED: cooked:true. Every material this asset registry returns is uncooked\n  engine or plugin content, so the claim that statistics survive a cook - which is much\n  of the point, since that is where list_material_expressions correctly finds nothing -\n  is NOT proven here. The cooked flag is on every response so the gap stays visible.\n  PASS  T7403 - the editor is still alive\n\n========================================================================\nPASS 8   FAIL 7\n  FAILED: T7400 it answers for a stock material\n          {\"ok\": false, \"error\": \"'/Engine/EngineMaterials/WorldGridMaterial.WorldGridMaterial' has no material resource for this editor's feature level, so there are no statistics to report. This is refused rather than answered with zeros, which is what the e\n  FAILED: T7400 all eight statistics come back as real numbers\n          0 of 8 numeric: {\"ok\": false, \"error\": \"'/Engine/EngineMaterials/WorldGridMaterial.WorldGridMaterial' has no material resource for this editor's feature level, so there are no statistics to report. This is refused rather than answered w\n  FAILED: T7400 and the instruction counts are non-zero, which zeros-from-a-null-resource would not be\n          vs=None ps=None\n  FAILED: T7400 it says whether the shader map was already complete\n          None\n  FAILED: T7400 and it did not have to wait\n          None\n  FAILED: T7400 the note warns they are representative-shader figures, not a permutation total\n          \n  FAILED: T7400 and that comparing two DIFFERENT materials says less than it looks\n          "
  },
  {
   "suite": "test_material_statistics.py",
@@ -1824,9 +1824,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 12   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 3.8,
   "editorSurvived": true,
-  "ranAt": 1788258647.1378975,
+  "ranAt": 1788572935.8379564,
   "tail": ""
  },
  {
@@ -1842,12 +1842,12 @@
  {
   "suite": "test_material_write.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 22   FAIL 0",
-  "seconds": 2.9,
+  "rc": 3,
+  "summary": "",
+  "seconds": 3.2,
   "editorSurvived": true,
-  "ranAt": 1788258651.7969847,
-  "tail": ""
+  "ranAt": 1788572941.4805205,
+  "tail": "bridge up on pid 36932 (MifProbe.uproject) - 453 endpoints, compiled Sep  4 2026 21:28:02 (banner: __DATE__ of one TU, NOT the link time)\nno material instance with texture parameters found - cannot test"
  },
  {
   "suite": "test_material_write.py",
@@ -1865,8 +1865,8 @@
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
   "seconds": 0.1,
-  "editorSurvived": null,
-  "ranAt": 1788571134.7525911,
+  "editorSurvived": true,
+  "ranAt": 1788572944.1601822,
   "tail": ""
  },
  {
@@ -1884,9 +1884,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 4.3,
   "editorSurvived": true,
-  "ranAt": 1788258657.6266782,
+  "ranAt": 1788572950.9467137,
   "tail": ""
  },
  {
@@ -1904,9 +1904,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 3.3,
   "editorSurvived": true,
-  "ranAt": 1788258661.6570916,
+  "ranAt": 1788572956.7566638,
   "tail": ""
  },
  {
@@ -1924,9 +1924,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 3.5,
   "editorSurvived": true,
-  "ranAt": 1788258665.514736,
+  "ranAt": 1788572962.796615,
   "tail": ""
  },
  {
@@ -1943,10 +1943,10 @@
   "suite": "test_modal_hazards.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 24   FAIL 0",
-  "seconds": 11.2,
+  "summary": "PASS 27   FAIL 0",
+  "seconds": 4.1,
   "editorSurvived": true,
-  "ranAt": 1788258678.5706947,
+  "ranAt": 1788572969.385556,
   "tail": ""
  },
  {
@@ -1964,9 +1964,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 6.0,
+  "seconds": 3.4,
   "editorSurvived": true,
-  "ranAt": 1788258686.5714214,
+  "ranAt": 1788572975.3575692,
   "tail": ""
  },
  {
@@ -1984,9 +1984,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 14.0,
+  "seconds": 5.8,
   "editorSurvived": true,
-  "ranAt": 1788258702.5718746,
+  "ranAt": 1788572983.6789036,
   "tail": ""
  },
  {
@@ -2003,10 +2003,10 @@
   "suite": "test_niagara.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 68   FAIL 0",
-  "seconds": 7.3,
+  "summary": "PASS 12   FAIL 0",
+  "seconds": 3.4,
   "editorSurvived": true,
-  "ranAt": 1788258711.897168,
+  "ranAt": 1788572989.5522013,
   "tail": ""
  },
  {
@@ -2024,9 +2024,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 10.0,
+  "seconds": 4.6,
   "editorSurvived": true,
-  "ranAt": 1788258723.5760572,
+  "ranAt": 1788572996.8837345,
   "tail": ""
  },
  {
@@ -2043,10 +2043,10 @@
   "suite": "test_niagara_emitter.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 16   FAIL 0",
-  "seconds": 5.0,
+  "summary": "PASS 17   FAIL 0",
+  "seconds": 4.8,
   "editorSurvived": true,
-  "ranAt": 1788258730.2414994,
+  "ranAt": 1788573004.3230653,
   "tail": ""
  },
  {
@@ -2064,10 +2064,10 @@
   "pass": 1,
   "rc": 2,
   "summary": "",
-  "seconds": 15.4,
+  "seconds": 5.3,
   "editorSurvived": true,
-  "ranAt": 1788258747.243186,
-  "tail": "bridge up on pid 38156 (DrugDealerSimulator2.uproject) - 465 endpoints, compiled Sep  1 2026 06:21:51 (banner: __DATE__ of one TU, NOT the link time)\nSKIPPED - nothing was verified.\n  No NiagaraSystem in this project declares a user parameter (39 systems checked),\n  and this project's Niagara content is COOKED, which set_niagara_user_parameter\n  refuses anyway - the parameter store cannot be saved or recompiled.\n  No endpoint creates a user parameter, so this suite cannot build its own fixture.\n  Needs an UNCOOKED project with authored user parameters.\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
+  "ranAt": 1788573012.2922947,
+  "tail": "bridge up on pid 36932 (MifProbe.uproject) - 453 endpoints, compiled Sep  4 2026 21:28:02 (banner: __DATE__ of one TU, NOT the link time)\nSKIPPED - nothing was verified.\n  No NiagaraSystem in this project declares a user parameter (18 systems checked),\n  and this project's Niagara content is COOKED, which set_niagara_user_parameter\n  refuses anyway - the parameter store cannot be saved or recompiled.\n  No endpoint creates a user parameter, so this suite cannot build its own fixture.\n  Needs an UNCOOKED project with authored user parameters.\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
  },
  {
   "suite": "test_niagara_params.py",
@@ -2082,12 +2082,12 @@
  {
   "suite": "test_niagara_set_user_param.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 16   FAIL 0",
-  "seconds": 6.7,
+  "rc": 1,
+  "summary": "PASS 13   FAIL 3",
+  "seconds": 3.9,
   "editorSurvived": true,
-  "ranAt": 1788258755.5799599,
-  "tail": ""
+  "ranAt": 1788573018.7620697,
+  "tail": "        \n  FAIL  T8301 it says explicitly that the write itself would succeed, so nobody 'fixes' this by adding a safety guard\n        \n  PASS  T8301 the cooked system is still READABLE - only the write is refused\n\n=== T8302: the guards around the type dispatch ===\n  PASS  T8302 a non-NiagaraSystem is refused by class\n  PASS  T8302 a missing value is refused\n  PASS  T8302 a missing name is refused\n  PASS  T8302 a missing path is refused\n  PASS  T8302 a caller-supplied 'type' is refused - the type is the system's, and a mismatch would terminate the editor\n\n  NOT EXERCISED: the write itself. Every NiagaraSystem here is cooked, a scratch\n  one has no user parameters, and duplicating a cooked Niagara asset is correctly\n  refused because it crashes the editor. An uncooked project is where this runs.\n  PASS  T8302 - the editor is still alive\n\n========================================================================\nPASS 13   FAIL 3\n  FAILED: T8301 writing a cooked system is refused\n          {\"ok\": true, \"system\": \"/Niagara/VectorFields/VectorFieldVisualizationSystem.VectorFieldVisualizationSystem\", \"name\": \"User.FieldApplyFalloff\", \"type\": \"NiagaraBool\", \"wrote\": true, \"value\": true, \"as\n  FAILED: T8301 and the reason is that it cannot be SAVED or recompiled, not that it would crash\n          \n  FAILED: T8301 it says explicitly that the write itself would succeed, so nobody 'fixes' this by adding a safety guard\n          "
  },
  {
   "suite": "test_niagara_set_user_param.py",
@@ -2103,10 +2103,10 @@
   "suite": "test_niagara_user_params.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 15   FAIL 0",
-  "seconds": 4.0,
+  "summary": "PASS 20   FAIL 0",
+  "seconds": 3.5,
   "editorSurvived": true,
-  "ranAt": 1788258760.9114978,
+  "ranAt": 1788573024.7586498,
   "tail": ""
  },
  {
@@ -2123,10 +2123,10 @@
   "suite": "test_node_spawns.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 110   FAIL 0",
-  "seconds": 66.0,
+  "summary": "PASS 108   FAIL 0",
+  "seconds": 11.2,
   "editorSurvived": true,
-  "ranAt": 1788258827.891723,
+  "ranAt": 1788573038.5384133,
   "tail": ""
  },
  {
@@ -2144,9 +2144,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 9.4,
+  "seconds": 4.1,
   "editorSurvived": true,
-  "ranAt": 1788258838.891498,
+  "ranAt": 1788573045.1714149,
   "tail": ""
  },
  {
@@ -2163,10 +2163,10 @@
   "suite": "test_partition_actors.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 16   FAIL 0",
-  "seconds": 5.0,
+  "summary": "PASS 13   FAIL 0",
+  "seconds": 3.3,
   "editorSurvived": true,
-  "ranAt": 1788258845.2240376,
+  "ranAt": 1788573050.8495557,
   "tail": ""
  },
  {
@@ -2184,9 +2184,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 29   FAIL 0",
-  "seconds": 0.1,
-  "editorSurvived": null,
-  "ranAt": 1788571134.8863223,
+  "seconds": 0.2,
+  "editorSurvived": true,
+  "ranAt": 1788573053.4794788,
   "tail": ""
  },
  {
@@ -2202,12 +2202,12 @@
  {
   "suite": "test_pcg_authoring.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 36   FAIL 0",
-  "seconds": 11.4,
+  "rc": 1,
+  "summary": "PASS 34   FAIL 2",
+  "seconds": 4.0,
   "editorSurvived": true,
-  "ranAt": 1788258858.2270315,
-  "tail": ""
+  "ranAt": 1788573059.9179986,
+  "tail": "=== T2804: a single-capacity pin silently breaks what was there - say so ===\n  PASS  T2804 a MULTI-connection pin accepts a second edge and displaces nothing\n  PASS  T2804 (setup) a node with a single-capacity input pin exists\n  PASS  T2804 the second edge onto a single-capacity pin succeeds\n  FAIL  T2804 and REPORTS that it broke the existing one\n        {\"ok\": true, \"graph\": \"/Game/_MifPCG/PCG_MifTest73058.PCG_MifTest73058\", \"connected\": true, \"from\": \"StaticMeshSpawner_0.Out\", \"to\": \"CopyPoints_0.Source\", \"edgeCount\": 1, \"replacedEdges\": 0, \"assetNote\": \"the graph is dirty and NOTHING has been save\n  FAIL  T2804 with a note saying it is the engine's behaviour, not a choice\n        \n\n=== T2805: disconnect and remove, both measured ===\n  PASS  T2805 an edge can be removed by naming it\n  PASS  T2805 removing it again is not an error and reports removed:0\n  PASS  T2805 and cross-checks the count against what RemoveEdge claimed\n  PASS  T2805 removing a node without confirm is refused\n  PASS  T2805 and the refusal states how many edges it would destroy - a real number\n  PASS  T2805 with confirm it is removed\n  PASS  T2805 and the graph really holds one fewer node\n  PASS  T2805 an unknown node name is refused and the real ones are listed\n\n========================================================================\nPASS 34   FAIL 2\n  FAILED: T2804 and REPORTS that it broke the existing one\n          {\"ok\": true, \"graph\": \"/Game/_MifPCG/PCG_MifTest73058.PCG_MifTest73058\", \"connected\": true, \"from\": \"StaticMeshSpawner_0.Out\", \"to\": \"CopyPoints_0.Source\", \"edgeCount\": 1, \"replacedEdges\": 0, \"assetNote\": \"the graph is dirty and NOTHING has been save\n  FAILED: T2804 with a note saying it is the engine's behaviour, not a choice\n          "
  },
  {
   "suite": "test_pcg_authoring.py",
@@ -2224,9 +2224,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 4.3,
+  "seconds": 3.3,
   "editorSurvived": true,
-  "ranAt": 1788258864.2248116,
+  "ranAt": 1788573065.721893,
   "tail": ""
  },
  {
@@ -2244,9 +2244,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 7.7,
+  "seconds": 3.5,
   "editorSurvived": true,
-  "ranAt": 1788258873.5589893,
+  "ranAt": 1788573071.592089,
   "tail": ""
  },
  {
@@ -2264,9 +2264,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 12.1,
+  "seconds": 3.9,
   "editorSurvived": true,
-  "ranAt": 1788258886.8948736,
+  "ranAt": 1788573077.9496098,
   "tail": ""
  },
  {
@@ -2284,9 +2284,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 6.7,
+  "seconds": 3.5,
   "editorSurvived": true,
-  "ranAt": 1788258895.2294478,
+  "ranAt": 1788573083.9303768,
   "tail": ""
  },
  {
@@ -2304,9 +2304,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 6.3,
+  "seconds": 3.4,
   "editorSurvived": true,
-  "ranAt": 1788258903.2268684,
+  "ranAt": 1788573089.7450917,
   "tail": ""
  },
  {
@@ -2324,9 +2324,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 10.4,
+  "seconds": 1.3,
   "editorSurvived": true,
-  "ranAt": 1788258915.228096,
+  "ranAt": 1788573093.47512,
   "tail": ""
  },
  {
@@ -2344,9 +2344,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 54   FAIL 0",
-  "seconds": 22.1,
+  "seconds": 4.8,
   "editorSurvived": true,
-  "ranAt": 1788258938.5628703,
+  "ranAt": 1788573100.6858122,
   "tail": ""
  },
  {
@@ -2363,10 +2363,10 @@
   "suite": "test_ported_anim.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 49   FAIL 0",
-  "seconds": 13.7,
+  "summary": "PASS 14   FAIL 0",
+  "seconds": 3.7,
   "editorSurvived": true,
-  "ranAt": 1788258953.5550098,
+  "ranAt": 1788573106.9568107,
   "tail": ""
  },
  {
@@ -2382,12 +2382,12 @@
  {
   "suite": "test_project_graph.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 64   FAIL 0",
-  "seconds": 5.8,
+  "rc": 1,
+  "summary": "PASS 46   FAIL 1",
+  "seconds": 3.6,
   "editorSurvived": true,
-  "ranAt": 1788258960.5652714,
-  "tail": ""
+  "ranAt": 1788573113.2101064,
+  "tail": "  PASS  T644 mermaid:true still succeeds\n  PASS  T644 mermaid is a string\n  PASS  T644 nodes/edges are still present too\n  PASS  T644 starts with the flowchart declaration\n  FAIL  T644 node lines = returned nodes + first-seen-only edge targets   1 node lines, expected 0 nodes + 0 extra targets = 0: ['    N0[\"(no assets matched pathPrefix)\"]']\n  PASS  T644 one arrow per edge\n  PASS  T644 node ids are unique\n  PASS  T644 includeExternal + mermaid together succeeds\n  PASS  T644 and mermaid is still a non-empty string\n  PASS  T644 the bridge is still answering\n\n\n=== T646: foldersTruncated / classesTruncated TRACK the limit ===\n  PASS  T646 both calls answer\n  PASS  T646 a limit of 1 returns 1 folder, not 'about one'\n  PASS  T646 and says so - foldersTruncated is TRUE when the cap bit\n  PASS  T646 same for classes\n  PASS  T646 raised past the real total, foldersTruncated goes FALSE - which is what proves the flag tracks the cap rather than being a constant\n  PASS  T646 and classesTruncated goes false too\n  PASS  T646 the uncapped answer really is bigger - otherwise the two calls proved nothing about the cap\n========================================================================\nPASS 46   FAIL 1\n  FAILED: T644 node lines = returned nodes + first-seen-only edge targets\n          1 node lines, expected 0 nodes + 0 extra targets = 0: ['    N0[\"(no assets matched pathPrefix)\"]']\n========================================================================"
  },
  {
   "suite": "test_project_graph.py",
@@ -2404,9 +2404,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 12   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 3.6,
   "editorSurvived": true,
-  "ranAt": 1788258965.2355182,
+  "ranAt": 1788573119.293638,
   "tail": ""
  },
  {
@@ -2422,12 +2422,12 @@
  {
   "suite": "test_recipes.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 17   FAIL 0",
-  "seconds": 7.0,
+  "rc": 1,
+  "summary": "PASS 16   FAIL 1",
+  "seconds": 4.2,
   "editorSurvived": true,
-  "ranAt": 1788258973.900868,
-  "tail": ""
+  "ranAt": 1788573125.991675,
+  "tail": "  PASS  T420 and the blueprint still compiles\n\n=== T421 [the point]: a half-applied recipe must SAY what it left behind ===\n      full error: afterNode was given but the splice failed: exec pin not found (afterPin='then', insertIn='ok', insertOut='ok') WHAT IS LEFT BEHIND: the Print String node HAS been created in the graph, unwired, and is not removed by this failure. Remove it with remove_node (confirm:true), or wire it yourself with connect_pins.\n  PASS  T421 the call fails\n  PASS  T421 and the error states what was left behind\n  PASS  T421 and tells the caller how to clean it up, by a name that EXISTS\n  FAIL  T421 and explains why it is not rolled back   afterNode was given but the splice failed: exec pin not found (afterPin='then', insertIn='ok', insertOut='ok') WHAT IS LEFT BEHIND: the Print String node HAS been created in the graph, unwired, and is not removed by this\n\n=== T422: bad arguments are refused ===\n  PASS  T422 an unknown graph is refused\n  PASS  T422 and says something usable\n  PASS  T422 blueprintId instead of graphId is refused with a hint\n\n=== T423: every recipe answers rather than hanging ===\n  PASS  T423 recipe_reset_and_loop came back at all\n  PASS  T423 recipe_argmax_over_components came back at all\n  PASS  T423 recipe_splice_before_parent came back at all\n  PASS  T423 the bridge is still answering\n\n========================================================================\nPASS 16   FAIL 1\n  FAILED: T421 and explains why it is not rolled back\n          afterNode was given but the splice failed: exec pin not found (afterPin='then', insertIn='ok', insertOut='ok') WHAT IS LEFT BEHIND: the Print String node HAS been created in the graph, unwired, and is not removed by this\n========================================================================"
  },
  {
   "suite": "test_recipes.py",
@@ -2442,12 +2442,12 @@
  {
   "suite": "test_redirectors.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 17   FAIL 0",
-  "seconds": 6.6,
+  "rc": 1,
+  "summary": "PASS 10   FAIL 2",
+  "seconds": 3.2,
   "editorSurvived": true,
-  "ranAt": 1788258982.1390777,
-  "tail": ""
+  "ranAt": 1788573131.6688683,
+  "tail": "\n=== T4802: the read is never gated; the write always is ===\n  FAIL  T4802 fixing without confirm is refused\n        \n  FAIL  T4802 and the refusal says it RE-SAVES referencing packages\n        \n\n=== T4803: parameters that point at the other half ===\n  PASS  T4803 dryRun on the read half is refused, and says the read IS the dry run\n  PASS  T4803 and dryRun on the write half points at list_redirectors\n  PASS  T4803 deleteRedirectors is refused, naming the inverted parameter that replaced it\n  PASS  T4803 - the editor is still alive\n\n  NOT EXERCISED: the fixup itself, and the registry pre-check. The first is gated and\n  rewrites every referencing package on disk, which is not something a suite should do\n  to real content unasked. The second needs the editor caught mid-scan - and it is the\n  guard that matters, because SDiscoveringAssetsDialog is a raw Slate window that\n  GIsRunningUnattendedScript does NOT suppress.\n\n========================================================================\nPASS 10   FAIL 2\n  FAILED: T4802 fixing without confirm is refused\n          \n  FAILED: T4802 and the refusal says it RE-SAVES referencing packages\n          "
  },
  {
   "suite": "test_redirectors.py",
@@ -2464,9 +2464,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 0.2,
-  "editorSurvived": null,
-  "ranAt": 1788571135.104064,
+  "seconds": 0.3,
+  "editorSurvived": true,
+  "ranAt": 1788573134.4703126,
   "tail": ""
  },
  {
@@ -2484,9 +2484,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 7.4,
+  "seconds": 7.0,
   "editorSurvived": true,
-  "ranAt": 1788258990.8089857,
+  "ranAt": 1788573144.015844,
   "tail": ""
  },
  {
@@ -2504,9 +2504,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 47   FAIL 0",
-  "seconds": 0.1,
-  "editorSurvived": null,
-  "ranAt": 1788571135.238678,
+  "seconds": 0.2,
+  "editorSurvived": true,
+  "ranAt": 1788573147.9176676,
   "tail": ""
  },
  {
@@ -2524,9 +2524,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 7.1,
+  "seconds": 4.4,
   "editorSurvived": true,
-  "ranAt": 1788259000.8089843,
+  "ranAt": 1788573155.1848023,
   "tail": ""
  },
  {
@@ -2544,9 +2544,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 8.7,
+  "seconds": 1.2,
   "editorSurvived": true,
-  "ranAt": 1788259011.1418648,
+  "ranAt": 1788573158.691489,
   "tail": ""
  },
  {
@@ -2562,12 +2562,12 @@
  {
   "suite": "test_run_retarget.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 18   FAIL 0",
-  "seconds": 8.7,
+  "rc": 1,
+  "summary": "PASS 15   FAIL 3",
+  "seconds": 4.6,
   "editorSurvived": true,
-  "ranAt": 1788259021.1449928,
-  "tail": ""
+  "ranAt": 1788573165.593102,
+  "tail": "  FAIL  T3202 every cooked asset is named individually, not just counted\n        []\n  FAIL  T3202 and the reason says what would have happened - the editor terminating\n        []\n  PASS  T3202 the WHOLE batch is refused, never partially run\n  PASS  T3202 - the editor is still alive\n\n  NOT EXERCISED, on purpose: a SUCCESSFUL retarget. It writes new assets into the\n  TARGET MESH's package - real content on this project - and no test is worth that.\n  Every asset here is cooked anyway (514 AnimSequences, all from containers), so the\n  success path cannot be reached on DDS2 at all. Curfew (uncooked 5.7) is where it\n  would run for real.\n        cleanup: /Game/_MifRT/Rig73164A1 -> delete reported 0 assets removed for '/Game/_MifRT/Rig73164A1'. 2 live object(s) in memory still reference it - see blockedBy.memoryReferenc\n        cleanup: /Game/_MifRT/Rig73164A0 -> delete reported 0 assets removed for '/Game/_MifRT/Rig73164A0'. 2 live object(s) in memory still reference it - see blockedBy.memoryReferenc\n  FAIL  T3203 (cleanup) what this run made is gone\n        ['/Game/_MifRT/Rig73164A1.Rig73164A1', '/Game/_MifRT/Rig73164A0.Rig73164A0']\n\n========================================================================\nPASS 15   FAIL 3\n  FAILED: T3202 every cooked asset is named individually, not just counted\n          []\n  FAILED: T3202 and the reason says what would have happened - the editor terminating\n          []\n  FAILED: T3203 (cleanup) what this run made is gone\n          ['/Game/_MifRT/Rig73164A1.Rig73164A1', '/Game/_MifRT/Rig73164A0.Rig73164A0']"
  },
  {
   "suite": "test_run_retarget.py",
@@ -2583,11 +2583,11 @@
   "suite": "test_safety_gate.py",
   "pass": 1,
   "rc": 2,
-  "summary": "PASS 8   FAIL 0",
-  "seconds": 2.4,
+  "summary": "PASS 10   FAIL 0",
+  "seconds": 3.2,
   "editorSurvived": true,
-  "ranAt": 1788259025.141866,
-  "tail": "bridge up on pid 38156 (DrugDealerSimulator2.uproject) - 465 endpoints, compiled Sep  1 2026 06:21:51 (banner: __DATE__ of one TU, NOT the link time)\n=== T630: the gate's state is discoverable before anything is attempted ===\n  PASS  T630 self_audit answers\n  PASS  T630 it reports writeMode\n  PASS  T630 writeMode is one of the three real modes\n  PASS  T630 it reports safetyGateActive as a bool\n  PASS  T630 safetyGateActive agrees with writeMode\n\n=== T631: the default is a GATED mode, not 'full' ===\n  SKIP  the gate is present and deliberately OFF (writeMode 'full').\n        Nothing to enforce, and the destructive probes below are NOT attempted.\n        Relaunch with launch_editor(write_mode='scratch') to exercise the gate.\n\n=== T632: export_asset says where the file really went, in any mode ===\n  PASS  T632 the response reports the RESOLVED absolute path, with the `..` already applied - a caller can see where the file went instead of assuming the export root\n  PASS  T632 and states plainly that it landed OUTSIDE the export root, which is the claim the old comment got wrong by calling that root a boundary\n  PASS  T632 and the file is really at the path it reported - the report is checked against the filesystem, not taken at its word\n\n  (bailing out before the destructive probes - without a confirmed gated mode they\n   would be real calls to save_package, start_pie and trigger_cook.)\n========================================================================\nPASS 8   FAIL 0\nSKIPPED - the gate cannot be tested from 'full' mode; nothing was verified beyond the reads above."
+  "ranAt": 1788573171.0686934,
+  "tail": "  PASS  T630 self_audit answers\n  PASS  T630 it reports writeMode\n  PASS  T630 writeMode is one of the three real modes\n  PASS  T630 it reports safetyGateActive as a bool\n  PASS  T630 safetyGateActive agrees with writeMode\n\n=== T631: the default is a GATED mode, not 'full' ===\n  SKIP  the gate is present and deliberately OFF (writeMode 'full').\n        Nothing to enforce, and the destructive probes below are NOT attempted.\n        Relaunch with launch_editor(write_mode='scratch') to exercise the gate.\n\n=== T632: export_asset says where the file really went, in any mode ===\n  PASS  T632 the response reports the RESOLVED absolute path, with the `..` already applied - a caller can see where the file went instead of assuming the export root\n  PASS  T632 and states plainly that it landed OUTSIDE the export root, which is the claim the old comment got wrong by calling that root a boundary\n  PASS  T632 and the file is really at the path it reported - the report is checked against the filesystem, not taken at its word\n\n=== T632b: FBX-only options are named, not lumped, when the format is not FBX ===\n  PASS  T632b ignoredOptions names EVERY FBX-only field passed, and nothing else\n  PASS  T632b and the warning names them too, so prose and field agree\n\n  (bailing out before the destructive probes - without a confirmed gated mode they\n   would be real calls to save_package, start_pie and trigger_cook.)\n========================================================================\nPASS 10   FAIL 0\nSKIPPED - the gate cannot be tested from 'full' mode; nothing was verified beyond the reads above."
  },
  {
   "suite": "test_safety_gate.py",
@@ -2604,9 +2604,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 0.1,
-  "editorSurvived": null,
-  "ranAt": 1788571135.3748422,
+  "seconds": 0.2,
+  "editorSurvived": true,
+  "ranAt": 1788573173.6111593,
   "tail": ""
  },
  {
@@ -2624,9 +2624,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 10   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 3.1,
   "editorSurvived": true,
-  "ranAt": 1788259029.4768114,
+  "ranAt": 1788573179.0576906,
   "tail": ""
  },
  {
@@ -2644,9 +2644,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 25.8,
+  "seconds": 3.7,
   "editorSurvived": true,
-  "ranAt": 1788259056.81271,
+  "ranAt": 1788573185.0602944,
   "tail": ""
  },
  {
@@ -2664,9 +2664,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 40   FAIL 0",
-  "seconds": 11.4,
+  "seconds": 3.9,
   "editorSurvived": true,
-  "ranAt": 1788259069.8128626,
+  "ranAt": 1788573191.3216624,
   "tail": ""
  },
  {
@@ -2683,10 +2683,10 @@
   "suite": "test_sequencer.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 35   FAIL 0",
-  "seconds": 4.4,
+  "summary": "PASS 12   FAIL 0",
+  "seconds": 3.1,
   "editorSurvived": true,
-  "ranAt": 1788259075.8064406,
+  "ranAt": 1788573196.8706913,
   "tail": ""
  },
  {
@@ -2704,9 +2704,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 12   FAIL 0",
-  "seconds": 5.1,
+  "seconds": 3.5,
   "editorSurvived": true,
-  "ranAt": 1788259082.482953,
+  "ranAt": 1788573202.6461775,
   "tail": ""
  },
  {
@@ -2724,9 +2724,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 5.0,
+  "seconds": 3.2,
   "editorSurvived": true,
-  "ranAt": 1788259089.146983,
+  "ranAt": 1788573208.1848311,
   "tail": ""
  },
  {
@@ -2742,12 +2742,12 @@
  {
   "suite": "test_set_struct_member.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 22   FAIL 0",
-  "seconds": 8.2,
+  "rc": 1,
+  "summary": "PASS 19   FAIL 1",
+  "seconds": 4.2,
   "editorSurvived": true,
-  "ranAt": 1788259098.9387164,
-  "tail": ""
+  "ranAt": 1788573214.7821555,
+  "tail": "  PASS  T152 order still intact\n\n=== T153 [crash guard]: a COOKED struct is refused, not asserted into ===\n  FAIL  T153 found a genuinely COOKED base-game struct to try   no struct under /Game/ is refused as cooked - this arm cannot run here\n  PASS  T153 the editor is still alive afterwards\n\n=== T154: the ordinary guards ===\n  PASS  T154 unknown member refused\n  PASS  T154 unknown member explains\n  PASS  T154 nothing to change refused\n  PASS  T154 nothing to change explains\n  PASS  T154 no member named refused\n  PASS  T154 no member named explains\n  PASS  T154 invalid new name refused\n  PASS  T154 invalid new name explains\n  PASS  T154 the struct is unchanged after all those refusals\n\n=== T155: dependent DataTables are counted ===\n  PASS  T155 the response reports a dependent count\n\n========================================================================\nPASS 19   FAIL 1\n  FAILED: T153 found a genuinely COOKED base-game struct to try\n          no struct under /Game/ is refused as cooked - this arm cannot run here\n========================================================================"
  },
  {
   "suite": "test_set_struct_member.py",
@@ -2764,9 +2764,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 4.7,
+  "seconds": 3.3,
   "editorSurvived": true,
-  "ranAt": 1788259105.2690148,
+  "ranAt": 1788573220.3910615,
   "tail": ""
  },
  {
@@ -2782,12 +2782,12 @@
  {
   "suite": "test_simplified_collision_guard.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 23   FAIL 0",
-  "seconds": 6.0,
+  "rc": 1,
+  "summary": "PASS 0   FAIL 1",
+  "seconds": 3.0,
   "editorSurvived": true,
-  "ranAt": 1788259112.9366086,
-  "tail": ""
+  "ranAt": 1788573225.6463037,
+  "tail": "bridge up on pid 36932 (MifProbe.uproject) - 453 endpoints, compiled Sep  4 2026 21:28:02 (banner: __DATE__ of one TU, NOT the link time)\n\n=== T930/T931: add_simplified_collision refuses EVERY shape on a cooked mesh ===\n  FAIL  T930 (setup) a real StaticMesh exists to try   None\n\n=== T933: a k-DOP shape SUCCEEDS on the same cooked mesh, and is then undone ===\n\n=== T932: remove_collision - the refusal, then a real removal, editor survives ===\n\n========================================================================\nPASS 0   FAIL 1\n  FAILED: T930 (setup) a real StaticMesh exists to try\n          None\n========================================================================"
  },
  {
   "suite": "test_simplified_collision_guard.py",
@@ -2804,9 +2804,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 25.0,
+  "seconds": 5.1,
   "editorSurvived": true,
-  "ranAt": 1788259139.2702627,
+  "ranAt": 1788573232.9932604,
   "tail": ""
  },
  {
@@ -2823,11 +2823,11 @@
   "suite": "test_socket_authoring.py",
   "pass": 1,
   "rc": 1,
-  "summary": "PASS 33   FAIL 1",
-  "seconds": 10.7,
+  "summary": "PASS 32   FAIL 2",
+  "seconds": 5.9,
   "editorSurvived": true,
-  "ranAt": 1788259151.6803873,
-  "tail": "=== T3102: the three cases AddSocket drops silently ===\n  PASS  T3102 an unknown bone is refused\n  PASS  T3102 and the refusal says AddSocket would have done nothing quietly\n  PASS  T3102 and reports how many bones there actually are\n  PASS  T3102 a duplicate socket name is refused\n  PASS  T3102 and says why uniqueness matters - attach-by-name\n  PASS  T3102 a whitespace-only name is refused - AddSocket TRIMS and then drops it\n  PASS  T3102 a missing bone is refused\n  PASS  T3102 an unknown target is refused with the three real ones\n  PASS  T3102 none of the five refusals changed anything\n\n=== T3103: move and delete need no endpoint - proving it, not assuming it ===\n  PASS  T3103 set_property MOVES a socket, aimed by list_sockets' index\n  PASS  T3103 and the new location reads back through list_sockets\n  PASS  T3103 edit_container DELETES a socket, aimed the same way\n  PASS  T3103 and the count dropped, with that name gone\n        Both worked, so remove_socket and set_socket_transform stay unbuilt.\n        cleanup: /Game/_MifSock/SK_59141 -> delete reported 0 assets removed for '/Game/_MifSock/SK_59141'. the editor's TRANSACTION BUFFER (undo history) is holding it - with object serialization disable\n  FAIL  T3104 (cleanup) the mesh and skeleton THIS run made are gone\n        ['/Game/_MifSock/SK_59141.SK_59141']\n\n========================================================================\nPASS 33   FAIL 1\n  FAILED: T3104 (cleanup) the mesh and skeleton THIS run made are gone\n          ['/Game/_MifSock/SK_59141.SK_59141']"
+  "ranAt": 1788573241.2528548,
+  "tail": "  PASS  T3102 and says why uniqueness matters - attach-by-name\n  PASS  T3102 a whitespace-only name is refused - AddSocket TRIMS and then drops it\n  PASS  T3102 a missing bone is refused\n  PASS  T3102 an unknown target is refused with the three real ones\n  PASS  T3102 none of the five refusals changed anything\n\n=== T3103: move and delete need no endpoint - proving it, not assuming it ===\n  PASS  T3103 set_property MOVES a socket, aimed by list_sockets' index\n  PASS  T3103 and the new location reads back through list_sockets\n  PASS  T3103 edit_container DELETES a socket, aimed the same way\n  PASS  T3103 and the count dropped, with that name gone\n        Both worked, so remove_socket and set_socket_transform stay unbuilt.\n        cleanup: /Game/_MifSock/SK_73238 -> delete reported 0 assets removed for '/Game/_MifSock/SK_73238'. the editor's TRANSACTION BUFFER (undo history) is holding it - with object serialization disable\n        blockedBy: transactionBuffer=True  openAssetEditors=[]\n        memoryReferencers (the real object graph): [{\"referencer\": \"/Engine/Transient.TransBuffer_0\", \"class\": \"TransBuffer\", \"references\": 19, \"throughProperties\": []}, {\"referencer\": \"/Game/_MifSock/Mesh_73238.Mesh_73238\", \"class\": \"SkeletalMesh\", \"references\": 1, \"thr\n        registryReferencers (DISK only, empty for unsaved): []\n  FAIL  T3104 (cleanup) the mesh and skeleton THIS run made are gone\n        ['/Game/_MifSock/SK_73238.SK_73238']\n\n========================================================================\nPASS 32   FAIL 2\n  FAILED: T3100 every socket reports an index\n          []\n  FAILED: T3104 (cleanup) the mesh and skeleton THIS run made are gone\n          ['/Game/_MifSock/SK_73238.SK_73238']"
  },
  {
   "suite": "test_socket_authoring.py",
@@ -2842,12 +2842,12 @@
  {
   "suite": "test_sockets_ai.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 28   FAIL 0",
-  "seconds": 4.3,
+  "rc": 1,
+  "summary": "PASS 14   FAIL 14",
+  "seconds": 3.3,
   "editorSurvived": true,
-  "ranAt": 1788259157.632027,
-  "tail": ""
+  "ranAt": 1788573246.9524431,
+  "tail": "  FAILED: T110 they came from the SKELETON\n          skeletonSocketCount=None\n  FAILED: T110 the shared skeleton is named\n          None\n  FAILED: T110 the sockets are the ones a mod would attach to\n          []\n  FAILED: T111 and it says what the asset actually is\n          path is required (a SkeletalMesh or StaticMesh asset)\n  FAILED: T112 read\n          {\"ok\": false, \"error\": \"path is required (alias: assetPath) - the BehaviorTree asset, e.g. /Game/AI/BT_Guard. Find one with find_assets {class:\\\"BehaviorTree\\\"}.\"}\n  FAILED: T112 it has a root\n          {\"ok\": false, \"error\": \"path is required (alias: assetPath) - the BehaviorTree asset, e.g. /Game/AI/BT_Guard. Find one with find_assets {class:\\\"BehaviorTree\\\"}.\"}\n  FAILED: T112 and more than just the root\n          nodeCount=None\n  FAILED: T112 the tree nests (some node is deeper than the root)\n          []\n  FAILED: T112 it resolves which blackboard the tree uses\n          None\n  FAILED: T113 read\n          {\"ok\": false, \"error\": \"path is required (alias: assetPath) - the BlackboardData asset, e.g. /Game/AI/BB_Guard. describe_behavior_tree reports which blackboard a tree uses, or find one with find_asset\n  FAILED: T113 the types are real blackboard key types\n          []\n  FAILED: T114 describe_behavior_tree explains\n          path is required (alias: assetPath) - the BehaviorTree asset, e.g. /Game/AI/BT_Guard. Find one with find_assets {class:\"BehaviorTree\"}.\n========================================================================"
  },
  {
   "suite": "test_sockets_ai.py",
@@ -2864,9 +2864,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 18   FAIL 0",
-  "seconds": 5.3,
+  "seconds": 3.4,
   "editorSurvived": true,
-  "ranAt": 1788259164.298485,
+  "ranAt": 1788573252.6911283,
   "tail": ""
  },
  {
@@ -2884,9 +2884,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 11.0,
+  "seconds": 3.8,
   "editorSurvived": true,
-  "ranAt": 1788259176.6343787,
+  "ranAt": 1788573258.9114377,
   "tail": ""
  },
  {
@@ -2902,12 +2902,12 @@
  {
   "suite": "test_spline_landscape.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 28   FAIL 0",
-  "seconds": 11.7,
+  "rc": 1,
+  "summary": "PASS 26   FAIL 2",
+  "seconds": 8.9,
   "editorSurvived": true,
-  "ranAt": 1788259189.7126977,
-  "tail": ""
+  "ranAt": 1788573270.2522993,
+  "tail": "  PASS  S101 a fresh export differs from the one taken before - a DIFFERENT endpoint agreeing that the terrain moved\n\n=== S102: the walkable surface follows the visible one ===\n  PASS  S102 a ground trace over the deformed spline still HITS - collision was rebuilt with the surface rather than left stale\n\n=== S103: the refusals ===\n  PASS  S103 raise and lower both false with no paintLayer is refused - it would do nothing and report success\n  PASS  S103 `width` is refused and told a spline can taper, so it is startWidth/endWidth\n  PASS  S103 a spline actor that does not resolve is refused\n  PASS  S103 - the editor is still alive\n  FAIL  (cleanup) restoring a LAYERED landscape by heightmap import is REFUSED rather than silently reverted a moment later\n        {\"ok\": true, \"editLayerWarning\": \"'Landscape' has sculpt edit layers (Base Landscape, Flat Middle), and this endpoint writes the MERGED heightmap with no FScopedSetLandscapeEditingLayer. On UE 5.3 that write is DISCARDED by the next edit-layer compos\n  FAIL  (cleanup) and the refusal names the edit layers, so the caller is not left guessing which landscape state blocked it\n        \n  NOTE  the terrain is left deformed. The deformation went INTO the 'Base Landscape' edit\n        layer, which persists, and the only writer that could undo it is the\n        one just refused. This is an unsaved /Temp map, so it goes away with\n        the editor. Reported rather than worked around.\n\n========================================================================\nPASS 26   FAIL 2\n  FAILED: (cleanup) restoring a LAYERED landscape by heightmap import is REFUSED rather than silently reverted a moment later\n          {\"ok\": true, \"editLayerWarning\": \"'Landscape' has sculpt edit layers (Base Landscape, Flat Middle), and this endpoint writes the MERGED heightmap with no FScopedSetLandscapeEditingLayer. On UE 5.3 that write is DISCARDED by the next edit-layer compos\n  FAILED: (cleanup) and the refusal names the edit layers, so the caller is not left guessing which landscape state blocked it\n          "
  },
  {
   "suite": "test_spline_landscape.py",
@@ -2924,9 +2924,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 9   FAIL 0",
-  "seconds": 11.2,
+  "seconds": 4.8,
   "editorSurvived": true,
-  "ranAt": 1788259202.238094,
+  "ranAt": 1788573277.3526185,
   "tail": ""
  },
  {
@@ -2943,10 +2943,10 @@
   "suite": "test_structs.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 30   FAIL 0",
-  "seconds": 10.2,
+  "summary": "PASS 27   FAIL 0",
+  "seconds": 5.5,
   "editorSurvived": true,
-  "ranAt": 1788259213.9841895,
+  "ranAt": 1788573285.228097,
   "tail": ""
  },
  {
@@ -2964,9 +2964,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 18   FAIL 0",
-  "seconds": 6.7,
+  "seconds": 3.7,
   "editorSurvived": true,
-  "ranAt": 1788259222.317181,
+  "ranAt": 1788573291.192839,
   "tail": ""
  },
  {
@@ -2982,12 +2982,12 @@
  {
   "suite": "test_textures.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 29   FAIL 0",
-  "seconds": 8.7,
+  "rc": 1,
+  "summary": "",
+  "seconds": 3.0,
   "editorSurvived": true,
-  "ranAt": 1788259232.3228123,
-  "tail": ""
+  "ranAt": 1788573296.6049626,
+  "tail": "bridge up on pid 36932 (MifProbe.uproject) - 453 endpoints, compiled Sep  4 2026 21:28:02 (banner: __DATE__ of one TU, NOT the link time)\n  FAIL  a mesh exists to make a source image from   no StaticMesh in /Game/"
  },
  {
   "suite": "test_textures.py",
@@ -3002,12 +3002,12 @@
  {
   "suite": "test_thumbnails.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 26   FAIL 0",
-  "seconds": 6.8,
+  "rc": 1,
+  "summary": "",
+  "seconds": 3.1,
   "editorSurvived": true,
-  "ranAt": 1788259240.7682974,
-  "tail": ""
+  "ranAt": 1788573302.088683,
+  "tail": "bridge up on pid 36932 (MifProbe.uproject) - 453 endpoints, compiled Sep  4 2026 21:28:02 (banner: __DATE__ of one TU, NOT the link time)\n  FAIL  a real static mesh was found to render   no StaticMesh in /Game/"
  },
  {
   "suite": "test_thumbnails.py",
@@ -3024,9 +3024,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 7.0,
+  "seconds": 3.7,
   "editorSurvived": true,
-  "ranAt": 1788259249.099489,
+  "ranAt": 1788573308.1526067,
   "tail": ""
  },
  {
@@ -3044,9 +3044,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 9.7,
+  "seconds": 3.6,
   "editorSurvived": true,
-  "ranAt": 1788259260.433762,
+  "ranAt": 1788573314.0777266,
   "tail": ""
  },
  {
@@ -3064,9 +3064,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 7.7,
+  "seconds": 3.9,
   "editorSurvived": true,
-  "ranAt": 1788259269.7613652,
+  "ranAt": 1788573320.3023214,
   "tail": ""
  },
  {
@@ -3084,9 +3084,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 3.9,
   "editorSurvived": true,
-  "ranAt": 1788259274.438361,
+  "ranAt": 1788573326.5527492,
   "tail": ""
  },
  {
@@ -3103,10 +3103,10 @@
   "suite": "test_uncovered_reads.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 40   FAIL 0",
-  "seconds": 9.7,
+  "summary": "PASS 37   FAIL 0",
+  "seconds": 4.4,
   "editorSurvived": true,
-  "ranAt": 1788259285.7806833,
+  "ranAt": 1788573333.1806192,
   "tail": ""
  },
  {
@@ -3124,9 +3124,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 60   FAIL 0",
-  "seconds": 9.7,
+  "seconds": 3.6,
   "editorSurvived": true,
-  "ranAt": 1788259297.1006155,
+  "ranAt": 1788573339.0819697,
   "tail": ""
  },
  {
@@ -3143,10 +3143,10 @@
   "suite": "test_uncovered_reads3.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 313   FAIL 0",
-  "seconds": 30.4,
+  "summary": "PASS 60   FAIL 0",
+  "seconds": 4.8,
   "editorSurvived": true,
-  "ranAt": 1788259328.4848185,
+  "ranAt": 1788573346.1153686,
   "tail": ""
  },
  {
@@ -3162,12 +3162,12 @@
  {
   "suite": "test_uncovered_reads4.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 38   FAIL 0",
-  "seconds": 8.8,
+  "rc": 1,
+  "summary": "PASS 34   FAIL 1",
+  "seconds": 3.5,
   "editorSurvived": true,
-  "ranAt": 1788259338.9664798,
-  "tail": ""
+  "ranAt": 1788573351.8902197,
+  "tail": "\n=== T854: list_sequence_bindings ===\n  FAIL  T854 (setup) there is at least one LevelSequence to test against   0\n  PASS  T854 no path refuses\n  PASS  T854 binding (this lists ALL bindings) is refused\n\n=== T855: live_coding_status / live_coding_compile ===\n  PASS  T855 live_coding_status answers\n  PASS  T855 available is a real bool\n  PASS  T855 blocksBuilds is a real bool\n  PASS  T855 started is a real bool\n  PASS  T855 enable (this only reads state) is refused\n  PASS  T855 live_coding_compile with no confirm refuses, NOTHING compiled\n  PASS  T855 wait (deliberately not offered - would take the bridge off the air) is refused\n  PASS  T855 and refused for the SPECIFIC reason (wait), not because confirm was never sent\n\n========================================================================\nPASS 34   FAIL 1\n  FAILED: T854 (setup) there is at least one LevelSequence to test against\n          0\n\nNOT PROVEN BY THIS SUITE (green above does not cover these):\n  - list_sequence_bindings' populated path - no LevelSequence assets found.\n  - live_coding_compile's 'Live Coding not started' refusal - Live Coding was already running when this suite checked, so that specific guard path was not exercised this run. The actual hot-patch path is never exercised by this suite regardless, deliberately - see the file header.\n========================================================================"
  },
  {
   "suite": "test_uncovered_reads4.py",
@@ -3182,12 +3182,12 @@
  {
   "suite": "test_uncovered_reads5.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 77   FAIL 0",
-  "seconds": 31.0,
+  "rc": 1,
+  "summary": "PASS 67   FAIL 3",
+  "seconds": 10.6,
   "editorSurvived": true,
-  "ranAt": 1788259371.3095837,
-  "tail": ""
+  "ranAt": 1788573364.7547853,
+  "tail": "=== T916: remove_variable - refusal, then the real removal via scratch_confirm ===\n  PASS  T916 refuses without confirm\n  PASS  T916 the real removal succeeds\n  PASS  T916 the variable is really gone\n  PASS  T916 and removedVerified reports the READ-BACK, not the request\n  PASS  T916 and the flag agrees with list_variables\n\n=== T917: set_cast_purity - toggles an existing cast between pure and impure ===\n  PASS  T917 (setup) a cast node exists\n  PASS  T917 (setup) a fresh cast is impure - it carries exec pins\n  PASS  T917 switching to pure succeeds\n  PASS  T917 a pure cast really has no exec pins\n  PASS  T917 switching back to impure succeeds\n  PASS  T917 exec pins really came back\n  PASS  T917 the blueprint still compiles after all the graph edits\n\n========================================================================\nPASS 67   FAIL 3\n  FAILED: T900 backup_blueprint succeeds against a real, saved blueprint\n          {}\n  FAILED: T900 a backup path is reported\n          {}\n  FAILED: T913 the trace file really exists on disk\n          C:/Users/andre/AppData/Local/Temp/claude/D--DDS2SDK-Game-Plugins-MifBridge/caecb0cf-08d1-4be2-b95b-673d79dd9bf7/scratchpad/probe57/../../../../../../Users/andre/AppData/Local/Temp/claude/D--DDS2SDK-Game-Plugins-MifBridge/caecb0cf-08d1-4be2-b95b-673d79dd9bf7/scratchpad/probe57/Saved/MifBridge/Traces/mif-20260904-215601.utrace\n========================================================================"
  },
  {
   "suite": "test_uncovered_reads5.py",
@@ -3202,12 +3202,12 @@
  {
   "suite": "test_uncovered_reads6.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 37   FAIL 0",
-  "seconds": 11.8,
+  "rc": 1,
+  "summary": "PASS 33   FAIL 4",
+  "seconds": 10.4,
   "editorSurvived": true,
-  "ranAt": 1788259384.3167489,
-  "tail": ""
+  "ranAt": 1788573377.43051,
+  "tail": "  PASS  T928 callParent is REFUSED here rather than overwritten - this recipe IS the forced-on variant, so honouring it is impossible and ignoring it is a lie\n  PASS  T928 callParent - and the refusal names add_override_event as the endpoint that DOES let you choose\n  PASS  T928 addParentCall is REFUSED here rather than overwritten - this recipe IS the forced-on variant, so honouring it is impossible and ignoring it is a lie\n  PASS  T928 addParentCall - and the refusal names add_override_event as the endpoint that DOES let you choose\n  PASS  T928 withParentCall is REFUSED here rather than overwritten - this recipe IS the forced-on variant, so honouring it is impossible and ignoring it is a lie\n  PASS  T928 withParentCall - and the refusal names add_override_event as the endpoint that DOES let you choose\n  PASS  T928 the blueprint still compiles\n\n=== T929: remove_widget_binding - NOT confirm-gated, unlike its remove_* naming neighbours ===\n  PASS  T929 (setup) a scratch WidgetBlueprint is created\n  PASS  T929 (setup) a binding exists to remove\n  PASS  T929 the plain call (no confirm) succeeds directly\n  PASS  T929 and the binding count is really back to zero\n\n========================================================================\nPASS 33   FAIL 4\n  FAILED: T920 create_metahuman_character refuses\n          {\"ok\": true, \"path\": \"/Game/_MifReads6/MHC_73369.MHC_73369\", \"name\": \"MHC_73369\", \"class\": \"/Script/MetaHumanCharacter.MetaHumanCharacter\", \"valid\": true, \"note\": \"created with default/archetype ident\n  FAILED: T920 and names the real reason (UE 5.6+ only, absent from this fork)\n          None\n  FAILED: T921 spawn_metahuman_actor refuses\n          {\"ok\": true, \"actorPath\": \"/Temp/Untitled_1.Untitled_1:PersistentLevel.MetaHumanDefaultEditorPipelineActor_0\", \"actorLabel\": \"MetaHumanDefaultEditorPipelineActor0\", \"actorClass\": \"/Script/MetaHumanDef\n  FAILED: T921 and names the real reason too\n          None\n========================================================================"
  },
  {
   "suite": "test_uncovered_reads6.py",
@@ -3223,10 +3223,10 @@
   "suite": "test_uncovered_reads7.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 32   FAIL 0",
-  "seconds": 12.2,
+  "summary": "",
+  "seconds": 3.0,
   "editorSurvived": true,
-  "ranAt": 1788259397.7994583,
+  "ranAt": 1788573382.7518587,
   "tail": ""
  },
  {
@@ -3242,12 +3242,12 @@
  {
   "suite": "test_uncovered_reads8.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 24   FAIL 0",
-  "seconds": 9.6,
+  "rc": 1,
+  "summary": "PASS 21   FAIL 1",
+  "seconds": 5.4,
   "editorSurvived": true,
-  "ranAt": 1788259408.7229125,
-  "tail": ""
+  "ranAt": 1788573390.4196756,
+  "tail": "  PASS  T961 inserting a real UserWidget class succeeds\n  PASS  T961 and reports it landed\n  PASS  T961 the composite PNG really exists on disk\n\n=== T962: set_niagara_component_parameter - a real success, on an actor this test just spawned ===\n  PASS  T962 (setup) a scratch blueprint is created\n  PASS  T962 (setup) a NiagaraComponent is added\n  PASS  T962 (setup) it compiles\n  PASS  T962 (setup) it spawns into the level\n  PASS  T962 the real set succeeds\n  PASS  T962 and confirms it targeted the component, not the shared system asset\n\n=== T963: reimport_asset - real content, real refusal (no recorded source path anywhere) ===\n  FAIL  T963 (setup) a real Texture2D exists to try   []\n\n=== T964: add_sequence_possessable - the confirm gate, real success path deferred ===\n  PASS  T964 (setup) a scratch LevelSequence is created\n  PASS  T964 refuses without confirm\n  PASS  T964 and names confirm as what is missing\n\n========================================================================\nPASS 21   FAIL 1\n  FAILED: T963 (setup) a real Texture2D exists to try\n          []\n========================================================================"
  },
  {
   "suite": "test_uncovered_reads8.py",
@@ -3264,9 +3264,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 89.7,
+  "seconds": 10.3,
   "editorSurvived": true,
-  "ranAt": 1788259500.898486,
+  "ranAt": 1788573402.9781342,
   "tail": ""
  },
  {
@@ -3284,9 +3284,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 4.7,
+  "seconds": 3.4,
   "editorSurvived": true,
-  "ranAt": 1788259507.2249286,
+  "ranAt": 1788573408.873346,
   "tail": ""
  },
  {
@@ -3304,9 +3304,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 9   FAIL 0",
-  "seconds": 5.4,
+  "seconds": 1.2,
   "editorSurvived": true,
-  "ranAt": 1788259514.2365472,
+  "ranAt": 1788573412.5762386,
   "tail": ""
  },
  {
@@ -3324,9 +3324,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 7.7,
+  "seconds": 4.0,
   "editorSurvived": true,
-  "ranAt": 1788259523.568981,
+  "ranAt": 1788573419.1647875,
   "tail": ""
  },
  {
@@ -3344,9 +3344,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 9.7,
+  "seconds": 4.0,
   "editorSurvived": true,
-  "ranAt": 1788259534.569354,
+  "ranAt": 1788573425.747086,
   "tail": ""
  },
  {
@@ -3362,12 +3362,12 @@
  {
   "suite": "test_virtual_bone_authoring.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 31   FAIL 0",
-  "seconds": 10.7,
+  "rc": 1,
+  "summary": "PASS 25   FAIL 4",
+  "seconds": 4.3,
   "editorSurvived": true,
-  "ranAt": 1788259546.90697,
-  "tail": ""
+  "ranAt": 1788573432.713655,
+  "tail": "        3\n  PASS  T3302 with confirm it is removed\n  PASS  T3302 and the prediction was CORRECT - the child really was reparented to pelvis\n  PASS  T3302 an unknown name is refused and the real ones listed\n\n=== T3303: rename is a void silent no-op, so it is checked first ===\n  PASS  T3303 renaming something that does not exist is refused\n  PASS  T3303 and says why it is checked here - the engine returns void and does nothing\n  PASS  T3303 renaming onto a REAL bone's name is refused\n  PASS  T3303 and explains the consequence - ambiguous by-name lookups\n  PASS  T3303 a valid rename succeeds\n  PASS  T3303 and the new name is what the skeleton reports back\n  PASS  T3303 renaming to the same name is refused rather than reported as work done\n  PASS  T3304 (cleanup) the duplicated skeleton is gone\n\n========================================================================\nPASS 25   FAIL 4\n  FAILED: T3301 neither refusal created anything\n          1\n  FAILED: T3300b and the name it reports is the one the skeleton really holds\n          [{\"name\": \"VB pelvis_head\", \"source\": \"pelvis\", \"target\": \"head\"}, {\"name\": \"VB pelvis_spine_01\", \"source\": \"pelvis\", \"target\": \"spine_01\"}]\n  FAILED: T3300b a duplicate PAIR reports created:false rather than failing opaquely\n          {\"ok\": true, \"skeleton\": \"/Game/_MifVB/SK_Test73431.SK_Test73431\", \"virtualBone\": {\"name\": \"VB pelvis_spine_01\", \"source\": \"pelvis\", \"target\": \"spine_01\"}, \"created\": false, \"note\": \"a virtual bone for that exact source/target pair already exists - n\n  FAILED: T3302 the refused call changed nothing\n          3"
  },
  {
   "suite": "test_virtual_bone_authoring.py",
@@ -3384,9 +3384,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 29   FAIL 0",
-  "seconds": 6.0,
+  "seconds": 3.8,
   "editorSurvived": true,
-  "ranAt": 1788259554.24298,
+  "ranAt": 1788573439.2821922,
   "tail": ""
  },
  {
@@ -3404,9 +3404,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 43   FAIL 0",
-  "seconds": 14.2,
+  "seconds": 5.0,
   "editorSurvived": true,
-  "ranAt": 1788259569.907022,
+  "ranAt": 1788573446.7730846,
   "tail": ""
  },
  {
@@ -3424,9 +3424,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 5.1,
+  "seconds": 3.8,
   "editorSurvived": true,
-  "ranAt": 1788259576.572958,
+  "ranAt": 1788573452.8261192,
   "tail": ""
  },
  {
@@ -3444,9 +3444,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 11.1,
+  "seconds": 4.2,
   "editorSurvived": true,
-  "ranAt": 1788259588.9071143,
+  "ranAt": 1788573459.2629259,
   "tail": ""
  },
  {
@@ -3464,9 +3464,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 6.1,
+  "seconds": 3.7,
   "editorSurvived": true,
-  "ranAt": 1788259596.2429516,
+  "ranAt": 1788573465.2070398,
   "tail": ""
  },
  {
@@ -3484,9 +3484,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 10  FAIL 0",
-  "seconds": 3.7,
+  "seconds": 3.1,
   "editorSurvived": true,
-  "ranAt": 1788259601.5752738,
+  "ranAt": 1788573470.6159897,
   "tail": ""
  },
  {
@@ -3504,9 +3504,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 28   FAIL 0",
-  "seconds": 9.1,
+  "seconds": 3.9,
   "editorSurvived": true,
-  "ranAt": 1788259612.2446258,
+  "ranAt": 1788573476.9395418,
   "tail": ""
  },
  {
@@ -3524,9 +3524,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 46   FAIL 0",
-  "seconds": 14.4,
+  "seconds": 4.9,
   "editorSurvived": true,
-  "ranAt": 1788259628.244473,
+  "ranAt": 1788573484.2700927,
   "tail": ""
  },
  {

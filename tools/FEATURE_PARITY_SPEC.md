@@ -14941,6 +14941,43 @@ out-of-process the way ops_gen already does with gen_status.
       jsonable's depth cap went 8 -> 24. It guards against CYCLES, not nesting, and at 8 it was about
       to start truncating real answers now that every response passes through it.
 
+- [ ] **Curfew has two landscape endpoints this tree does not, and they are UNCOMMITTED**
+      FOUND 2026-09-05 while preparing the 5.7 sweep Andre asked for, by checking the vendored copy
+      before touching it rather than after. The check was meant to answer "is Curfew's plugin stale"
+      - it is, by six days - and turned up the opposite problem as well.
+
+      `git status` in D:/RoguelikeDealerGame shows 431 uncommitted lines in the vendored MifBridge:
+
+        MifBridgeLandscape.cpp   +427
+        MifBridgeHandlers.h      +2   MIF_DECL(import_landscape_heightmap)
+                                      MIF_DECL(export_landscape_heightmap)
+        MifBridgeCommon.cpp      +2   the matching MIF_BIND pair
+
+      Two whole endpoints that exist nowhere in this tree. Uncommitted, so git cannot recover them,
+      and docs/14's documented sync - extract the release zip over the project's Plugins/ folder -
+      would have destroyed every line. That is precisely the bidirectional drift docs/14 was written
+      about ("work was being lost in both directions until the field reports were merged back by
+      hand"), happening again and unnoticed.
+
+      THE TWO COPIES, measured rather than assumed:
+
+        this tree   455 endpoints, source current
+        Curfew      427 endpoints, source 2026-08-30, DLL 2026-08-30 19:20, engine 5.7
+
+      So Curfew is 28 BEHIND on shared code and 2 AHEAD on work only it has. A one-directional sync
+      in either direction loses something.
+
+      NOTHING WAS BUILT, LAUNCHED OR SYNCED. The order matters and it is Andre's call: commit the
+      Curfew work first so it cannot be lost, then merge those two endpoints into this tree, and
+      only then sync and sweep. Sweeping against the Aug 30 DLL is possible immediately and would
+      produce ~28 unknown-endpoint failures that say nothing about 5.7.
+
+      AND THE REAL LESSON IS ABOUT THE PROCEDURE, not this instance. docs/14 documents a sync that
+      is safe only in the direction it assumes, and nothing checks the other one first. Wants a
+      `--check` that compares a project's vendored copy against this tree in BOTH directions and
+      refuses to overwrite when the copy holds lines the tree does not - which is a smaller job than
+      it sounds, since make_release.py --check already walks both file sets.
+
 - [ ] **JNum throws away every message JsonValueAsNumber writes, into a variable called `Unused`**
       FOUND 2026-09-05 while verifying the finiteness guard against a live editor. The guard WORKS -
       1e999 and -1e999 are refused where they used to be accepted - but the message the caller sees
