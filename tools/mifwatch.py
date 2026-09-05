@@ -33,15 +33,34 @@ import time
 
 import mifaudit as M
 
-# The plugin writes to <ProjectSaved>/MifBridge/ (same convention as the thumbnail writer). Resolved
-# from mifaudit's location rather than from __file__, so this still works when run from elsewhere.
-JOURNAL = os.path.normpath(os.path.join(os.path.dirname(M.__file__), "..", "..", "..",
-                                        "Saved", "MifBridge", "journal.jsonl"))
+# The plugin writes to <ProjectSaved>/MifBridge/ (same convention as the thumbnail writer).
+#
+# WHICH PROJECT'S, THOUGH. This was resolved from mifaudit's location, which answers "works when run
+# from elsewhere" and not "which editor am I watching" - it is always THIS CHECKOUT's project,
+# whichever editor is actually running. test_crash_journal had the identical bug and, pointed at
+# Curfew on 5.7, read 676,934 records of old 5.3 sessions while reporting that nothing was being
+# recorded.
+#
+# BUT THE FALLBACK IS NOT A COMPROMISE HERE, IT IS THE PRIMARY CASE. This tool exists to read the
+# journal AFTER a crash (PM-013), and a crashed editor has no process to ask. So: prefer the live
+# editor when there is one, fall back to this checkout otherwise, and always PRINT which - a
+# monitor that silently watches the wrong file is the failure being fixed, and picking the fallback
+# silently would reintroduce it.
+CHECKOUT_JOURNAL = os.path.normpath(os.path.join(os.path.dirname(M.__file__), "..", "..", "..",
+                                                 "Saved", "MifBridge", "journal.jsonl"))
+
+
+def journal_path():
+    """(path, source). source says WHERE the answer came from, and callers print it."""
+    saved = M.live_saved_dir()
+    if saved:
+        return os.path.join(saved, "MifBridge", "journal.jsonl"), "the running editor"
+    return CHECKOUT_JOURNAL, "this checkout's project (no editor is running - post-crash is normal)"
 
 
 def read_records(path=None):
     """Parse the journal. Tolerates a truncated final line - the process may have died mid-write."""
-    p = path or JOURNAL
+    p = path or journal_path()[0]
     if not os.path.isfile(p):
         return None
     out = []
@@ -133,7 +152,9 @@ def analyse(records):
 
 def report(records):
     if records is None:
-        print("no journal at %s" % JOURNAL)
+        jp, src = journal_path()
+        print("no journal at %s" % jp)
+        print("  (looked there because that is %s)" % src)
         print("")
         print("The plugin writes it on the first StartServer. If the editor has run since the journal")
         print("shipped and this is still missing, check the mif.BridgeJournal CVar - it defaults to on.")
@@ -144,7 +165,9 @@ def report(records):
         print("journal exists but records no sessions (%d lines)" % len(records))
         return 0
 
-    print("journal: %s" % JOURNAL)
+    jp, src = journal_path()
+    print("journal: %s" % jp)
+    print("         from %s" % src)
     print("%d record(s), %d session(s)" % (len(records), len(sessions)))
     print("")
 

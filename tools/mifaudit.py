@@ -24,6 +24,7 @@ SAFETY RULES BAKED IN, because this runs unattended:
 import json
 import io
 import os
+import re
 import subprocess
 import time
 import urllib.error
@@ -200,6 +201,45 @@ def require_sdk_bridge(force=False):
                        % (BRIDGE_PORT, pid, PROJECT_MARKER, cmd[:140]))
     _verified_pid[0] = pid
     return True, "pid %d (%s)" % (pid, PROJECT_MARKER)
+
+
+_UPROJECT_IN_CMDLINE = re.compile(r'([A-Za-z]:[^"\']*?\.uproject)')
+
+
+def live_project_dir():
+    """The directory of the .uproject the RUNNING editor was launched with, or None.
+
+    WHY THIS IS NOT DERIVED FROM THIS FILE'S OWN PATH, which is what callers did before 2026-09-05.
+    A suite wanting a project-relative path - Saved/, Intermediate/, a log - computed it from where
+    mifaudit.py sits on disk, i.e. from the plugin's checkout. That is the DDS2 tree, always,
+    whichever editor is actually answering on the port.
+
+    test_crash_journal is what exposed it. Pointed at Curfew on 5.7 it read
+    D:/DDS2SDK/Game/Saved/MifBridge/journal.jsonl - 676,934 records of old 5.3 sessions - while the
+    editor under test appended to Curfew's own Saved. Five assertions failed saying nothing was
+    being recorded, and the journal was working perfectly: the suite was reading another project's
+    file. The give-away was in the failure text and easy to miss - engine "5.3" and a pid that was
+    not the editor's.
+
+    So the answer comes from the PROCESS, whose command line names the .uproject it opened - the
+    same string require_sdk_bridge already matches PROJECT_MARKER against, so this cannot disagree
+    with the guard that let the run proceed.
+    """
+    pid = bridge_pid()
+    if pid is None:
+        return None
+    m = _UPROJECT_IN_CMDLINE.search(process_cmdline(pid) or "")
+    return os.path.dirname(os.path.normpath(m.group(1))) if m else None
+
+
+def live_saved_dir():
+    """<the running editor's project>/Saved, or None if it cannot be determined.
+
+    Returns None rather than guessing. A suite that falls back to this checkout's Saved/ is the
+    defect above wearing a helper's clothes: it would go green against another project's files.
+    """
+    d = live_project_dir()
+    return os.path.join(d, "Saved") if d else None
 
 
 _project_is_cooked = [None]

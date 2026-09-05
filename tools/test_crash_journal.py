@@ -30,8 +30,16 @@ import mifaudit as M
 
 PASS, FAIL = [], []
 
-JOURNAL = os.path.normpath(os.path.join(os.path.dirname(M.__file__), "..", "..", "..",
-                                        "Saved", "MifBridge", "journal.jsonl"))
+# THE RUNNING EDITOR'S JOURNAL, NOT THIS CHECKOUT'S. This was computed from mifaudit.py's own
+# location - "../../../Saved" - which resolves to the DDS2 tree whichever editor is answering. Run
+# against Curfew on 5.7 it read 676,934 records of old 5.3 sessions and reported that nothing was
+# being recorded, while the journal under test worked perfectly. Five red assertions, all of them
+# about a file the editor never touches.
+#
+# Resolved lazily, because the answer comes from the live process and there is none at import time.
+def journal_path():
+    saved = M.live_saved_dir()
+    return os.path.join(saved, "MifBridge", "journal.jsonl") if saved else None
 
 
 def check(name, cond, detail=""):
@@ -40,10 +48,11 @@ def check(name, cond, detail=""):
 
 
 def read_journal():
-    if not os.path.isfile(JOURNAL):
+    jp = journal_path()
+    if not jp or not os.path.isfile(jp):
         return None
     out = []
-    with io.open(JOURNAL, "r", encoding="utf-8", errors="replace") as fh:
+    with io.open(jp, "r", encoding="utf-8", errors="replace") as fh:
         for line in fh:
             line = line.strip()
             if not line:
@@ -66,7 +75,7 @@ def main():
     if recs is None:
         check("T620 the journal file exists", False,
               "%s missing - the plugin writes it on StartServer; mif.BridgeJournal defaults to on"
-              % JOURNAL)
+              % (journal_path() or "the running editor's project could not be determined"))
         print("")
         print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
         return 1

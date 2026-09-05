@@ -32,6 +32,12 @@ import sys
 
 from blender_audit_common import call as _call
 
+# THIS CHECKOUT'S PROJECT, AND THAT IS CORRECT HERE - unlike mifwatch and test_crash_journal, which
+# had the same shape and were wrong. Both of those describe a LIVE editor, so computing the path
+# from this file's location made them read another project's data; they now ask the running process
+# (mifaudit.live_saved_dir). This audit is deliberately OFFLINE - it needs only Blender, not the UE
+# bridge - so there is no process to ask, and a previously exported fixture in this tree is exactly
+# what it wants. Pass --fbx to point it elsewhere.
 DEFAULT_EXPORT_GLOB = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "..", "..", "Saved", "MifBridge", "Export", "*.fbx")
