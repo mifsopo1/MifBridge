@@ -42,29 +42,74 @@ HALL_LEN = B1.HALL_LEN
 # four times the floor and twice the height, and light falls off with the square of distance from a
 # point source hung twice as high. These are the starting point --measure was used to settle.
 WORLD_STRENGTH = 0.020
-HALL_PENDANT_W = 780.0
+HALL_PENDANT_W = 210.0
 ROOM_LAMP_W = 320.0
 
 # Colour is what makes the rooms readable, and each one is a real lamp somebody would install.
 #   (room, rgb, watts, height)
+# THESE WENT UP 5x AND CAME STRAIGHT BACK DOWN, and the round trip is worth recording because the
+# wattage was never the problem. Every lamp was sealed inside its own emissive bulb sphere - see
+# LAMP_DROP below - so the rooms were black at 260 W and still black at 26000 W. Raising the power
+# was treating a symptom; these figures are what actually lights the rooms once the lamps are
+# outside their glass.
+#
+# The reason it went unnoticed for two stages is the more useful half: --measure only ever rendered
+# ONE view, down the hall, and I read "mean 0.209, the target" as a statement about the bunker. It
+# was a statement about the hall. Six rooms were tuned against nothing at all, and the three-view
+# measurement below exists so that cannot happen again.
 ROOM_LIGHT = {
-    "Armoury":     ((0.82, 0.86, 1.00), 300.0, 2.85),   # cold fluorescent
-    "Medical":     ((0.90, 0.96, 1.00), 420.0, 2.85),   # clinical, the brightest room
-    "Hydroponics": ((0.72, 0.32, 1.00), 260.0, 2.30),   # grow lamps, and the reason this room reads
-    "Workshop":    ((1.00, 0.86, 0.62), 340.0, 2.85),   # warm work lamps
-    "Mess":        ((1.00, 0.80, 0.52), 300.0, 2.85),   # domestic tungsten
-    "Power":       ((1.00, 0.62, 0.24), 300.0, 2.85),   # amber, and it is the room that fails first
+    "Armoury":     ((0.82, 0.86, 1.00), 260.0, 2.85),   # cold fluorescent
+    "Medical":     ((0.90, 0.96, 1.00), 70.0, 2.85),    # clinical - small room, pale surfaces, needs least
+    "Hydroponics": ((0.72, 0.32, 1.00), 430.0, 2.30),   # purple carries less luminance per watt
+    "Workshop":    ((1.00, 0.86, 0.62), 300.0, 2.85),   # warm work lamps
+    "Mess":        ((1.00, 0.80, 0.52), 260.0, 2.85),   # domestic tungsten
+    "Power":       ((1.00, 0.62, 0.24), 280.0, 2.85),   # amber, and it is the room that fails first
 }
 
 
-def lamp(name, kind, x, y, z, rgb, watts, radius=0.12):
-    S.call("create_light", {"kind": kind, "name": name, "color": list(rgb), "energy": watts,
-                            "radius": radius, "location": {"x": x, "y": y, "z": z}})
+def lamp(name, kind, x, y, z, rgb, watts, radius=0.12, size=None):
+    """A lamp. `size` only means anything for AREA, and is passed at CREATION for a reason.
+
+    set_light CANNOT convert a POINT to an AREA with a size in one call: it applies `size` to the
+    light that is still a PointLight and dies with a raw AttributeError -
+    "'PointLight' object has no attribute 'size'" - so the type never changes. Creating the light as
+    the type it needs to be sidesteps an ordering bug that has no workaround from the caller's side.
+    """
+    p = {"kind": kind, "name": name, "color": list(rgb), "energy": watts,
+         "location": {"x": x, "y": y, "z": z}}
+    # radius IS POINT/SPOT ONLY and create_light refuses it on an AREA rather than ignoring it:
+    # "radius (the soft-shadow size) only applies to a POINT or SPOT light and this one is AREA
+    # (radius given). NOTHING was created." Refusing beats silently dropping the value, because a
+    # dropped soft-shadow size looks like a lighting choice.
+    if kind in ("POINT", "SPOT"):
+        p["radius"] = radius
+    if size is not None:
+        p["size"] = size
+    S.call("create_light", p)
     return name
 
 
+# HOW FAR THE LAMP HANGS BELOW ITS BULB, and this constant exists because of a real defect.
+#
+# bulb() put an OPAQUE sphere at exactly the lamp's coordinates, so every lamp in this scene was
+# sealed inside its own glass. Measured in the medical bay, same camera, same frame:
+#
+#     six 2000 W lamps, bulb spheres present   mean 0.0024
+#     the same six lamps, spheres deleted      mean 0.8330
+#
+# 350x. It cost most of an evening because every intermediate symptom pointed elsewhere: the rooms
+# were black at 1300 W and still black at 26000 W, which reads as a culling threshold; a 6000 W
+# probe dropped into the same room lit it instantly, which reads as a wattage problem; and switching
+# to AREA lamps changed nothing, which reads as a light-type problem. Every one of those was a
+# consequence of the light being inside a box.
+#
+# The emissive sphere still has to be there - a lamp with no visible source is light from nowhere -
+# so the LAMP moves down out of it instead.
+LAMP_DROP = 0.16
+
+
 def bulb(name, x, y, z, rgb, strength=6.0, r=0.09):
-    """The visible source. A lamp alone is light from nowhere."""
+    """The visible source. A lamp alone is light from nowhere - and a lamp INSIDE this is nothing."""
     S.call("create_primitive", {"kind": "uvsphere", "name": name, "radius": r,
                                 "location": {"x": x, "y": y, "z": z}})
     m = "Emit_%s" % name
@@ -147,7 +192,8 @@ def main():
     n_pend = 7
     for i in range(n_pend):
         x = 2.6 + i * (HALL_LEN - 5.2) / (n_pend - 1)
-        lamp("Lamp_Hall%02d" % i, "POINT", x, CY, 4.55, (1.0, 0.90, 0.74), HALL_PENDANT_W, 0.18)
+        lamp("Lamp_Hall%02d" % i, "POINT", x, CY, 4.55 - LAMP_DROP, (1.0, 0.90, 0.74),
+             HALL_PENDANT_W, 0.18)
         bulb("Bulb_Hall%02d" % i, x, CY, 4.55, (1.0, 0.90, 0.74), 8.0, 0.10)
         # The drop rod, so the bulb hangs from the vault rather than floating in it. It has to
         # REACH the ceiling: at the hall's centre line the vault's inner surface is at z = the bore
@@ -164,7 +210,14 @@ def main():
         for i in range(n):
             y = r.m(1.4 + i * (r.depth - 2.6) / max(1, n - 1))
             for j, x in enumerate((r.x0 + 2.2, r.x1 - 2.2)):
-                lamp("Lamp_%s_%d_%d" % (label, i, j), "POINT", x, y, z, rgb, watts, 0.14)
+                # AREA, NOT POINT, and it is not a stylistic choice. Six POINT lamps in this
+                # room rendered mean 0.0048 at every wattage from 1300 to 26000 - identical to four
+                # decimal places - and then 0.4448 at 30000. A 15% power increase producing a 93x
+                # luminance jump, reproducibly, is a culling threshold rather than physics, and it
+                # leaves no usable value between "black" and "blown out". An area lamp is also what
+                # strip lighting in a room like this actually is.
+                lamp("Lamp_%s_%d_%d" % (label, i, j), "AREA", x, y, z - LAMP_DROP, rgb,
+                     watts, 0.14, size=1.7)
                 bulb("Bulb_%s_%d_%d" % (label, i, j), x, y, z, rgb, 7.0, 0.075)
 
     # ---- emergency lamps, lit but dim, for the blackout beat in stage 7 ------------------------------
@@ -175,7 +228,8 @@ def main():
     print("  emergency lamps (on, dim - stage 7 raises them)")
     for i in range(5):
         x = 4.0 + i * (HALL_LEN - 8.0) / 4.0
-        lamp("Emg_Lamp%02d" % i, "POINT", x, 2 * CY - 0.9, 3.5, (1.0, 0.16, 0.10), 22.0, 0.10)
+        lamp("Emg_Lamp%02d" % i, "POINT", x, 2 * CY - 0.9, 3.5 - LAMP_DROP, (1.0, 0.16, 0.10),
+             22.0, 0.10)
         bulb("Emg_Bulb%02d" % i, x, 2 * CY - 0.95, 3.5, (1.0, 0.16, 0.10), 3.0, 0.075)
 
     S.look((3.2, CY - 1.4, 1.7), (26.0, CY + 1.2, 1.7), lens=22.0)
@@ -189,24 +243,23 @@ def main():
 def measure(passes=5):
     """Render the same frame N times and report the luminance band, not a single number.
 
-    THE REASON THIS AVERAGES, and it took three experiments to establish rather than assume.
+    THE BAND IS KEPT, AND MY FIRST EXPLANATION FOR IT WAS WRONG. Worth recording both.
 
-    First the whole scene was rebuilt and measured three times: mean 0.205, 0.293, 0.130. That could
-    have been the rebuild. So the same scene was rendered three times with nothing rebuilt at all:
-    mean 0.2104, 0.1466, 0.1238, near-black 17.8%, 36.9%, 26.0%. The RENDER is what varies.
+    Measured three times on the same unchanged scene, this reported mean 0.2104, 0.1466, 0.1238 with
+    near-black at 17.8%, 36.9%, 26.0%, and I concluded that EEVEE does not repeat - render_info
+    does say engine BLENDER_EEVEE with samples on eevee.taa_render_samples, which made a temporal
+    accumulation story fit.
 
-    render_info names the cause: engine BLENDER_EEVEE, samples on eevee.taa_render_samples. EEVEE
-    accumulates temporally and does not land on the same image twice here. Cycles would be
-    reproducible and this Blender does not have it - set_render_settings refuses the switch by name
-    ("unknown render engine 'CYCLES' for this Blender. Valid: BLENDER_EEVEE. NOTHING was changed"),
-    which is the guard doing its job and closing the obvious escape route.
+    IT WAS NOT THE ENGINE. Those frames were nearly black, because every lamp was sealed inside its
+    own bulb sphere (see LAMP_DROP). The mean of a crushed frame is dominated by noise in values the
+    view transform has already flattened, so it wanders. With the lamps outside their glass the same
+    five renders now come back at 0.265, 0.265, 0.265, 0.265, 0.265 - identical to three decimals.
 
-    So a single render cannot settle a wattage. It swings +-40% and would have had me tuning against
-    its own noise - which is worse than not measuring, because it looks like data and the lab's
-    README is built on exactly this kind of table being trustworthy.
+    So the instability was a symptom of the defect, not a property of the renderer, and "EEVEE is
+    unreliable" would have been a permanent piece of folklore in this file explaining away a bug.
 
-    What is reported instead is the BAND. A change to the lighting is only believable if it moves the
-    band clear of where it was; anything inside the spread is noise wearing a decimal point.
+    The band stays anyway. It costs four extra renders, it would have caught this sooner rather than
+    later, and a measurement that reports its own spread is one you can argue with.
     """
     import base64
     import io as _io
@@ -214,9 +267,12 @@ def measure(passes=5):
     # generated artefact in a version-controlled tools directory - the kind of thing that gets
     # committed by accident once and then lives there forever.
     out = os.path.join(os.environ.get("TEMP") or "/tmp", "mif_bunker_measure.png")
-    S.call("create_camera", {"name": "Measure_Cam", "location": {"x": 3.2, "y": CY - 1.4, "z": 1.7},
-                             "lookAt": {"x": 26.0, "y": CY + 1.2, "z": 1.7},
-                             "lens": 22.0, "makeActive": True})
+    # MORE THAN ONE VIEW, because one view measured one room. See the wattage comment above: the
+    # hall reported "mean 0.209, the target" while six rooms rendered black, and a yardstick that
+    # only looks down the corridor cannot say anything about the rooms off it.
+    VIEWS = [("hall", (3.2, CY - 1.4, 1.7), (26.0, CY + 1.2, 1.7), 22.0),
+             ("hydroponics", (20.0, -0.9, 1.55), (20.0, -5.2, 1.15), 28.0),
+             ("medical", (7.0, 2 * CY + 1.0, 1.6), (7.0, 2 * CY + 6.0, 1.2), 28.0)]
     S.call("set_render_settings", {"filmTransparent": False, "samples": 160, "useDenoising": True,
                                    "resolutionX": 800, "resolutionY": 450})
     try:
@@ -225,42 +281,47 @@ def measure(passes=5):
         print("  (install Pillow to see the histogram)")
         return
 
-    means, blacks = [], []
-    for k in range(passes):
-        r = S.call("render_still", {"filePath": out, "returnImage": True, "previewMaxPx": 800},
-                   timeout=900.0)
-        if not r.get("image"):
-            print("  render %d produced no image - not counted" % k)
-            continue
-        _io.open(out, "wb").write(base64.b64decode(r["image"]))
-        raw = Image.open(out).convert("RGB").tobytes()
-        v = sorted((0.2126 * raw[i] + 0.7152 * raw[i + 1] + 0.0722 * raw[i + 2]) / 255.0
-                   for i in range(0, len(raw), 3))
-        means.append(sum(v) / len(v))
-        blacks.append(sum(1 for x in v if x < 0.02) / float(len(v)))
-    if not means:
-        print("  nothing rendered - cannot measure")
-        return
-
-    avg = sum(means) / len(means)
     print("")
-    print("  LUMINANCE over %d render(s). EEVEE does not repeat, so this is a BAND." % len(means))
-    print("    mean        %.3f   (%.3f .. %.3f, spread %.3f)"
-          % (avg, min(means), max(means), max(means) - min(means)))
-    print("    near black  %.0f%%     (%.0f%% .. %.0f%%)"
-          % (100 * sum(blacks) / len(blacks), 100 * min(blacks), 100 * max(blacks)))
-    print("    the lab's answer was mean 0.17, near-black 14%, p90 0.41")
+    print("  LUMINANCE per view, %d render(s) each, reported as a band." % passes)
+    print("  (the band is near-zero now. It was NOT when the lamps were trapped in their bulbs -")
+    print("   a crushed frame's mean wanders, which I first mistook for the renderer.)")
+    print("  the lab's answer was mean 0.17, near-black 14%")
+    worst = None
+    for label, eye, tgt, lens in VIEWS:
+        S.call("create_camera", {"name": "Measure_Cam", "location": {"x": eye[0], "y": eye[1],
+                                                                    "z": eye[2]},
+                                 "lookAt": {"x": tgt[0], "y": tgt[1], "z": tgt[2]},
+                                 "lens": lens, "makeActive": True})
+        means, blacks = [], []
+        for k in range(passes):
+            r = S.call("render_still", {"filePath": out, "returnImage": True, "previewMaxPx": 800},
+                       timeout=900.0)
+            if not r.get("image"):
+                continue
+            _io.open(out, "wb").write(base64.b64decode(r["image"]))
+            raw = Image.open(out).convert("RGB").tobytes()
+            v = sorted((0.2126 * raw[i] + 0.7152 * raw[i + 1] + 0.0722 * raw[i + 2]) / 255.0
+                       for i in range(0, len(raw), 3))
+            means.append(sum(v) / len(v))
+            blacks.append(sum(1 for x in v if x < 0.02) / float(len(v)))
+        S.call("delete_object", {"object": "Measure_Cam", "purgeOrphans": True})
+        if not means:
+            print("    %-12s nothing rendered" % label)
+            continue
+        avg = sum(means) / len(means)
+        verdict = ("TOO DARK" if avg < 0.12 else
+                   "washed out" if avg > 0.24 else "on target")
+        print("    %-12s mean %.3f  (%.3f..%.3f)  near-black %2.0f%%   %s"
+              % (label, avg, min(means), max(means), 100 * sum(blacks) / len(blacks), verdict))
+        if worst is None or avg < worst[1]:
+            worst = (label, avg)
+    if worst:
+        print("    -> darkest view is %s at %.3f" % worst)
+    return
     # BANDS TAKEN FROM THE LAB'S OWN TABLE, not invented. It measured 0.28 mean / 9% near-black and
     # called it "a lit room, not an abandoned one"; 0.11 / 19% was "dark WITHOUT highlights - flat";
     # 0.17 / 14% was the answer. My first thresholds passed anything under 0.30, which would have
     # called the lab's own rejected setting a success.
-    if max(means) - min(means) > 0.06:
-        print("    -> the spread is wider than the difference worth tuning. Raise `passes`, or")
-        print("       change the lighting by more than this band before believing the result.")
-    print("    -> %s" % ("too dark - raise the practicals, not the world" if avg < 0.12 else
-                         "a lit room, not an abandoned one - dim the practicals" if avg > 0.24 else
-                         "pools of light against darkness, which is the target"))
-
 
 if __name__ == "__main__":
     main()
