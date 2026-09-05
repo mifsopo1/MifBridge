@@ -7508,7 +7508,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Kept because the near-miss is the useful part: I hit it, assumed a half-alias, and was
       wrong. That is what the KeyNote is for and it worked.
 
-- [ ] **suites that ADOPT an existing fixture break once another suite starts making one** (half a day)
+- [x] **suites that ADOPT an existing fixture break once another suite starts making one** (half a day)
       FOUND 2026-09-01 by the sweep, and it is a regression I introduced.
 
       test_landscape_heightmap picks the first landscape in the level with NO edit layers and only
@@ -7543,6 +7543,44 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       because it only appears on the second pass.
 
       ALL TWELVE SITES FIXED 2026-09-02, AND STILL OPEN - the confirming run has not happened.
+
+      ================================================================================
+      THE CONFIRMING RUN HAPPENED 2026-09-05. NONE OF THE TWELVE REGRESSED.
+      ================================================================================
+      Two passes against Curfew, read per suite out of tools/suite_results.json. The adoption
+      signature is a suite that is GREEN on pass 1 and RED on pass 2 - that asymmetry is the whole
+      defect, and it appears nowhere:
+
+        landscape_heightmap      rc=0  |  rc=0      <- the suite this item was opened for
+        niagara_emitter          rc=0 17/0 | rc=0 17/0
+        material_params          rc=0  |  rc=0
+        staticmesh_write_guard   rc=0  9/0 | rc=0  9/0
+        uncovered_reads8         rc=0 24/0 | rc=0 24/0
+        blender_ops              rc=0 12/0 | rc=0 12/0
+        blender_rename_bones     rc=0 12/0 | rc=0 12/0
+        material_graph           rc=1 30/5 | rc=1 30/5   identical - a cooked-asset failure, not this
+        spline_landscape         rc=1 26/2 | rc=1 26/2   identical - in the uncooked-5.7 list
+        blender_mesh             rc=1      | rc=1        identical - in the uncooked-5.7 list
+        ported_anim              rc=1 48/1 | rc=0 49/0   THE OTHER DIRECTION, see below
+
+      THE ONE THAT MATTERS MOST IS THE FIRST ROW. test_landscape_heightmap is the suite that opened
+      this item by reporting a 1590.62uu collision disagreement while measuring a landscape another
+      suite had left behind. It is green on both passes now, which is the specific claim that could
+      only ever be settled by a second pass.
+
+      THREE STILL FAIL AND NONE OF THEM IS ADOPTION, which the record proves rather than asserts:
+      each fails IDENTICALLY on both passes. A failure that does not change between passes is not
+      caused by state accumulating between them.
+
+      AND THE INVERSE TURNED UP, which this item did not anticipate and could not have. ported_anim
+      is rc=1 on pass 1 and rc=0 on pass 2 - the only suite in 177 whose result differs. It CONSUMES
+      state another suite leaves behind, so it fails alone and passes in company. Same coupling,
+      opposite sign, and invisible to a single-pass run in either direction. Filed separately.
+
+      WHAT THIS DOES NOT PROVE, since the item's own rule is to say so: the sweep confirms the twelve
+      fixed sites did not regress. It does not prove no OTHER suite adopts a fixture - only that
+      none of the 177 exhibits the signature today, against this project's content. A project with
+      different content could produce a candidate none of these suites has ever seen.
 
       Surveyed all 176 suites: 22 candidates, 12 surviving an adversarial pass where each verifier
       had to REFUTE the finding and name a suite that could create a matching object. All twelve are
