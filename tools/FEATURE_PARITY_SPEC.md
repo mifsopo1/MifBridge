@@ -11359,6 +11359,11 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
         354 run(s) across 177 suites, 47 failed, 12 skipped, 0 took the editor down
         PASSED alone -> FAILED in company: 0
 
+      AND "47" IS RUNS, NOT SUITES - corrected 2026-09-05 by reading suite_results.json rather than
+      the summary line. It is 24 distinct suites failing on both passes. I reported "47 failed" in
+      conversation as though it were a suite count, which overstates the spread of the problem by
+      roughly double. The itemised list is in the uncooked-5.7 item below.
+
       ZERO. Not "none noticed" - the runner compares pass 1 against pass 2 per suite and prints the
       transitions, so the number is computed rather than eyeballed, and it covers all 177 suites
       rather than the 31 that were touched. The defining property of an adoption defect is that it
@@ -11475,7 +11480,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       audit_vacuous_checks / audit_consequence_fields both at baseline. That is not a substitute for
       running the suites; it is the part of the answer that does not need the machine.
 
-- [ ] **the mode-param list is at ZERO, and none of the nine fixes has been run** (the sweep)
+- [x] **the mode-param list is at ZERO, and none of the nine fixes has been run** (the sweep)
       COUNT CORRECTED 2026-09-03 - this said 18, then 22 before that, while the tool said 10. A
       number nothing recomputes is a number that will be wrong again next month, which is what
       harvest_param_table says about its own table and what audit_consequence_fields was built to
@@ -11491,6 +11496,38 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       blueprint_breakpoint's op:clear guards are asserted by tests that set up TWO items first and
       check both survived, and "the refusal came back" is not the same claim as "nothing was
       cleared". Until the sweep runs, this is nine plausible guards.
+
+      ================================================================================
+      RUN 2026-09-05. THE NINE GUARDS ARE VERIFIED, INCLUDING BOTH DESTRUCTIVE ONES.
+      ================================================================================
+      Read out of tools/suite_results.json, which the two-pass Curfew sweep recorded, so these are
+      measured rather than remembered:
+
+        blueprint_watch        pass 1  PASS 24  FAIL 0     pass 2  PASS 24  FAIL 0
+        blueprint_breakpoint   pass 1  PASS 27  FAIL 0     pass 2  PASS 27  FAIL 0
+        geometryscript                 PASS 40  FAIL 0             PASS 40  FAIL 0
+        trace_debug                    PASS 44  FAIL 0             PASS 44  FAIL 0
+        modal_hazards                  PASS 27  FAIL 0             PASS 27  FAIL 0
+        uncovered_reads7               PASS 31  FAIL 0             PASS 31  FAIL 0
+        audit_fixes                    PASS 40  FAIL 0             PASS 40  FAIL 0
+        niagara_user_params            PASS 18  FAIL 0             PASS 18  FAIL 0
+
+      The two this item said mattered most are the two destructive ones, and both are green on both
+      passes - which is the claim that needed a RUN rather than a compiler, because "the refusal
+      came back" and "nothing was cleared" are different sentences and only the suite can tell them
+      apart.
+
+      TWO ROWS THAT ARE NOT CLEAN AND ARE NOT THIS ITEM'S:
+        safety_gate             rc=2 both passes. SKIPPED because the session's write mode is
+                                'full', so the gate it tests is deliberately off. The suite says so.
+        niagara_set_user_param  PASS 13 FAIL 3, identically on both passes. NOT one of the nine and
+                                not in the 13-uncooked list either - an unaccounted failure, filed
+                                with the corrected sweep tally below.
+
+      test_pie_family is absent from the record entirely, exactly as this item predicted: the PIE
+      suites need --with-pie and an attended run.
+
+
 
       THE SEVEN BLIND SPOTS, because they are the reusable part: refusals built from a TABLE name
       nothing a message-literal scan can see; house reader helpers (ReadVectorField,
@@ -15299,6 +15336,40 @@ out-of-process the way ops_gen already does with gen_status.
 
       Do them one at a time and read the failure. A batch verdict on thirteen suites would be the
       same mistake as the 23, 22 and 12 false findings this file already records.
+
+      THE FULL LIST, 2026-09-05, read out of tools/suite_results.json rather than remembered. The
+      item above says "13 suites"; the sweep actually failed 24 distinct suites on both passes, so
+      eleven of them were never accounted for by either this item or the cooked-guard one:
+
+        anim_curve                  PASS  8  FAIL  9      duplicate_cooked_guard  PASS  9  FAIL  7
+        blender_mesh                (no summary)          material_graph          PASS 30  FAIL  5
+        collections                 PASS 22  FAIL  5      run_retarget            PASS 15  FAIL  3
+        crash_journal               PASS 12  FAIL  6      set_struct_member       PASS 19  FAIL  1
+        ik_authoring                PASS 55  FAIL 12      simplified_collision_g  PASS 13  FAIL  9
+        ik_goals_solvers            PASS 36  FAIL 20      textures                PASS 23  FAIL  6
+        landscape_layer_register    PASS 12  FAIL 14      uncovered_reads6        PASS 33  FAIL  4
+        material_statistics         PASS  8  FAIL  7      virtual_bone_authoring  PASS 25  FAIL  4
+        niagara_set_user_param      PASS 13  FAIL  3      pcg_authoring           PASS 34  FAIL  2
+        project_graph               PASS 46  FAIL  1      recipes                 PASS 16  FAIL  1
+        socket_authoring            PASS 33  FAIL  1      sockets_ai              PASS 14  FAIL 14
+        spline_landscape            PASS 26  FAIL  2      ported_anim             PASS 48  FAIL  1
+
+      THREE OF THESE ARE ALREADY ANSWERED and should come off the list rather than be triaged again:
+        project_graph   FIXED - it was testing an empty folder. 46/1 -> 65/0.
+        crash_journal   FIXED - the harness was reading the WRONG PROJECT's journal. 13/5 -> 21/0.
+        recipes         FIXED - a 5.7-only failure path that disclosed a leftover without saying it
+                        was permanent. The message now says it.
+        socket_authoring is T3104, filed separately: the transaction buffer holds the asset and no
+                        endpoint can flush it. Not triageable until that item moves.
+
+      ported_anim IS THE INVERSE CASE AND THE RECORD PROVES IT: rc=1 on pass 1 and rc=0 on pass 2,
+      the only suite in the sweep whose result DIFFERS between passes. It consumes state another
+      suite leaves behind, so it fails alone and passes in company - the opposite of adoption and
+      invisible to a single-pass run in either direction.
+
+      SIX SUITES SKIPPED CLEANLY on both passes and are not failures: cooked_class_trap,
+      foliage_modes, load_partition_actors, niagara_params, safety_gate, water_zone. safety_gate
+      skips because the session's write mode is 'full' and the gate it tests is deliberately off.
 
 - [ ] **29 suites can only ever pass on a COOKED project, and most buyers are not on one**
       FOUND 2026-09-05, running the suites against Curfew - uncooked 5.7, 35,725 assets, a real
