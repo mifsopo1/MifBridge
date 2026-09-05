@@ -915,17 +915,15 @@ namespace MifBridge
 			VectorWrites.Emplace(FName(*Pair.Key), Colour);
 		}
 
-		// --- Apply --------------------------------------------------------------
-		// Modify() BEFORE the first write. Without it this handler recorded NOTHING into
-		// RunEndpoint's blanket transaction, so UTransBuffer::End saw FTransaction::IsTransient()
-		// (EditorTransaction.cpp — "return !bHasChanges"), popped the entry and restored UndoCount.
-		// Net effect: the material edit was not undoable AND the next Ctrl-Z silently reverted
-		// whatever the user did BEFORE it. undo_transactions then reported success over an edit it
-		// had not reverted. One line; the handler is already inside the transaction.
-		MIC->Modify();
-		// Address LAYER and BLEND parameters, not only globals. list_material_parameters reports the
-		// association and index of every parameter, and a layer parameter addressed as a global is
-		// simply not found - which reads as "no such parameter" for one that plainly exists.
+		// THE ASSOCIATION AND BOTH REMAINING VALUE SETS ARE RESOLVED HERE, ABOVE Modify(). Until
+		// 2026-09-04 this block ran AFTER it, so `{"scalars":{"Roughness":0.25},"textures":{"X":""}}`
+		// wrote Roughness and then refused with "NOTHING was applied." The header of this handler
+		// has always claimed "Validation is complete BEFORE the first write"; for scalars and
+		// vectors it was, which is presumably why the other two were never looked at.
+		//
+		// All of this is parsing or READING - GetTextureParameterValue and
+		// GetStaticSwitchParameterValue are getters, LoadAssetLenient touches a different asset -
+		// so none of it needed the object modified first.
 		const FString AssocStr = JStr(In, TEXT("association"), TEXT("global")).ToLower();
 		EMaterialParameterAssociation Assoc = GlobalParameter;
 		if (AssocStr == TEXT("layer"))      { Assoc = LayerParameter; }
@@ -938,42 +936,16 @@ namespace MifBridge
 			return;
 		}
 		const int32 AssocIndex = JInt(In, TEXT("index"), INDEX_NONE);
+		// Address LAYER and BLEND parameters, not only globals. list_material_parameters reports the
+		// association and index of every parameter, and a layer parameter addressed as a global is
+		// simply not found - which reads as "no such parameter" for one that plainly exists.
 		auto MakeInfo = [Assoc, AssocIndex](const FName& N)
 		{
 			return FMaterialParameterInfo(N, Assoc, AssocIndex);
 		};
 
-		int32 ScalarsApplied = 0;
-		int32 VectorsApplied = 0;
-		int32 TexturesApplied = 0;
-		int32 SwitchesApplied = 0;
 		TArray<TSharedPtr<FJsonValue>> Unknown;
-		for (const TPair<FName, float>& Write : ScalarWrites)
-		{
-			const FMaterialParameterInfo Info = MakeInfo(Write.Key);
-			float Existing = 0.f;
-			if (!MIC->GetScalarParameterValue(Info, Existing))
-			{
-				Unknown.Add(MakeShared<FJsonValueString>(Write.Key.ToString()));
-				continue;
-			}
-			MIC->SetScalarParameterValueEditorOnly(Info, Write.Value);
-			++ScalarsApplied;
-		}
-		for (const TPair<FName, FLinearColor>& Write : VectorWrites)
-		{
-			const FMaterialParameterInfo Info = MakeInfo(Write.Key);
-			FLinearColor Existing;
-			if (!MIC->GetVectorParameterValue(Info, Existing))
-			{
-				Unknown.Add(MakeShared<FJsonValueString>(Write.Key.ToString()));
-				continue;
-			}
-			MIC->SetVectorParameterValueEditorOnly(Info, Write.Value);
-			++VectorsApplied;
-		}
-
-		// --- textures ----------------------------------------------------------
+		TArray<TPair<FName, UTexture*>> TextureWrites;
 		TArray<FString> BadTextures;
 		for (const TPair<FString, TSharedPtr<FJsonValue>>& Write : TextureSet->Values)
 		{
@@ -1004,8 +976,7 @@ namespace MifBridge
 					: FString::Printf(TEXT("%s -> no asset at '%s'"), *Write.Key, *TexPath));
 				continue;
 			}
-			MIC->SetTextureParameterValueEditorOnly(Info, Tex);
-			++TexturesApplied;
+			TextureWrites.Emplace(FName(*Write.Key), Tex);
 		}
 		if (BadTextures.Num() > 0)
 		{
@@ -1016,7 +987,7 @@ namespace MifBridge
 			return;
 		}
 
-		// --- static switches ---------------------------------------------------
+		TArray<TPair<FName, bool>> SwitchWrites;
 		for (const TPair<FString, TSharedPtr<FJsonValue>>& Write : SwitchSet->Values)
 		{
 			const FMaterialParameterInfo Info = MakeInfo(FName(*Write.Key));
@@ -1034,7 +1005,63 @@ namespace MifBridge
 					TEXT("switches['%s'] must be true or false. NOTHING was applied."), *Write.Key));
 				return;
 			}
-			MIC->SetStaticSwitchParameterValueEditorOnly(Info, NewValue);
+			SwitchWrites.Emplace(FName(*Write.Key), NewValue);
+		}
+
+		// --- Apply ---------------------------------------------------------------
+		// NOTHING BELOW THIS LINE CAN REFUSE. Every value has been parsed, every texture loaded and
+		// type-checked, every unknown parameter already recorded. That is what makes the promises
+		// above true rather than asserted.
+		//
+		// Modify() BEFORE the first write. Without it this handler recorded NOTHING into
+		// RunEndpoint's blanket transaction, so UTransBuffer::End saw FTransaction::IsTransient()
+		// (EditorTransaction.cpp — "return !bHasChanges"), popped the entry and restored UndoCount.
+		// Net effect: the material edit was not undoable AND the next Ctrl-Z silently reverted
+		// whatever the user did BEFORE it. undo_transactions then reported success over an edit it
+		// had not reverted. One line; the handler is already inside the transaction.
+		MIC->Modify();
+
+		int32 ScalarsApplied = 0;
+		int32 VectorsApplied = 0;
+		int32 TexturesApplied = 0;
+		int32 SwitchesApplied = 0;
+		for (const TPair<FName, float>& Write : ScalarWrites)
+		{
+			const FMaterialParameterInfo Info = MakeInfo(Write.Key);
+			float Existing = 0.f;
+			if (!MIC->GetScalarParameterValue(Info, Existing))
+			{
+				Unknown.Add(MakeShared<FJsonValueString>(Write.Key.ToString()));
+				continue;
+			}
+			MIC->SetScalarParameterValueEditorOnly(Info, Write.Value);
+			++ScalarsApplied;
+		}
+		for (const TPair<FName, FLinearColor>& Write : VectorWrites)
+		{
+			const FMaterialParameterInfo Info = MakeInfo(Write.Key);
+			FLinearColor Existing;
+			if (!MIC->GetVectorParameterValue(Info, Existing))
+			{
+				Unknown.Add(MakeShared<FJsonValueString>(Write.Key.ToString()));
+				continue;
+			}
+			MIC->SetVectorParameterValueEditorOnly(Info, Write.Value);
+			++VectorsApplied;
+		}
+
+		// --- textures ----------------------------------------------------------
+		// Resolved above: existence checked, path loaded, class confirmed. This is assignment only.
+		for (const TPair<FName, UTexture*>& Write : TextureWrites)
+		{
+			MIC->SetTextureParameterValueEditorOnly(MakeInfo(Write.Key), Write.Value);
+			++TexturesApplied;
+		}
+
+		// --- static switches ---------------------------------------------------
+		for (const TPair<FName, bool>& Write : SwitchWrites)
+		{
+			MIC->SetStaticSwitchParameterValueEditorOnly(MakeInfo(Write.Key), Write.Value);
 			++SwitchesApplied;
 		}
 

@@ -11923,10 +11923,25 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       PM-007 is what happened when someone relied on it. The fix is a validation pre-pass ahead of
       the first mutation, or a refusal that stops claiming nothing changed and reports what landed.
 
-      BOTH SURVIVORS ARE C++ ON WRITE PATHS. A build is available now, but the change is a
-      reordering of validation against mutation on two sequencer/material handlers, and getting it
-      wrong leaves an asset in a different wrong state than before. Wants an editor session and
-      the two payloads above, which the verifier wrote out in full.
+      BOTH SURVIVORS FIXED AND BUILT, 2026-09-04, each by moving validation above the first
+      mutation rather than by trying to undo one afterwards.
+
+        set_sequence_keys       the channel type is checked once above the transaction instead of
+                                once per key, and every object path is resolved and class-checked
+                                before anything is written, with the pointers kept so the write
+                                loop reads them rather than loading again. A load that already
+                                succeeded cannot fail on a retry, so the loop cannot refuse.
+        set_material_parameter  the association parse and BOTH remaining value sets moved above
+                                Modify(). This one had a fourth site nobody had counted: Modify()
+                                ran, THEN `association` was parsed, and an unrecognised value
+                                failed with "NOTHING was applied" - false, because Modify() records
+                                the object and dirties the package. All four are gone.
+
+      The handler's own header had claimed "Validation is complete BEFORE the first write" the
+      whole time. It was true of scalars and vectors, which is presumably why the other two were
+      never read.
+
+      Detector: 66 findings before, 61 after. Built on 5.3 and probed on 5.7 for both.
 
       THE C++ ONES NEED A REBUILD, which needs the editor closed, so they are blocked the same way
       the accepted-summaries item is. The two Blender ones are not blocked.

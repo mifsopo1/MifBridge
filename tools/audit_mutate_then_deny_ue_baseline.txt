@@ -4,10 +4,6 @@
 # known, not as correct - see the spec item for the fix ordering.
 MifBridgeAnimation.cpp:add_anim_notify:Modify:changed
 MifBridgeAnimation.cpp:create_blend_profile:Modify:created
-MifBridgeAuthoring.cpp:set_material_parameter:Modify:applied
-MifBridgeAuthoring.cpp:set_material_parameter:SetScalarParameterValueEditorOnly:applied
-MifBridgeAuthoring.cpp:set_material_parameter:SetTextureParameterValueEditorOnly:applied
-MifBridgeAuthoring.cpp:set_material_parameter:SetVectorParameterValueEditorOnly:applied
 MifBridgeCollision.cpp:add_simplified_collision:MarkPackageDirty:changed
 MifBridgeCollision.cpp:add_simplified_collision:SetCustomizedCollision:changed
 MifBridgeCollision.cpp:set_collision:Modify:changed
