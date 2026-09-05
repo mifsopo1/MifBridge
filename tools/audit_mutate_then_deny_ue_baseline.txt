@@ -23,12 +23,6 @@ MifBridgeNodes3.cpp:add_switch_name:Modify:kept
 MifBridgeNodes3.cpp:add_switch_string:Modify:kept
 MifBridgeNodes3.cpp:add_timeline:Modify:created
 MifBridgeNodes4.cpp:set_node_state:Modify:changed
-MifBridgeNodes5.cpp:set_property:MarkPackageDirty:changed
-MifBridgeNodes5.cpp:set_property:Modify:changed
-MifBridgeNodes5.cpp:set_property:PostEditChangeProperty:changed
-MifBridgeNodes5.cpp:set_property:PreEditChange:changed
-MifBridgeNodes5.cpp:set_property:SetDirtyFlag:changed
-MifBridgeNodes5.cpp:set_property:SetPropertyValue:changed
 MifBridgeNodes7.cpp:add_k2_node:SetObjectPropertyValue_InContainer:added
 MifBridgeNodes7.cpp:add_k2_node:SetPropertyValue_InContainer:added
 MifBridgeNodes7.cpp:unmap_input_key:Modify:changed

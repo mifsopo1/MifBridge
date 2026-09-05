@@ -14792,6 +14792,46 @@ out-of-process the way ops_gen already does with gen_status.
       endpoint already listed for the same call and verb does not show as new; a new endpoint, a new
       mutator or a changed promise all do.
 
+      ================================================================================
+      2026-09-05: THE AUDIT WAS SCORING THE MODEL IMPLEMENTATION WORST. 59 -> 51.
+      ================================================================================
+      Started this item at set_property, because it carried 8 of the findings - more than any other
+      endpoint - and is one of the most-used endpoints in the bridge. It turned out to be the one
+      handler that ALREADY DOES the thing this whole item asks for:
+
+        it records bPackageWasDirty before writing
+        it attempts the write, then RE-READS the property and compares
+        when the value did not move it puts the flag back - "Only ever CLEARS a flag this call set
+          itself - a package that was already dirty when we arrived stays dirty"
+        it reports packageDirtyRestored, applied:false, verified:false
+        and only then refuses, with a promise that is TRUE
+
+      All eight were false positives, and the audit could not see the restoration because it only
+      looks for a mutator followed by a refusal. So the endpoint that leaves the asset exactly as it
+      found it scored worse than the ones that leave it dirty, which teaches the wrong lesson to
+      anybody reading the list to decide what to fix.
+
+      MEASURED ACROSS ALL 33 ENDPOINTS before changing anything: 8 of 59 findings are in a handler
+      that restores, and they are all set_property's. The other 51 are genuine.
+
+      THE MARKER IS packageDirtyRestored, NOT SetDirtyFlag(false). The call alone appears where a
+      flag is cleared for unrelated reasons; the OUTPUT FIELD is emitted only where the restoration
+      is a deliberate, caller-visible contract - so the exemption cannot silently excuse a handler
+      that merely touches a dirty flag somewhere. Scoped to the refusal's own block, for the reason
+      guarded_by_did_mutate is.
+
+      AND THE FIRST VERSION OF THE RULE DID NOTHING, which is worth recording because it looked
+      like it worked. It searched the SCRUBBED body, where blank_comments_and_strings has already
+      blanked TEXT("packageDirtyRestored"). The count did not move. It reads the raw body now, and
+      the block offsets still index it correctly because the scrubber preserves length.
+
+      SELFTEST BOTH DIRECTIONS, per this file's own standard that a rule which cannot be shown
+      firing is the thing this repo keeps deleting: a restoring branch is exempt, and the SAME shape
+      without the marker still fires. 14 cases, 0 failures. Baseline 38 -> 37 entries, gate green.
+
+      SO THE REAL NUMBER IS 51, NOT 59, and set_property is the worked example the other 32
+      endpoints should be measured against rather than the worst offender.
+
       Mutation-tested: removing one baseline entry makes --check name it and exit 1.
 
       Gate it at zero once they are fixed and a build has verified them.
@@ -15277,7 +15317,7 @@ out-of-process the way ops_gen already does with gen_status.
       supplied a set. Print `allowed` and `m.group(0)` together in the scan loop and it will be
       obvious in one run.
 
-- [ ] **set_keyframe and evaluate_at_frame resolve the same dataPath against different datablocks**
+- [x] **set_keyframe and evaluate_at_frame resolve the same dataPath against different datablocks**
       FOUND 2026-09-05, one minute after the set_world finding and in the same investigation.
 
         set_keyframe {object: "Lamp_Hall00", dataPath: "energy", value: 780}   -> ok, and correct
@@ -15302,6 +15342,22 @@ out-of-process the way ops_gen already does with gen_status.
       THE FIX IS PROBABLY ONE LINE: try the object, then its data, the way set_keyframe already
       does. Failing that, say so - "energy is on the light data; evaluate_at_frame reads the object"
       is a hint, and the current message is a stack-trace fragment.
+
+      FIXED 2026-09-05, and it was that shape. evaluate_at_frame now tries the EVALUATED object and
+      then its evaluated datablock, and reports which one answered - a bare number would leave the
+      caller unable to tell object.foo from data.foo where both could exist, which is the ambiguity
+      that made the op unusable. A path that resolves on neither still errors, and the message now
+      names both places it looked instead of returning a path_resolve fragment.
+
+      _resolve_target is deliberately NOT re-derived: it owns the object-or-data decision for
+      set_keyframe and a second copy would drift from it.
+
+      MEASURED ON THE BUNKER'S OWN ANIMATION, which is the case that exposed it. Lamp_Hall04 is
+      keyed 210 / 0 / 115.5 / 210 on CONSTANT interpolation, and evaluating it at those frames now
+      returns exactly that with from:"data". So stage 5's beats are verifiable by EVALUATION rather
+      than by counting pixels in a render - the thing b6 had to say it could not do.
+
+      Blender suites 56 runs across 3.6 / 4.2 / 4.4 / 5.0, 0 failed.
 
 - [x] **bake_physics UNDER-REPORTED its own work: particle caches were missing from `caches`**
       FOUND 2026-09-05 building the bunker showcase's atmosphere stage.

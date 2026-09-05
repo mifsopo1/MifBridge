@@ -201,6 +201,47 @@ def guarded_by_did_mutate(scrubbed, blks, rpos, flags):
     return any(name in flags for name in FLAG_NEG.findall(head))
 
 
+def restores_package_dirty(raw, blks, rpos):
+    """Does this refusal branch RESTORE the package's dirty flag before refusing?
+
+    set_property is the one handler that already does the thing this whole audit exists to ask for,
+    and the audit reported it EIGHT TIMES - more than any other endpoint. It records whether the
+    package was dirty on entry, attempts the write, re-reads the property, and when the value did
+    not move it puts the flag back:
+
+        if (LeafPackage && !bPackageWasDirty)
+        {
+            LeafPackage->SetDirtyFlag(false);
+            Out->SetBoolField(TEXT("packageDirtyRestored"), true);
+        }
+        ... Fail(Out, "set_property did NOT write ... Nothing was changed.")
+
+    That refusal's promise is TRUE, and the handler is the pattern the other 32 should copy. An
+    audit that scores the model implementation worst than the ones that leave the asset dirty is
+    teaching the wrong lesson.
+
+    THE MARKER IS packageDirtyRestored, NOT SetDirtyFlag(false), and the difference matters. The
+    call alone appears in handlers that clear a flag for unrelated reasons; the OUTPUT FIELD is
+    emitted only where the restoration is the deliberate, caller-visible contract. Using the field
+    keeps this from silently excusing a handler that happens to touch a dirty flag somewhere.
+
+    Scoped to the refusal's own block for the same reason guarded_by_did_mutate is: a restoration
+    somewhere else in a 600-line handler says nothing about THIS branch.
+
+    READS THE RAW BODY, NOT THE SCRUBBED ONE, and the first version of this did not - which is why
+    it changed nothing when it was added. The marker lives inside TEXT("packageDirtyRestored"), and
+    blank_comments_and_strings blanks exactly that. It preserves LENGTH, so the block offsets
+    computed from the scrubbed text index the raw text correctly; only the search target changes.
+    """
+    inner = [b for b in blks if b["start"] < rpos < b["end"]]
+    if not inner:
+        return False
+    blk = max(inner, key=lambda b: b["start"])
+    # The branch, plus a little above it - the restore usually sits at the top of the same block.
+    seg = raw[max(0, blk["start"] - 900):blk["end"]]
+    return "packageDirtyRestored" in seg
+
+
 def claim_at(raw, scrubbed, pos):
     """The promise this refusal makes, or None. Joins the literals of the whole call."""
     open_paren = scrubbed.find("(", pos)
@@ -379,6 +420,8 @@ def scan_body(fname, endpoint, body, base, findings, scoped, delegating):
                 continue
             if guarded_by_did_mutate(scrubbed, blks, rpos, flags):
                 continue
+            if restores_package_dirty(body, blks, rpos):
+                continue
             row = {"file": fname, "endpoint": endpoint, "call": mname, "verb": verb,
                    "line": base + body[:mpos].count("\n") + 1,
                    "refuseLine": base + body[:rpos].count("\n") + 1, "claim": claim[:100]}
@@ -511,9 +554,45 @@ def selftest():
     print("  %-4s %-42s expected %-5s got %s"
           % ("ok" if ok else "FAIL", "operation verb lands in scoped", True, ok))
 
+    # THE RESTORATION RULE, both directions. Added with the rule, because this file's own docstring
+    # says a rule that cannot be demonstrated firing is the thing this repo keeps deleting - and the
+    # first version of this rule searched the SCRUBBED body, where TEXT("packageDirtyRestored") has
+    # already been blanked, so it changed nothing at all and looked like it worked.
+    RESTORE_CASES = [
+        ("restoring branch is exempt", False, """{
+            Obj->Modify();
+            if (Requested && !Changed)
+            {
+                if (Pkg && !bPackageWasDirty)
+                {
+                    Pkg->SetDirtyFlag(false);
+                    Out->SetBoolField(TEXT("packageDirtyRestored"), true);
+                }
+                Fail(Out, TEXT("did NOT write it. Nothing was changed."));
+                return;
+            }
+        }"""),
+        ("same shape WITHOUT the marker still fires", True, """{
+            Obj->Modify();
+            if (Requested && !Changed)
+            {
+                Fail(Out, TEXT("did NOT write it. Nothing was changed."));
+                return;
+            }
+        }"""),
+    ]
+    for name, should_fire, body in RESTORE_CASES:
+        findings, scoped, _d = [], [], []
+        scan_body("selftest.cpp", "probe", body, 0, findings, scoped, _d)
+        fired = bool(findings)
+        ok = fired == should_fire
+        bad += 0 if ok else 1
+        print("  %-4s %-42s expected %-5s got %s"
+              % ("ok" if ok else "FAIL", name, should_fire, fired))
+
     print("")
     print("selftest: %d case(s), %d failure(s)"
-          % (len(SELFTEST) + len(HELPER_SELFTEST) + 1, bad))
+          % (len(SELFTEST) + len(HELPER_SELFTEST) + 1 + len(RESTORE_CASES), bad))
     return bad
 
 
