@@ -560,6 +560,13 @@ def main():
     print("    - whether any asset actually infringes (3(g)(i) is broader than one name)")
     print("    - whether the AI-generated portion is 'material' under 18(k)(ii)")
     print("    - whether the listing text matches what the product does (3(f)(i))")
+    print("    - THE GALLERY IMAGES. This reads the PACKAGE and nothing else, and 3(g)(i) covers")
+    print("      the whole listing - a screenshot is content you warrant you have rights to.")
+    print("      Owning the PROJECT is not owning what is in FRAME: on 2026-09-05 three renders")
+    print("      of Andre's own game were dropped because its scenery is marketplace content,")
+    print("      licensed to ship inside that game and not to advertise a different product.")
+    print("      No tool here can see that. A person has to look at each image and name what is")
+    print("      in it.")
     print("    - everything in sections 4-19 that is not about the contents of the package")
     print("    A clean run removes the mechanical reasons not to publish. It is not permission.")
 

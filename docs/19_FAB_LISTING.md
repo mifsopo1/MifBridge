@@ -208,7 +208,7 @@ not what it was planned to be.
 | 3 | Blender before/after: `mesh_quality` findings, then `recipe_game_ready`, with the numbers | **`make_demo.py`** |
 | 4 | Round trip — an asset authored in Blender, landing in Unreal | needs a scratch project |
 | 5 | The API refusing a wrong call and naming what it accepts | **`make_api_card.py`** |
-| 6 | MifBridge driving a real project on stock UE 5.7 | **`make_ue_demo.py`** — 3 kept |
+| 6 | MifBridge driving a real project on stock UE 5.7 | **DROPPED** — bought assets, see below |
 
 **The plan's central assumption was wrong, and it is worth writing down rather than quietly
 fixing.** It said the images would be made by the plugin doing its job — `capture_viewport` is an
@@ -255,12 +255,41 @@ transaction buffer holds it, and the bridge binds undo/redo but nothing that cle
 generating them in Curfew would leave undeletable junk in Andre's game. They belong in a throwaway
 project, which also makes the shots reproducible.
 
-### Should Curfew appear on a public listing at all?
+### Curfew is OUT of the gallery, and the reason is not the one I first gave
 
-It is Andre's own IP, so there is no §3(g)(i) problem — that was the reason for choosing it over the
-DDS2 fork, whose content is another studio's. The remaining question is not legal: image 6 shows an
-**unannounced game's greybox**. That is Andre's call, and the listing does not depend on it — images
-3 and 5 carry the argument on their own.
+I framed this as "Curfew is Andre's own IP, so §3(g)(i) is satisfied — the only question is whether
+you want to show an unannounced game." Andre corrected it, and the correction is the important half:
+
+> *"thats using bought assets, not custom made stuff"*
+
+**Owning the project is not owning what is in frame.** Curfew's visible content is almost entirely
+marketplace: `LowPolyMegapolis` vehicles, `PunchAndKick` animations, `UltraDynamicSky`, MetaHuman
+bodies, and the road/kerb/foliage dressing. A marketplace licence lets you ship that art **inside
+your game**. Using it as the sales imagery for a **different product you are selling** is a separate
+grant, and Fab §3(g)(i) makes the seller warrant rights to everything in the listing — the images
+are part of the listing. The risk is real and the reward was a picture of a greybox city.
+
+So the three renders are dropped. `make_ue_demo.py` stays: it is correct, read-only, and checks its
+own output, and it will be worth running the moment there is a scene we own outright. What it needs
+is a project whose content is ours, not a better camera.
+
+**One of the panel shots has the same problem in weaker form.** The PERFORMANCE tab lists actor
+names — `Lowmoor_Roads_Mesh_*`, `CR_Mannequin_Body`, `MetaHumanDefaultEditorPipelineActor`, and
+`Ultra_Dynamic_Sky` twice, which is a third-party **product name** rendered into marketing art. Names
+in a UI list are far weaker than rendering the art itself, but it is the same category of claim and
+it is avoidable. Use ACTIVITY and INHERITANCE, which show only endpoint names, our own scratch paths
+(`/Game/_MifNope/DoesNotExist`), engine classes and Andre's own `CF*` C++ classes.
+
+**What this leaves, and it is enough.** Images 3 and 5 are generated from nothing but our own code
+and its output, and 2 is the product's own UI. The gallery for a *tool* does not need somebody
+else's scenery — the argument was never "look at this landscape", it was "look at what the API tells
+you when you get it wrong".
+
+### The readiness tool does not judge the gallery
+
+`fab_readiness` measures the **package**. It has nothing to say about listing images, and §3(g)(i)
+applies to both. This decision was made by a person reading a screenshot, which is exactly the kind
+of thing its REACH block already warns it cannot do — now stated there explicitly.
 
 ## 6. The listing copy
 

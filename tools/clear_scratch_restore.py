@@ -29,29 +29,54 @@ import sys
 
 # WHICH PROJECT'S MANIFEST. This was a hardcoded DDS2 path - the third tool found with that shape on
 # 2026-09-05, after mifwatch and test_crash_journal, and the worst of the three: this one WRITES.
-# Pointed at the wrong project it would clear a restore offer belonging to a session it never
-# touched, and the whole point of the file is that discarding somebody's recovery data silently is
-# worse than the modal it prevents.
+# Pointed at the wrong project it clears a restore offer belonging to a session it never touched,
+# and the whole point of the file is that discarding somebody's recovery data silently is worse than
+# the modal it prevents.
 #
-# Prefer the running editor; fall back to DDS2 when nothing is up. The fallback is normal here - this
-# is usually run right after a kill, when there is no process left to ask - so callers PRINT which
-# was used rather than assuming.
-_DDS2_MANIFEST = "D:/DDS2SDK/Game/Saved/Autosaves/PackageRestoreData.json"
+# Only reached when mifaudit cannot be imported at all. See default_manifest for why "ask the live
+# editor" was the wrong question and why the answer comes from the targeted project instead.
+_LAST_RESORT = "D:/DDS2SDK/Game/Saved/Autosaves/PackageRestoreData.json"
 
 
 def default_manifest():
-    """(path, source). Ask the live editor first; say where the answer came from."""
+    """(path, source). The project this RUN targets - not merely whoever holds the port.
+
+    THE FIRST VERSION OF THIS WAS STILL WRONG, and an audit found it the same night. It asked the
+    live editor and otherwise fell back to a hardcoded DDS2 literal, which reads as a sensible
+    ordering and is exactly backwards at the one call site that matters.
+
+    mifaudit.launch_editor() calls clear() immediately AFTER taskkilling every editor and sleeping
+    five seconds. Nothing is listening on the port by then, by construction - so live_saved_dir()
+    returns None every single time and the FALLBACK is the normal path, never the exception. Aimed
+    at Curfew, the sequence was: kill Curfew's editors, then clear DDS2's restore manifest. It wrote
+    to a project the run had never touched, which is verbatim the failure this module was changed to
+    prevent. And Curfew's own manifest went uncleared, so the modal the call exists to pre-empt
+    still came up on the editor launched forty lines later.
+
+    "Whoever holds the port" was never the right question either. mifaudit.UPROJECT already names
+    the project this run targets, it is aimed by MIF_PROJECT_PATH, and launch_target() has already
+    refused to proceed unless its basename equals PROJECT_MARKER. That verified name is the answer;
+    asking the network for it was the mistake.
+    """
     try:
         import mifaudit as M
-        saved = M.live_saved_dir()
-        if saved:
-            return os.path.join(saved, "Autosaves", "PackageRestoreData.json"), "the running editor"
-    except Exception:                     # noqa: BLE001 - no bridge module is not a failure here
+        proj = getattr(M, "UPROJECT", "")
+        if proj:
+            return (os.path.join(os.path.dirname(proj), "Saved", "Autosaves",
+                                 "PackageRestoreData.json"),
+                    "the project this run targets (%s)" % os.path.basename(proj))
+    except Exception:                     # noqa: BLE001 - no mifaudit is not a failure here
         pass
-    return _DDS2_MANIFEST, "the default DDS2 project (no editor is running)"
+    return _LAST_RESORT, "the built-in default - mifaudit could not be asked"
 
 
-MANIFEST = default_manifest()[0]
+# RESOLVED PER CALL, NOT FROZEN AT IMPORT. This was `MANIFEST = default_manifest()[0]` evaluated
+# once when the module first loaded, and bound as the default of read_entries and clear - so a
+# long-lived process could not follow a change of target, and the value depended on whether an
+# editor happened to be up at import time. A path that means "the current project" must be asked
+# for when it is used.
+def MANIFEST():
+    return default_manifest()[0]
 
 # /Temp/ is the engine's home for the unsaved Untitled map a headless session leaves behind; it is as
 # disposable as the /Game/_Mif* assets the suites create.
@@ -81,13 +106,14 @@ EDITOR_FURNITURE_PREFIXES = (
 )
 
 
-def read_entries(path=MANIFEST):
+def read_entries(path=None):
     """Return the package path names the manifest offers to restore.
 
     The engine writes this file as UTF-16LE with NO byte order mark, which json.load and
     codecs 'utf-16' both refuse - the latter with "stream does not start with BOM". Decode it
     explicitly rather than guessing.
     """
+    path = path or MANIFEST()
     if not os.path.isfile(path):
         return []
     raw = open(path, "rb").read()
@@ -105,7 +131,7 @@ def is_editor_furniture(name):
     return any(name.startswith(p) for p in EDITOR_FURNITURE_PREFIXES)
 
 
-def clear(path=MANIFEST, quiet=False, force=False, why=None):
+def clear(path=None, quiet=False, force=False, why=None):
     """Empty the restore list if and only if every entry is scratch.
 
     Returns (cleared, count, offenders). `cleared` is False both when there was nothing to do and
@@ -130,6 +156,13 @@ def clear(path=MANIFEST, quiet=False, force=False, why=None):
     killed is yours. Nothing else here can know that, which is exactly why it is a parameter and not
     a heuristic.
     """
+    # RESOLVE AND SAY SO. A function that deletes somebody's recovery offer must name the file it is
+    # about to write, even when quiet - `quiet=True` inside a bare `except: pass` was how the wrong
+    # project got written with nothing printed and nothing raised.
+    path, source = (path, "given by the caller") if path else default_manifest()
+    if not quiet:
+        print("restore manifest: %s" % path)
+        print("                  from %s" % source)
     names = read_entries(path)
     if not names:
         return False, 0, []
