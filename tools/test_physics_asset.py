@@ -300,6 +300,76 @@ def main():
         check("T2905 an unknown bone is refused and the real ones listed",
               gone.get("ok") is False and "root" in (gone.get("error") or ""),
               (gone.get("error") or "")[:200])
+        # ------------------------------------------------------------------ T2907 the claim
+        print("\n=== T2907: describe_physics_asset says set_property reaches everything else ===")
+        # THE CLAIM, and it is the reason this section exists rather than the endpoints being
+        # exercised separately: describe_physics_asset's note tells callers that everything outside
+        # disabledPairs and the index numbering is an ordinary UPROPERTY that get_property returns
+        # and set_property tunes. audit_cross_endpoint_claims flagged it as compared by NO suite,
+        # and when it was compared by hand on 2026-09-05 the ROUTE it named turned out to be wrong -
+        # get_property{SkeletalBodySetups} hands back object REFERENCES, not geometry.
+        #
+        # BEHAVIOUR, NOT THE WORDING. The note itself is being corrected on
+        # pending/source-needs-a-build and cannot land until both engines are rebuilt, so asserting
+        # its text here would fail on master for a reason that is not a defect. What is asserted is
+        # the thing the caller actually needs to be true, which no rebuild changes.
+        #
+        # ON A DUPLICATE. Bodies made by add_physics_body fit NO geometry - T2901 asserts exactly
+        # that - so the scratch asset has no primitive to read a radius from. A real one duplicated
+        # into scratch does, and nothing here writes to the asset it copied.
+        if real:
+            src = real[0]["path"]
+            dup_path = "/Game/_MifPhys/PA_MifClaim%d" % st
+            dup = M.call("duplicate_asset", {"path": src, "newPath": dup_path}, timeout=300)
+            if dup.get("ok") is not True:
+                # A cooked source is refused by duplicate_asset as a crash guard, so on a cooked
+                # project this cannot run at all. SKIPPED, not failed - the difference matters.
+                print("  SKIP  T2907 needs an uncooked PhysicsAsset to duplicate: %s"
+                      % str(dup.get("error"))[:180])
+            else:
+                copy = dup.get("newPath") or dup_path
+                refs = M.call("get_property", {"objectPath": copy,
+                                               "propertyPath": "SkeletalBodySetups"})
+                blob = json.dumps(refs.get("value"))
+                check("T2907 get_property{SkeletalBodySetups} succeeds", refs.get("ok") is True,
+                      json.dumps(refs)[:220])
+                # THE CORRECTION, asserted so it cannot quietly go back: this path is references.
+                check("T2907 and it returns object REFERENCES, not the primitives - which is why "
+                      "the note's original wording sent callers to a dead end",
+                      "SkeletalBodySetup" in blob and "Radius" not in blob, blob[:220])
+
+                agg = M.call("get_property", {"objectPath": copy,
+                                              "propertyPath": "SkeletalBodySetups[0].AggGeom"})
+                aggblob = json.dumps(agg.get("value"))
+                check("T2907 the primitives ARE reachable, one level down at [N].AggGeom",
+                      agg.get("ok") is True and "Radius" in aggblob, aggblob[:250])
+
+                # THE WRITE HALF. Which primitive array is populated depends on the asset, so the
+                # radius path is discovered rather than assumed - hardcoding SphylElems would fail
+                # on a project whose first body is a box.
+                elems = None
+                for kind in ("SphylElems", "SphereElems", "BoxElems"):
+                    if kind in aggblob and "Radius" in aggblob.split(kind, 1)[1][:120]:
+                        elems = kind
+                        break
+                if elems is None:
+                    print("  SKIP  T2907 body 0 has no radius-bearing primitive to tune (%s)"
+                          % aggblob[:140])
+                else:
+                    path = "SkeletalBodySetups[0].AggGeom.%s[0].Radius" % elems
+                    before = M.call("get_property", {"objectPath": copy, "propertyPath": path})
+                    target = round(float(before.get("value")) + 7.25, 3)
+                    w = M.call("set_property", {"objectPath": copy, "propertyPath": path,
+                                                "value": target})
+                    after = M.call("get_property", {"objectPath": copy, "propertyPath": path})
+                    check("T2907 set_property tunes a primitive at that depth", w.get("ok") is True,
+                          json.dumps(w)[:250])
+                    # ok:true is not proof - the read-back is.
+                    check("T2907 and the new radius READS BACK, which ok:true alone never shows",
+                          abs(float(after.get("value") or 0) - target) < 0.01,
+                          "wanted %s, got %r" % (target, after.get("value")))
+                SC.confirm_call("delete_asset", {"path": copy})
+
     finally:
         if made:
             SC.confirm_call("delete_asset", {"path": PA})

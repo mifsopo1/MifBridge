@@ -393,6 +393,40 @@ def main():
                       back.get("ok") is True, json.dumps(back)[:250])
         SC.confirm_call("delete_asset", {"path": bp})
 
+    # ---------------------------------------------------------------- S110 the control
+    print("\n=== S110: sculpt_landscape - the control this endpoint's zero-change note cites ===")
+    # WHY IT IS HERE. apply_spline_to_landscape's zero-change note argues that NOT ONE height sample
+    # changing is a real result rather than a dead harness, and its evidence is another endpoint:
+    # "sculpt_landscape moved 736 vertices through the same interface in the same session".
+    # audit_cross_endpoint_claims flagged that as compared by NO suite - this suite mentioned
+    # sculpt_landscape only in its docstring - so the argument rested on a number nobody re-checked.
+    #
+    # Measured by hand 2026-09-05 on a purpose-built landscape: 335 samples moved. The assertion
+    # here is NON-ZERO rather than any particular count, because the count is a function of radius,
+    # falloff and the landscape's resolution and would be a brittle thing to pin.
+    #
+    # IT DEFORMS THE LANDSCAPE, to the same standard as the spline writes above: the level is not
+    # saved, so the change dies with the editor. That is the whole suite's existing bargain, not a
+    # new one taken here.
+    sc = M.raw_post("sculpt_landscape", _land({"center": {"x": 0, "y": 0}, "radius": 2000,
+                                               "mode": "raise", "amount": 250, "falloff": 0.5}))
+    check("S110 sculpt_landscape answers on the same landscape this suite drives",
+          sc.get("ok") is True, json.dumps(sc)[:250])
+    if sc.get("ok") is True:
+        touched = sc.get("verticesTouched")
+        check("S110 and it moves a NON-ZERO number of height samples, which is the evidence "
+              "apply_spline_to_landscape's zero-change note stands on",
+              isinstance(touched, (int, float)) and touched > 0,
+              "verticesTouched=%r; keys=%s" % (touched, sorted(sc.keys())))
+        # THE WARNING IS PART OF THE ANSWER. On a landscape WITH edit layers this endpoint writes
+        # the merged heightmap and says the write may be discarded by the next composite - so a
+        # non-zero count is not by itself proof the terrain kept the change.
+        if sc.get("editLayerWarning"):
+            print("  NOTE  this landscape HAS edit layers, so sculpt_landscape warns its write may "
+                  "be discarded by the next composite - the count above is what it touched, not "
+                  "what survived.")
+            print("        %s" % str(sc.get("editLayerWarning"))[:200])
+
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for name, detail in FAIL:
