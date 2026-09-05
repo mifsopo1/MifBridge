@@ -175,7 +175,7 @@ namespace MifBridge
 			{
 				Fail(Out, TEXT("the schema will not route this link through a reroute. The original "
 							   "wire is untouched. WHAT IS LEFT BEHIND: the reroute node is in the "
-							   "graph - remove it with remove_node."));
+							   "graph - remove it with remove_node. It is NOT undone by the failure: the bridge cancels its transaction, and a cancel discards the undo entry without applying it (PM-007)."));
 				return;
 			}
 			SrcPin->BreakLinkTo(DstPin);

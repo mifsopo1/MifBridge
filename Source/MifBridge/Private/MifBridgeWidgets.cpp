@@ -459,7 +459,7 @@ namespace MifBridge
 				Fail(Out, FString::Printf(
 					TEXT("could not add a %s to that binding. WHAT IS LEFT BEHIND: the widget "
 						 "binding, if this call created it — read it back with "
-						 "list_widget_animations."), *TrackClass->GetName()));
+						 "list_widget_animations. It is NOT undone by the failure: the bridge cancels its transaction, and a cancel discards the undo entry without applying it (PM-007)."), *TrackClass->GetName()));
 				return;
 			}
 			// A property track that does not know its property animates nothing. This is the step
@@ -472,7 +472,7 @@ namespace MifBridge
 			if (!Section)
 			{
 				Fail(Out, TEXT("the track was created but produced no section. WHAT IS LEFT BEHIND: "
-							   "an empty track on this binding."));
+							   "an empty track on this binding. It is NOT undone by the failure: the bridge cancels its transaction, and a cancel discards the undo entry without applying it (PM-007)."));
 				return;
 			}
 			// A section with no range evaluates nowhere. Match the animation's playback range so
@@ -1429,7 +1429,7 @@ namespace MifBridge
 		{
 			Fail(Out, TEXT("the animation was created but did not attach to the blueprint. WHAT IS "
 						   "LEFT BEHIND: an orphaned UWidgetAnimation object; re-read with "
-						   "list_widget_animations before retrying."));
+						   "list_widget_animations before retrying. It is NOT undone by the failure: the bridge cancels its transaction, and a cancel discards the undo entry without applying it (PM-007)."));
 			return;
 		}
 

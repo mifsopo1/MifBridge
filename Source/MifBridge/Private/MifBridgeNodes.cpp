@@ -1973,7 +1973,7 @@ namespace MifBridge
 			{
 				// Batch M, option (c): a cancelled transaction discards the undo entry rather than
 				// rolling a node creation back (PM-007), so say what may be sitting in the graph.
-				Fail(Out, TEXT("could not create a function Result node for the new output. WHAT MAY BE LEFT BEHIND: a bare UK2Node_FunctionResult may already have been placed in this graph and is NOT removed by this failure - check with list_nodes and remove it with remove_node (which needs confirm:true)."));
+				Fail(Out, TEXT("could not create a function Result node for the new output. WHAT MAY BE LEFT BEHIND: a bare UK2Node_FunctionResult may already have been placed in this graph and is NOT removed by this failure - check with list_nodes and remove it with remove_node (which needs confirm:true). It is NOT undone by the failure: the bridge cancels its transaction, and a cancel discards the undo entry without applying it (PM-007)."));
 				return;
 			}
 
@@ -1994,7 +1994,7 @@ namespace MifBridge
 					// that may already be wired, which is remove_pin's confirm-gated job, not this
 					// handler's.
 					Fail(Out, FString::Printf(
-						TEXT("CreateUserDefinedPin failed for '%s' on a Return node (%d of %d sibling Return nodes had already been given the pin). WHAT IS LEFT BEHIND: those %d pins, and a Result node if this call created one. They are NOT removed - use remove_pin {confirm:true} on '%s' to undo them."),
+						TEXT("CreateUserDefinedPin failed for '%s' on a Return node (%d of %d sibling Return nodes had already been given the pin). WHAT IS LEFT BEHIND: those %d pins, and a Result node if this call created one. They are NOT removed - use remove_pin {confirm:true} on '%s' to undo them. It is NOT undone by the failure: the bridge cancels its transaction, and a cancel discards the undo entry without applying it (PM-007)."),
 						*FinalName.ToString(), SiblingsUpdated, Results.Num(), SiblingsUpdated, *FinalName.ToString()));
 					return;
 				}
