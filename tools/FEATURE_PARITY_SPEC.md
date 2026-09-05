@@ -14941,42 +14941,45 @@ out-of-process the way ops_gen already does with gen_status.
       jsonable's depth cap went 8 -> 24. It guards against CYCLES, not nesting, and at 8 it was about
       to start truncating real answers now that every response passes through it.
 
-- [ ] **Curfew has two landscape endpoints this tree does not, and they are UNCOMMITTED**
-      FOUND 2026-09-05 while preparing the 5.7 sweep Andre asked for, by checking the vendored copy
-      before touching it rather than after. The check was meant to answer "is Curfew's plugin stale"
-      - it is, by six days - and turned up the opposite problem as well.
+- [x] **a vendored copy could be overwritten without anyone checking what it held** DONE 2026-09-05
+      tools/check_vendored.py, and it was written because of a scare that turned out to be MY
+      MISREADING - which is the more useful version of the story, so it is recorded as it happened.
 
-      `git status` in D:/RoguelikeDealerGame shows 431 uncommitted lines in the vendored MifBridge:
+      PREPARING THE 5.7 SWEEP, `git status` in D:/RoguelikeDealerGame showed 431 uncommitted lines
+      in the vendored MifBridge, including `+MIF_DECL(import_landscape_heightmap)` and its export
+      twin. I read those `+` lines as work existing nowhere else, said so, and stopped the sync to
+      protect them.
 
-        MifBridgeLandscape.cpp   +427
-        MifBridgeHandlers.h      +2   MIF_DECL(import_landscape_heightmap)
-                                      MIF_DECL(export_landscape_heightmap)
-        MifBridgeCommon.cpp      +2   the matching MIF_BIND pair
+      THEY WERE NOT UNIQUE. Both endpoints are in this tree at MifBridgeCommon.cpp:323-324 and have
+      been for some time. A `git diff` shows what changed in THAT repo, not what differs between two
+      repos, and I treated one as the other. The uncommitted lines were Curfew catching up, not
+      Curfew getting ahead.
 
-      Two whole endpoints that exist nowhere in this tree. Uncommitted, so git cannot recover them,
-      and docs/14's documented sync - extract the release zip over the project's Plugins/ folder -
-      would have destroyed every line. That is precisely the bidirectional drift docs/14 was written
-      about ("work was being lost in both directions until the field reports were merged back by
-      hand"), happening again and unnoticed.
+      THE TOOL CAUGHT ME. It was built expecting to confirm the finding and reported the opposite -
+      "nothing in the copy is missing from this tree" - and the contradiction was right:
 
-      THE TWO COPIES, measured rather than assumed:
+        this tree   453 endpoints, 396 code files
+        the copy    425 endpoints, 295 code files, 0 that this tree lacks
 
-        this tree   455 endpoints, source current
-        Curfew      427 endpoints, source 2026-08-30, DLL 2026-08-30 19:20, engine 5.7
+      IT COMPARES NAMES, NOT LINES, and that is the whole design. A line diff of the two trees
+      reported 1700 lines "only in the copy" and was useless: nearly all were the OLD version of a
+      line since edited here - drift in the safe direction wearing the shape of the dangerous one.
+      MIF_DECL/MIF_BIND names are declared once and stable across edits, so a name present there and
+      absent here is unique work by definition. Files present only in the copy are the other
+      blocking case, and docs/14 records eleven of those going missing once already.
 
-      So Curfew is 28 BEHIND on shared code and 2 AHEAD on work only it has. A one-directional sync
-      in either direction loses something.
+      The macro DEFINITION is excluded by name. `#define MIF_DECL(Name)` matches the same regex as a
+      real declaration, and counting it is the off-by-one that made every release badge one too high
+      from 0.3.0 until 2026-09-02.
 
-      NOTHING WAS BUILT, LAUNCHED OR SYNCED. The order matters and it is Andre's call: commit the
-      Curfew work first so it cannot be lost, then merge those two endpoints into this tree, and
-      only then sync and sweep. Sweeping against the Aug 30 DLL is possible immediately and would
-      produce ~28 unknown-endpoint failures that say nothing about 5.7.
+      SO THE REAL FINDING IS THE PROCEDURE, which stands regardless. docs/14 documents a sync -
+      extract the release zip over the project's Plugins/ folder - that is safe only in the
+      direction it assumes, and until now nothing checked the other one. It records the loss
+      happening before: "Curfew was 62 endpoints behind, missing 11 whole source files... work was
+      being lost in both directions until the field reports were merged back by hand." Now it is
+      one command, and it answers before the overwrite rather than after.
 
-      AND THE REAL LESSON IS ABOUT THE PROCEDURE, not this instance. docs/14 documents a sync that
-      is safe only in the direction it assumes, and nothing checks the other one first. Wants a
-      `--check` that compares a project's vendored copy against this tree in BOTH directions and
-      refuses to overwrite when the copy holds lines the tree does not - which is a smaller job than
-      it sounds, since make_release.py --check already walks both file sets.
+          python tools/check_vendored.py <project>/Plugins/MifBridge --check
 
 - [ ] **JNum throws away every message JsonValueAsNumber writes, into a variable called `Unused`**
       FOUND 2026-09-05 while verifying the finiteness guard against a live editor. The guard WORKS -
