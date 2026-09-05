@@ -37,7 +37,7 @@
     "you upload, run `git rev-parse HEAD` and paste the result here."
   ],
 
-  "otherChannels": [],
+  "otherChannels": ["github-public", "dds2-sdk-installer"],
   "_otherChannels": [
     "3(b): 'If your Content is made available to end users through channels other than the",
     "Marketplaces, you will provide any Updates to Epic no later than you provide them to any other",
