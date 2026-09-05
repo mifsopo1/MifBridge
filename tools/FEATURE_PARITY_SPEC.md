@@ -14981,6 +14981,45 @@ out-of-process the way ops_gen already does with gen_status.
 
           python tools/check_vendored.py <project>/Plugins/MifBridge --check
 
+- [ ] **29 suites can only ever pass on a COOKED project, and most buyers are not on one**
+      FOUND 2026-09-05, running the suites against Curfew - uncooked 5.7, 35,725 assets, a real
+      game project - for the first time. Andre's prompt was "most of our testing im pretty sure has
+      been done in the cooked editor"; the measurement is the inverse of that and worse.
+
+      It is not only that testing HAPPENED in the cooked fork. 29 suites assert on cooked assets, so
+      they CANNOT pass anywhere else:
+
+        test_cooked_class_trap        15 cooked assertions
+        test_material_graph            5
+        test_anim_curve                3   "T4200 add_anim_curve refuses a cooked sequence"
+        test_consolidate               3
+        test_create_struct_init        3
+        test_duplicate_cooked_guard    3
+        test_niagara_emitter           3
+        test_run_retarget              3
+        ... 21 more with one or two each
+
+      Those assertions are CORRECT and should not be deleted - the cooked-asset guards are real
+      behaviour and the DDS2 fork is where they can be exercised. The problem is that the harness
+      reports them as FAILURES on an uncooked project rather than as not-applicable, so an uncooked
+      run cannot be read at all: a genuine 5.7 regression and a suite that needs a cooked fixture
+      look identical in the summary.
+
+      AND THE PROPORTION IS THE WRONG WAY ROUND FOR WHO BUYS THIS. MifBridge is sold as a general
+      UE5 tool, the spec's own header says so, and the overwhelming majority of buyers will point
+      it at an uncooked project. The suite set is weighted toward the environment almost none of
+      them are in.
+
+      WHAT IT WANTS is the same shape run_all_suites already uses for PIE and for a missing Blender:
+      a suite that needs a cooked project should say so and SKIP with rc=2 when there is not one,
+      rather than fail. `find_assets {cooked: true, limit: 1}` answers the question in one call at
+      startup. Then an uncooked sweep reports "N skipped - this project is not cooked", which is a
+      readable result, and a red line means something again.
+
+      Do NOT close this by marking the suites cooked-only and moving on: the second half is finding
+      out what the uncooked numbers actually are once the noise is gone, which is the coverage
+      nobody has ever had.
+
 - [ ] **JNum throws away every message JsonValueAsNumber writes, into a variable called `Unused`**
       FOUND 2026-09-05 while verifying the finiteness guard against a live editor. The guard WORKS -
       1e999 and -1e999 are refused where they used to be accepted - but the message the caller sees
