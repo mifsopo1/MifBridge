@@ -359,13 +359,30 @@ namespace MifBridge
 		Out->SetArrayField(TEXT("constraints"), Constraints);
 		Out->SetNumberField(TEXT("constraintCount"), Constraints.Num());
 		WriteBodyPairTable(Asset, Out);
+		// MEASURED 2026-09-05 against TutorialTPP_PhysicsAsset, 23 bodies. Two thirds of this note
+		// were right and the ROUTE was wrong, which is the half a caller acts on:
+		//
+		//   get_property{SkeletalBodySetups}                        an array of object-reference
+		//                                                           STRINGS - no transform, no radius
+		//   get_property{SkeletalBodySetups[0].AggGeom}             SphylElems=((Rotation=(...),
+		//                                                           Radius=15.15,Length=15.15))
+		//   set_property{...AggGeom.SphylElems[0].Radius} = 22.5    ok, and reads back 22.500000
+		//
+		// So the primitives ARE reachable and set_property DOES tune them - but not at the path this
+		// note gave. A caller following it literally gets a list of pointers and concludes the
+		// geometry is not exposed, which is the opposite of what the sentence was written to say.
+		// CollisionDisableTable being unreachable is confirmed: the refusal names it.
 		Out->SetStringField(TEXT("note"),
 			TEXT("this endpoint exists for the two things reflection cannot give you: disabledPairs "
 				 "(CollisionDisableTable has no UPROPERTY, so no get_property call can reach it) and "
 				 "the body/constraint INDEX numbering that every write verb here consumes. Everything "
-				 "else about a PhysicsAsset is an ordinary UPROPERTY - get_property {propertyPath:"
-				 "\"SkeletalBodySetups\"} returns the primitives in full, including their transforms "
-				 "and radii, and set_property tunes them."));
+				 "else about a PhysicsAsset is an ordinary UPROPERTY, but INDEX INTO THE ARRAY to "
+				 "reach it: get_property {propertyPath:\"SkeletalBodySetups\"} returns object "
+				 "REFERENCES, not geometry. The primitives are at "
+				 "{propertyPath:\"SkeletalBodySetups[N].AggGeom\"} - SphylElems, BoxElems, "
+				 "SphereElems and the rest, with their rotations and radii - and set_property tunes "
+				 "them at that depth, e.g. SkeletalBodySetups[0].AggGeom.SphylElems[0].Radius. "
+				 "Measured 2026-09-05."));
 	}
 
 	// --- add_physics_body ---------------------------------------------------
