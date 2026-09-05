@@ -2,41 +2,71 @@
   "_readme": [
     "The declared state of the Fab listing. tools/fab_readiness.py measures the built package",
     "against this, so a field left null is reported as an OPEN DECISION rather than silently",
-    "passing. Nothing here is filled in on anyone's behalf: every null below is a question only",
-    "Andre can answer, and answering it in this file is what makes it checkable afterwards.",
-    "Clause numbers refer to the Fab Distribution Agreement of 23 February 2026."
+    "passing. Clause numbers refer to the Fab Distribution Agreement of 23 February 2026.",
+    "",
+    "THIS IS JSON, so values need JSON syntax: text in \"quotes\", true/false rather than YES/NO,",
+    "and null for undecided. An invalid file makes fab_readiness fall back to an empty state and",
+    "report everything as open, which looks like nothing was ever answered."
   ],
 
-  "listingPrice": null,
-  "_listingPrice": "1(d): your complete discretion, but it must be $0.00 or >= $0.99.",
+  "listingPrice": "$59.99",
+  "_listingPrice": [
+    "1(d): your complete discretion, but it must be $0.00 or >= $0.99. No price-parity or",
+    "most-favoured-nation clause exists anywhere in the agreement, so nothing here constrains what",
+    "you charge elsewhere."
+  ],
 
-  "createdWithAI": null,
-  "createdWithAIReason": null,
+  "createdWithAI": true,
+  "createdWithAIReason": "A material portion of this plugin was written by a generative model - the C++ handlers, the Blender addon ops, the audit tooling and the documentation were largely authored by Claude working against Andre's direction, review and measurements. 18(k)(ii) asks whether a material portion is generated, not whether it was reviewed afterwards, so the honest answer is yes.",
   "_createdWithAI": [
     "18(k)(ii): REQUIRED where 'a material portion of the Content is generated with Generative AI",
-    "Programs'. Not a preference. A material portion of this plugin was written by a generative",
-    "model, so the honest answer is almost certainly true - but 'material' is a human judgement and",
-    "this file will not make it for you. If you set false, say why in createdWithAIReason."
+    "Programs'. Not a preference. Answering true here records the decision; you still have to tick",
+    "the CreatedWithAI box in the Fab portal itself, which is the thing the clause actually asks for."
   ],
 
   "publishedCommit": null,
-  "_publishedCommit": "The git commit the live Fab listing was built from. 3(b) parity is measured against it.",
+  "_publishedCommit": [
+    "WHAT IT IS: the git commit hash the live Fab listing was built from - e.g.",
+    "\"6434a4d7e11682541533d171b7a3b9fa532b74cb\". Not a version number.",
+    "",
+    "WHY IT EXISTS: 3(b) says Fab must get updates no later than any other channel. Recording which",
+    "commit is live lets fab_readiness count how many commits HEAD is ahead and tell you whether you",
+    "owe Fab an update, instead of you having to remember.",
+    "",
+    "LEAVE IT null UNTIL THE FIRST UPLOAD. Nothing is published yet, so there is no answer. After",
+    "you upload, run `git rev-parse HEAD` and paste the result here."
+  ],
 
   "otherChannels": [],
   "_otherChannels": [
     "3(b): 'If your Content is made available to end users through channels other than the",
     "Marketplaces, you will provide any Updates to Epic no later than you provide them to any other",
-    "third party.' List every channel that reaches an END USER. A private repo only you can pull",
-    "from is not one; a private repo three collaborators pull from is. So is an SDK installer that",
-    "bundles the plugin."
+    "third party.'",
+    "",
+    "List every channel that reaches an END USER, as strings. Likely candidates here:",
+    "  \"github-public\"      while the repo is public - every push is an update to end users",
+    "  \"github-private\"     ONLY if collaborators can pull it; a repo only you pull from is not a",
+    "                       channel, and that is the arrangement that keeps commit-and-push intact",
+    "  \"dds2-sdk-installer\" if the SDK bundles the plugin",
+    "",
+    "An empty list means you are declaring that nothing but Fab reaches an end user. Say so only",
+    "when it is true - leaving it empty makes 3(b) report UNKNOWN rather than passing."
   ],
 
   "licenceInPayload": null,
   "_licenceInPayload": [
-    "3(f)(v): 'content distributed through Fab is licensed only under the Fab End User License",
-    "Agreement, which is not superseded by custom licenses included in Content's distributed files'.",
-    "The repo's LICENSE is MIT and the repo is public, so every version pushed so far is MIT to",
-    "everyone who has it - irrevocably. That cannot be undone, only changed going forward. What CAN",
-    "be fixed is the copy inside the Fab package, which must not tell a buyer they have MIT rights."
+    "WHAT IT IS: a decision about the LICENSE file that ships INSIDE the Fab zip. Two valid values:",
+    "  \"fab-eula-notice\"  replace it with a short notice pointing at the Fab EULA (recommended)",
+    "  \"mit\"              knowingly keep the MIT text in the paid package",
+    "",
+    "WHY IT MATTERS: 3(f)(v) says what ships through Fab is licensed under the Fab EULA and is 'not",
+    "superseded by custom licenses included in Content's distributed files'. So the MIT file does",
+    "not legally win - the risk is that a BUYER READS IT AND BELIEVES IT. MIT tells them they may",
+    "redistribute the plugin publicly, which is the one thing a paid listing depends on them not",
+    "doing.",
+    "",
+    "SEPARATE QUESTION, NOT THIS FIELD: what licence future PUBLIC versions carry. Every version",
+    "pushed so far is MIT to everyone who has ever cloned it, irrevocably - that cannot be undone,",
+    "only changed going forward."
   ]
 }
