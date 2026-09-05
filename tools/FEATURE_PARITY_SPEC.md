@@ -16766,7 +16766,7 @@ out-of-process the way ops_gen already does with gen_status.
       between a gate at zero that cannot see these fields and a gate at two that names them - and a
       recorded gap beats an invisible one. The checks are filed below.
 
-- [ ] **two UE consequence fields have no suite check** (needs the editor)
+- [x] **two UE consequence fields have no suite check** (needs the editor)
       referencersUpdated (consolidate_assets) and siblingResultNodesUpdated (remove_pin), newly
       visible after the classifier fix above and accepted into the baseline at 2.
 
@@ -16775,6 +16775,26 @@ out-of-process the way ops_gen already does with gen_status.
 
       When they are written the baseline goes back to 0, and that is the point of filing them rather
       than leaving the number to look permanent.
+
+      WRITTEN 2026-09-05, and the baseline is back to 0. Both fixtures were built live on the
+      disposable probe before a line went into a suite, so what landed is a recording of something
+      that ran rather than a guess at what should.
+
+        T5103, test_consolidate    a MaterialInstanceConstant whose Parent is the source is the
+                                   smallest real referencer. referencersUpdated == 1, and
+                                   packagesDirtied names the instance so the count is attributable.
+                                   Its OWN fixture, not the project's materials: everything else in
+                                   that suite previews and touches nothing, and consolidating
+                                   somebody's material to read a count is not a trade worth making.
+        test_pins                  a function graph with TWO Return nodes - add_pin makes the first,
+                                   add_k2_node{nodeClass:"K2Node_FunctionResult"} places the second.
+                                   siblingResultNodesUpdated == 1, and both nodes are then checked
+                                   to have lost the pin, because the count is a claim about the
+                                   graph and the graph should agree with it.
+
+      ONE THING WORTH KEEPING: a function OUTPUT is an INPUT pin on the Result node - you plug
+      values INTO a return. The first live attempt passed direction:"output" and was refused with
+      "pin not found on node", which is the endpoint being right and the caller being wrong.
 - [x] **an audit ran against a live Blender, and nothing in the output said so** DONE 2026-09-04
       A probe was pointed at port 8792 believing it had just started the server there. The start had
       FAILED - the port was already held by a real Blender with a real file open - and the line

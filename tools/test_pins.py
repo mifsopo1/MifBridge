@@ -370,6 +370,59 @@ def main():
 
     SC.confirm_call("delete_asset", {"path": "/Game/_MifPin/BP_%d" % st})
     print("")
+    # ------------------------------------------------------------------ sibling Return nodes
+    print("\n=== siblingResultNodesUpdated: a function may have SEVERAL Return nodes ===")
+    # THE FIELD NO SUITE READ, accepted into audit_consequence_fields' baseline as "needs a
+    # Blueprint with a multi-result node". The C++ explains why it exists: "A function graph may
+    # have SEVERAL Return nodes; they all share one signature, so an output removed from one must be
+    # removed from the rest or the graph won't compile." Nothing checked that it happens.
+    #
+    # A FUNCTION OUTPUT IS AN INPUT PIN ON THE RESULT NODE - you plug values INTO a return. The
+    # first live attempt at this passed direction:"output" and was refused with "pin not found on
+    # node", which is the endpoint being right and the caller being wrong. Recorded because the
+    # payload reads backwards until you think about which way the wire points.
+    sbp = "/Game/_MifPin/BP_Sib%d" % st
+    made_sib = False
+    try:
+        b = M.call("create_blueprint", {"path": sbp, "parentClass": "Actor"})
+        made_sib = b.get("ok") is True
+        fg = M.call("create_function", {"blueprintId": sbp, "name": "MifSibFn"}) if made_sib else {}
+        fgid = fg.get("graphId")
+        ap = M.call("add_pin", {"graphId": fgid, "name": "MifOut",
+                                "direction": "output", "type": "int"}) if fgid else {}
+        k2 = M.call("add_k2_node", {"graphId": fgid, "nodeClass": "K2Node_FunctionResult",
+                                    "x": 600, "y": 0}) if fgid else {}
+        nodes = (M.call("list_nodes", {"graphId": fgid}).get("nodes") or []) if fgid else []
+        results = [n for n in nodes if "FunctionResult" in str(n.get("class"))]
+        check("(setup) the function graph really has TWO Return nodes, which is the whole "
+              "precondition", len(results) == 2,
+              "add_pin=%s add_k2_node=%s results=%d"
+              % (ap.get("ok"), k2.get("ok"), len(results)))
+        # BOTH must already carry the pin - that is add_pin's own sibling sync, and if it were
+        # false the removal below would prove nothing.
+        both = all(any(p.get("name") == "MifOut" for p in (n.get("pins") or [])) for n in results)
+        check("(setup) both Return nodes carry the output, so removing it from one has a sibling "
+              "to update", both and len(results) == 2,
+              json.dumps([[p.get("name") for p in (n.get("pins") or [])] for n in results])[:200])
+
+        if len(results) == 2 and both:
+            rp = SC.confirm_call("remove_pin", {"graphId": fgid, "node": results[0].get("guid"),
+                                                "pin": "MifOut", "direction": "input"})
+            check("remove_pin succeeds on the Return node's INPUT side", rp.get("ok") is True,
+                  json.dumps(rp)[:250])
+            check("siblingResultNodesUpdated counts the OTHER Return node",
+                  rp.get("siblingResultNodesUpdated") == 1, json.dumps(rp)[:300])
+            # The count is a claim about the graph; this is the graph agreeing with it.
+            after = M.call("list_nodes", {"graphId": fgid}).get("nodes") or []
+            left = [n for n in after if "FunctionResult" in str(n.get("class"))]
+            check("and NEITHER Return node still has the pin - the signature really is shared",
+                  left and all(not any(p.get("name") == "MifOut" for p in (n.get("pins") or []))
+                               for n in left),
+                  json.dumps([[p.get("name") for p in (n.get("pins") or [])] for n in left])[:200])
+    finally:
+        if made_sib:
+            SC.confirm_call("delete_asset", {"path": sbp})
+
     print("=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for x in FAIL:

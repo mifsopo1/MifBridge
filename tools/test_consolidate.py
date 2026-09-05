@@ -29,8 +29,10 @@ is where the act runs.
 """
 import json
 import sys
+import time
 
 import mifaudit as M
+import scratch_confirm as SC
 
 PASS = []
 FAIL = []
@@ -241,6 +243,54 @@ def main():
     print("  with it. Every material here is cooked, so every referencer is container content and")
     print("  the ladder refuses before the engine is reached - which is the correct outcome. An")
     print("  uncooked project is where the act runs.")
+
+    # ------------------------------------------------------------------ T5103 the consequence
+    print("\n=== T5103: referencersUpdated - the number that says the repoint HAPPENED ===")
+    # THE FIELD NO SUITE READ. audit_consequence_fields listed it as unread and accepted it into
+    # the baseline as "needs a live editor", which was true: it takes a target, a source, and a
+    # THIRD asset referencing the source. Everything above this point previews rather than acts -
+    # T5102 is about the gate, not the write - so nothing here had ever produced the number.
+    #
+    # ITS OWN FIXTURE, not the project's materials. The checks above deliberately read real content
+    # because they touch nothing; this one CONSOLIDATES, and consolidating somebody's material to
+    # read a count is not a trade worth making. A MaterialInstanceConstant whose Parent is the
+    # source is the smallest thing that is a genuine referencer.
+    cst = int(time.time() % 100000)
+    CA = "/Game/_MifCons/M_Src%d" % cst
+    CB = "/Game/_MifCons/M_Dst%d" % cst
+    CI = "/Game/_MifCons/MI_Ref%d" % cst
+    built = []
+    try:
+        ok_setup = True
+        for p in (CA, CB):
+            r = M.call("create_asset", {"path": p, "class": "Material"})
+            ok_setup = ok_setup and r.get("ok") is True
+            if r.get("ok") is True:
+                built.append(p)
+        r = M.call("create_asset", {"path": CI, "class": "MaterialInstanceConstant"})
+        ok_setup = ok_setup and r.get("ok") is True
+        if r.get("ok") is True:
+            built.append(CI)
+        par = M.call("set_property", {"objectPath": CI, "propertyPath": "Parent", "value": CA})
+        check("T5103 (setup) a material instance really references the source",
+              ok_setup and par.get("ok") is True and CA in str(par.get("valueAfter") or ""),
+              json.dumps(par)[:250])
+
+        if ok_setup and par.get("ok") is True:
+            c = SC.confirm_call("consolidate_assets", {"target": CB, "sources": [CA]})
+            check("T5103 the consolidation succeeds", c.get("ok") is True, json.dumps(c)[:250])
+            # THE ASSERTION, and it is a VALUE not a presence: a referencersUpdated of 0 alongside
+            # ok:true would mean the repoint silently did nothing, which is exactly the outcome a
+            # caller reads this field to rule out.
+            check("T5103 referencersUpdated counts the asset that was repointed",
+                  c.get("referencersUpdated") == 1, json.dumps(c)[:300])
+            check("T5103 and packagesDirtied names it, so the count is attributable",
+                  any(CI.split("/")[-1] in str(p) for p in (c.get("packagesDirtied") or [])),
+                  json.dumps(c.get("packagesDirtied"))[:250])
+    finally:
+        # CB may be gone - consolidate deletes nothing by default, but the source is repointed away.
+        for p in reversed(built):
+            SC.confirm_call("delete_asset", {"path": p})
 
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
