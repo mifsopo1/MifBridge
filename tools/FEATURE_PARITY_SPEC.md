@@ -12052,8 +12052,12 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
                                                  set_property tunes. The get_property half IS paired
                                                  (test_physics_asset.py); this half is not.
         set_niagara_emitter -> set_property      COMPARED, and its stated reason is contradicted -
-                                                 see the section above. Fixing the text is a Source
-                                                 edit and needs a build.
+                                                 see the section above. THE TEXT IS FIXED, on
+                                                 pending/source-needs-a-build (81a0643): the note
+                                                 now says the compile result is NOT the difference,
+                                                 names RefreshFromExternalChanges as the untested
+                                                 path, and asserts no effect for it. It reaches
+                                                 master when 5.3 and the 5.7 probe are rebuilt.
 
       SO THE ITEM'S TITLE IS WRONG IN BOTH DIRECTIONS and is left standing as a record of that: it
       was never "two", one of the two was never a claim, and three more existed that nothing had
