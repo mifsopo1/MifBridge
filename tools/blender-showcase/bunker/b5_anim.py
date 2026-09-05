@@ -40,7 +40,23 @@ DURATION_S = 40.0
 # tuning pass there cannot leave this file keying lights back to a number that no longer exists.
 HALL_W = B4.HALL_PENDANT_W
 EMG_DIM = 22.0
-EMG_FULL = 260.0
+# 2600 W, NOT 260, AND IT WAS MEASURED RATHER THAN GUESSED. The emergency beat rendered mean 0.0010
+# - the lab's README records the identical symptom on its own emergency beat, where the cause was a
+# lamp behind the camera. Here the lamps are in frame and simply too weak: at the blackout the mains
+# are off, so five lamps light a 34 m hall on their own, and RED carries about a third the luminance
+# of white per watt (0.2126*1.0 + 0.7152*0.16 + 0.0722*0.10 = 0.33). 260 W of red is 87 W of useful
+# light spread over the whole bunker.
+#
+# AND THE WATTAGE WAS THE SMALLER HALF. At 2600 W the beat still measured 0.0015 - ten times the
+# power for a 1.5x change, which is the "light is inside geometry" signature again. The lamps were
+# at y = 13.1, one metre off the wall, where the VAULT'S INNER SURFACE IS ONLY 2.39 m HIGH; they
+# were placed at z 3.5 and buried in the rock. b4 now computes the vault ceiling at a given y and
+# REFUSES a lamp above it, because "embedded in stone" and "too dim" look identical from the frame.
+#
+# With the lamps actually in the room, 850 W is enough: blackout 0.0034 at 1% lit, emergency 0.375
+# at 97% - a 110x jump, which is the beat working. The lab's own table calls a 270x jump the same
+# thing.
+EMG_FULL = 850.0
 
 
 def sec(t):

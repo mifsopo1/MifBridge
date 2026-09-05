@@ -67,6 +67,35 @@ ROOM_LIGHT = {
 }
 
 
+def vault_ceiling_at(y):
+    """How high the vault's INNER surface is at this y. The hall is not a box.
+
+    The vault is a half-cylinder of inner radius VAULT_R_IN centred on the hall's axis, so the
+    ceiling drops to nothing at the walls: at y = 13.1, one metre from the springing line, it is
+    2.39 m - not the 6.55 m it is on the centre line.
+
+    This exists because the emergency lamps were placed at z = 3.5 on that line and were therefore
+    INSIDE THE ROCK. They lit nothing, and raising them from 260 W to 2600 W moved the frame's mean
+    from 0.0010 to 0.0015 - the same "ten times the power changes nothing" signature as a lamp
+    sealed in its own bulb, and for the same underlying reason: the light was inside geometry.
+    """
+    dy = abs(y - CY)
+    if dy >= B1.VAULT_R_IN:
+        return 0.0
+    return (B1.VAULT_R_IN ** 2 - dy ** 2) ** 0.5
+
+
+def assert_inside_vault(name, x, y, z):
+    """A lamp outside the vault is a lamp that does not light the hall. Refuse rather than dim."""
+    ceil = vault_ceiling_at(y)
+    if z >= ceil:
+        raise RuntimeError(
+            "%s would sit at z=%.2f where the vault's inner surface is only %.2f high (y=%.2f, "
+            "%.2f m off the centre line). It would be embedded in the rock and light nothing - "
+            "which looks exactly like a lamp that is merely too dim."
+            % (name, z, ceil, y, abs(y - CY)))
+
+
 def lamp(name, kind, x, y, z, rgb, watts, radius=0.12, size=None):
     """A lamp. `size` only means anything for AREA, and is passed at CREATION for a reason.
 
@@ -192,6 +221,7 @@ def main():
     n_pend = 7
     for i in range(n_pend):
         x = 2.6 + i * (HALL_LEN - 5.2) / (n_pend - 1)
+        assert_inside_vault("Lamp_Hall%02d" % i, x, CY, 4.55)
         lamp("Lamp_Hall%02d" % i, "POINT", x, CY, 4.55 - LAMP_DROP, (1.0, 0.90, 0.74),
              HALL_PENDANT_W, 0.18)
         bulb("Bulb_Hall%02d" % i, x, CY, 4.55, (1.0, 0.90, 0.74), 8.0, 0.10)
@@ -226,11 +256,14 @@ def main():
     # anyone presses play then shows a room with no emergency lighting at all, which reads as a
     # modelling omission rather than as a beat waiting to happen.
     print("  emergency lamps (on, dim - stage 7 raises them)")
+    EMG_Y = 2 * CY - 2.2      # in from the wall, where the vault is still tall enough
+    EMG_Z = 2.55
     for i in range(5):
         x = 4.0 + i * (HALL_LEN - 8.0) / 4.0
-        lamp("Emg_Lamp%02d" % i, "POINT", x, 2 * CY - 0.9, 3.5 - LAMP_DROP, (1.0, 0.16, 0.10),
+        assert_inside_vault("Emg_Lamp%02d" % i, x, EMG_Y, EMG_Z)
+        lamp("Emg_Lamp%02d" % i, "POINT", x, EMG_Y, EMG_Z - LAMP_DROP, (1.0, 0.16, 0.10),
              22.0, 0.10)
-        bulb("Emg_Bulb%02d" % i, x, 2 * CY - 0.95, 3.5, (1.0, 0.16, 0.10), 3.0, 0.075)
+        bulb("Emg_Bulb%02d" % i, x, EMG_Y, EMG_Z, (1.0, 0.16, 0.10), 3.0, 0.075)
 
     S.look((3.2, CY - 1.4, 1.7), (26.0, CY + 1.2, 1.7), lens=22.0)
     S.done("world %.3f, %d hall pendants at %.0f W, six rooms in their own colour"
