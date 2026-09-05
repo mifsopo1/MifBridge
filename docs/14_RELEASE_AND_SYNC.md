@@ -40,7 +40,28 @@ extracts straight into a project's `Plugins/` folder. Alongside the source it wr
 | `contentSha256` | path + content of every shipped file | distinguishes *same version* from *same version, locally modified* |
 | `engineCompatibility` | stated in the script | what has actually been built, not what might work |
 
-### Checking a copy
+### Before you overwrite a copy — check what it holds
+
+```bash
+python tools/check_vendored.py D:/RoguelikeDealerGame/Plugins/MifBridge --check
+```
+
+**Run this before the extract below, every time.** The sync in the next section is safe only in the
+direction it assumes — it writes this tree over the copy — and until 2026-09-05 nothing asked whether
+the copy held anything this tree does not. This document already records that going wrong once:
+62 endpoints behind, 11 whole source files missing, *"work was being lost in both directions until
+the field reports were merged back by hand."*
+
+It compares endpoint NAMES and file presence, not lines, and that is deliberate. A line diff of the
+two trees reported 1700 lines "only in the copy" and was useless — nearly all were the OLD version of
+a line since edited here, which is drift in the safe direction wearing the shape of the dangerous
+one. `MIF_DECL`/`MIF_BIND` names are declared once and stable across edits, so a name present there
+and absent here is unique work by definition.
+
+`--check` exits 1 when the copy holds endpoints or files this tree does not. **That is a stop, not a
+warning:** merge them here first.
+
+### Checking a copy against a release zip
 
 ```bash
 python tools/make_release.py --check tools/dist/MifBridge-0.4.1.zip
@@ -77,7 +98,7 @@ of that because they are tracked but are not part of a deployable plugin:
 | 5.3.2 | **built and tested** | the cooked DDS2 SDK — the primary target. **As of 2026-08-31: 434 built-in endpoints, 159 test suites, and a full double-pass sweep of 312 runs across 156 suites — 1 suite failed, 10 skipped, 0 editor deaths**, on a freshly restarted editor. The single failure was a test-side bug in `test_thumbnails`: it took whatever `find_assets` returned first, drew a rotationally symmetric sky mesh, and reported that `render_thumbnail` ignored `orbitYaw`/`orbitZoom` — measured side by side, the endpoint was correct on all three parameters and the fixture could not show them. Fixed by selecting a mesh BY the property the test needs (a candidate is accepted only once a yaw render differs from its base), verified twice. The 10 skips are the 8 Blender suites (which need a Blender on 8792, currently held by another editor — see `06` issue 15), `test_niagara_params` (this project has no NiagaraSystem with a user parameter, and they are all cooked), and `test_safety_gate` (which correctly refuses its destructive probes in `full` write mode). **NAMED-NOWHERE IS DOWN TO 14 (2026-08-31)**, and all fourteen are accounted for: 12 foreign `kr_*` provider endpoints, plus `save_dirty_packages` and `save_level_as`, which the standing no-save rule forbids exercising. So no endpoint MifBridge owns and is permitted to drive is unnamed by any suite. **That is a NAME-MATCH claim and not a coverage claim** - `coverage_gaps.py` says so in its own output, and it is worth repeating here because the two get conflated: a suite naming an endpoint may still exercise one branch of it. `audit_suite_reach.py` is the instrument for the second question, and its last clean run showed zero suites claiming a pass while running a fraction of themselves.
 
 RESTART THE EDITOR FIRST, and this now has a second independent confirmation: a `--once` sweep run immediately afterwards on that SAME editor - roughly 25 minutes of accumulated mutation, no restart - lost `test_levelsnapshots` on T1103 ("the actor is REALLY back at the origin, independently read back"). Restarting and running that suite alone gave 20 PASS 0 FAIL including that exact assertion. Same suite the superseded record below names for the same reason, a day apart. The rule is not folklore. <br><br>SUPERSEDED, kept for the reasoning: as of 2026-08-30 (v0.7.0): 421 built-in endpoints, 144 test suites, and the first full double-pass sweep this project has ever completed - **282 runs across 141 suites, 1 failed, 16 skipped, 0 editor deaths**, on a freshly restarted editor. The single failure was a test-side bug in test_move_actors_to_level, fixed after the run. The 3 PIE-driving suites are excluded from unattended sweeps and named in the output rather than counted as passing; the 16 skips are those plus the 7 Blender suites (which need a Blender on 8792) and test_safety_gate (which correctly refuses its destructive probes in `full` write mode). RESTART THE EDITOR FIRST: a long-lived editor fails suites a fresh one passes - a run earlier the same day lost test_material_undo to a transaction buffer that had reached its cap at 1941 entries, and test_levelsnapshots to hours of accumulated level mutation. Both passed clean after a restart. The "148 runs across 74 suites" figure this row used to carry was from 2026-08-26 - superseded, not corrected in place, because the underlying numbers (endpoint count, suite count) both moved and a stale count is worse than no count. |
-| 5.7 | **built** | Curfew — compiled on every change via `make_engine_probe.py`. See `02_GOTCHAS.md` §14 for the API splits that differ. |
+| 5.7 | **built and RUN** | Curfew — compiled on every change via `make_engine_probe.py`. See `02_GOTCHAS.md` §14 for the API splits that differ. |
 
 "Built" means a compiler agreed, not that anyone has used it. 5.7 has no live test run behind it,
 and that distinction is the whole reason this table has two words in it rather than one.
@@ -119,6 +140,18 @@ and one takes a full engine build.
 | changelog | `CHANGELOG.md`'s TOP row disagrees with the tree | edit the top row, or add an `Unreleased` one |
 | 5.3 | no recorded successful 5.3 build for this `Source/` commit | build on 5.3, then `--record-53` |
 | 5.7 | the 5.7 compile probe is missing or stale for this `Source/` | re-run `make_engine_probe.py` |
+
+**"built and RUN" changed meaning on 2026-09-05, and the distinction is the point of this table.**
+Until then the 5.7 row meant a compiler had agreed — `make_engine_probe.py` compiles a probe project
+and nothing had ever *run* the plugin on a stock engine. It has now: MifBridge is compiled into
+Curfew and its editor answers, healthy, 453 endpoints, zero policy contradictions, against a project
+with 35,725 assets. The full suite set has been swept against it.
+
+That was not an oversight anyone could have fixed sooner. `mifaudit.require_sdk_bridge` matched a
+hard-coded `PROJECT_MARKER`, so the suites could only ever be pointed at the cooked SDK editor and a
+live 5.7 editor was refused as "NOT the SDK editor". `MIF_PROJECT_MARKER` and `MIF_BRIDGE_PORT` now
+name the project and the port, which is also what makes a 5.3-against-5.7 comparison possible for
+the first time.
 | param table | `describe_endpoint`'s generated table has drifted | `harvest_param_table.py`, then rebuild |
 | value discovery | an endpoint demands a value nothing can discover | fix the endpoint or record the exemption |
 | static audits | the tools/ checkers are not clean | run them and fix what they say |
