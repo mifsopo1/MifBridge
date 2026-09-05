@@ -15917,7 +15917,7 @@ out-of-process the way ops_gen already does with gen_status.
       out what the uncooked numbers actually are once the noise is gone, which is the coverage
       nobody has ever had.
 
-- [ ] **JNum throws away every message JsonValueAsNumber writes, into a variable called `Unused`**
+- [x] **JNum throws away every message JsonValueAsNumber writes, into a variable called `Unused`**
       FOUND 2026-09-05 while verifying the finiteness guard against a live editor. The guard WORKS -
       1e999 and -1e999 are refused where they used to be accepted - but the message the caller sees
       is not the one the code wrote, and it is wrong in the exact way that code's own comment warns
@@ -15949,6 +15949,32 @@ out-of-process the way ops_gen already does with gen_status.
       filing a bug. Wants JNum to pass the composed error through where there is one, falling back
       to RecordParamTypeViolation only when it is empty.
 
+      VERIFIED AGAINST A LIVE EDITOR 2026-09-05, which is what "the caller SEES it" needed and what
+      `FString Unused` being gone from the source does not prove. Both items above are settled by
+      the same three calls, sent as RAW JSON so the literal reaches the parser - Python's json emits
+      `Infinity`, which is not valid JSON, and the first attempt got "request body is not valid
+      JSON" rather than the guard:
+
+        {"drawDuration": 1e999}     ok:false
+          "'drawDuration' was given a number that is not FINITE (the number inf). 1e999 and similar
+           are valid JSON literals that overflow to infinity as a double, and NaN arrives the same
+           way - both would be used as a real value by everything downstream. Send a finite number."
+        {"drawDuration": "12abc"}   ok:false
+          "...A partly-numeric string like \"12abc\" is refused on purpose: UE's parsers accept the
+           prefix and discard the rest, which is how a bad value becomes a plausible one."
+
+      THOSE ARE THE COMPOSED MESSAGES WORD FOR WORD - the ones this item said were being written and
+      thrown away. The caller receives them in `error` and again in `ignoredParameters`.
+
+      AND THE NUMBER BRANCH IS GUARDED, which settles the sibling item: 1e999 as a JSON NUMBER is
+      refused, where it used to be accepted and used as a real value downstream. The quoted and
+      unquoted forms now agree that the value is bad.
+
+      ONE RESIDUAL, small and recorded rather than fixed: the STRING "1e999" is refused by the
+      string branch with "which is not a number ... or a string that is entirely numeric", and
+      "1e999" IS entirely numeric - it is refused for overflowing, not for its shape, and the
+      message does not say so. The behaviour is right and the explanation is the generic one.
+
       EXACTLY TWO SITES, CHECKED RATHER THAN ASSUMED. `FString Unused;` appears twice in the file
       and nowhere else - 2074 in the double reader and 2085 in the whole-number one, which discards
       the same composed message and then reports "a whole number" or "a WHOLE number (it has a
@@ -15959,7 +15985,7 @@ out-of-process the way ops_gen already does with gen_status.
 
       Needs a rebuild, so it is filed rather than done.
 
-- [ ] **the C++ number reader guards a string "1e999" and not the number 1e999** (built, awaiting one call)
+- [x] **the C++ number reader guards a string "1e999" and not the number 1e999** (built, VERIFIED)
       Found 2026-09-04 while fixing the addon's NaN handling, by reading the UE twin of the same
       question rather than assuming it shared the defect - it has HALF the guard.
 
