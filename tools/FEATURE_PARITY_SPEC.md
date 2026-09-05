@@ -11932,6 +11932,50 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       set_property needs an UNCOOKED Niagara emitter with editor data (the probe is written -
       tools/probe_niagara_emitter_source.py - and needs a live editor), and
       preview_composite_widget -> list_live_widgets needs a running PIE session.
+
+      ================================================================================
+      THE NIAGARA CLAIM WAS COMPARED 2026-09-05 - THE FIRST TIME - AND ITS STATED
+      MECHANISM IS CONTRADICTED BY MEASUREMENT.
+      ================================================================================
+      Curfew is uncooked and holds 25 UNiagaraEmitters WITH editor data, so the blocker lifted. The
+      probe answered YES and add_niagara_emitter took a real source, exactly as it predicted.
+
+      THE CLAIM, verbatim from set_niagara_emitter's whyNotSetProperty field:
+
+        "set_property on EmitterHandles[N].bIsEnabled flips the same bool, and it is enough to
+         DISABLE an emitter - but not to enable one, because it skips the RefreshFromExternalChanges
+         and InvalidateCompileResults this call makes. That leaves a stale compile result and an
+         emitter that stays dark with a flag saying otherwise."
+
+      MEASURED, on two FRESH systems so neither path could inherit the other's state - the first
+      attempt at this ran both against one system, and once set_niagara_emitter had invalidated the
+      compile data it stayed invalid, so the set_property rows proved nothing:
+
+        system A, set_property ONLY
+          fresh                         enabled True   compiledDataCurrent True
+          after set_property(False)     enabled False  compiledDataCurrent FALSE
+        system B, set_niagara_emitter ONLY
+          fresh                         enabled True   compiledDataCurrent True
+          after set_niagara_emitter     enabled False  compiledDataCurrent FALSE
+
+      BOTH INVALIDATE. And set_property flips the flag in BOTH directions - False then True, each
+      with applied:true, verified:true, and list_niagara_emitters agreeing.
+
+      SO THE REASON GIVEN IS WRONG. set_property does not "skip InvalidateCompileResults" in any way
+      that shows: PostEditChangeProperty on the system invalidates the compiled data by itself.
+
+      WHAT IS NOT SETTLED, and the difference matters. RefreshFromExternalChanges may do something
+      beyond invalidation that nothing here exposes, so "the emitter stays dark" is not disproved -
+      only its stated CAUSE is. readyToRun was false throughout for both paths, on a scratch system
+      that was never compiled, so it separates nothing.
+
+      THE DEFECT AS IT STANDS is a user-facing claim that tells callers not to use set_property for
+      a reason measurement contradicts. Either the reason should be corrected to whatever
+      RefreshFromExternalChanges actually contributes, or - if nothing does - the whole steer should
+      go, because a caller who follows it is avoiding an endpoint that works.
+
+      THE SECOND ORIGINAL IS STILL BLOCKED: preview_composite_widget -> list_live_widgets needs a
+      running PIE session.
       FOUND 2026-09-03 by `audit_cross_endpoint_claims`, which was not in the release gate then and
       exited 0 either way - so its reading list had never been read.
 
