@@ -15121,6 +15121,55 @@ out-of-process the way ops_gen already does with gen_status.
       opening anybody's project. That turns "needs the machine" into "needs a probe", which is a
       much smaller ask.
 
+      ================================================================================
+      2026-09-05: THE AUDIT ACCEPTS ONE FIX SHAPE, AND IT IS NOT SAFE EVERYWHERE.
+      ================================================================================
+      Read before starting: this decides which sites can be fixed the easy way and which cannot,
+      and it was not written down anywhere.
+
+      restores_package_dirty() accepts exactly ONE resolution - the refusal emits
+      packageDirtyRestored:true after putting the flag back. That is the set_property pattern and
+      the audit is right to hold it up: set_property records whether the package was dirty on
+      entry, attempts the write, RE-READS the property, and only clears the flag when the value did
+      not move. The restoration is safe there because the no-op is PROVEN.
+
+      IT IS NOT PROVEN AT EVERY SITE, and remove_physics_body is the worked example. Its ordering is
+      load-bearing in the way this item's own next paragraph describes - the check cannot move above
+      the mutation because it IS a check on the mutation:
+
+          Asset->Modify();
+          FPhysicsAssetUtils::DestroyBody(Asset, Index);
+          const int32 After = Asset->SkeletalBodySetups.Num();
+          if (After >= Before) { Fail("DestroyBody ran and the asset still holds %d..."); return; }
+
+      After >= Before establishes that the BODY COUNT did not drop. It does not establish that
+      DestroyBody changed nothing - it touches constraints and the collision-disable table too. So
+      clearing the dirty flag here would assert a no-op the code has not checked, and the failure
+      mode is the one this item already warns about: a refusal that leaves the asset in a
+      DIFFERENT wrong state, now with the flag saying it is clean. remove_physics_constraint at
+      :704 is the same shape.
+
+      SO THERE ARE THREE OUTCOMES PER SITE, not two, and only the first is mechanical:
+
+        1. the check can move ABOVE the first Modify()            -> move it; audit goes green
+        2. the ordering is load-bearing AND the no-op is provable  -> re-read, restore, emit
+                                                                     packageDirtyRestored
+        3. the ordering is load-bearing and the no-op is NOT       -> the honest fix is to say the
+           provable                                                  package is left dirty, and the
+                                                                     audit has no way to accept
+                                                                     that today
+
+      WHAT THAT MEANS FOR THE GATE. A site in class 3 cannot be turned green without either widening
+      restores_package_dirty to accept an explicit "left dirty" contract, or making the handler
+      prove its no-op. Whoever picks this up should decide that FIRST, because doing it site-by-site
+      will otherwise pressure each one towards the flag-clear - the only shape that makes the number
+      go down - which is the wrong answer for class 3 and would be a real regression dressed as
+      progress.
+
+      NOT STARTED HERE, deliberately, and the reason is this item's own: 51 decisions on WRITE paths
+      is not work to begin at the end of a long stretch. What is added is the classification that
+      was missing, so the next session starts from a decision rather than from a list.
+
       The shape of the fix is the same one the Blender side took: move every check that CAN refuse
       above the first Modify(). Where the ordering is load-bearing - a validation that needs the
       object transacted first - the transaction has to be cancelled or the refusal reworded to stop
