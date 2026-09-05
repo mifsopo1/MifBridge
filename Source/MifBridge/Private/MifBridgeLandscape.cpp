@@ -442,26 +442,6 @@ namespace MifBridge
 #endif
 		Landscape->SetLandscapeGuid(FGuid::NewGuid());
 
-		// WHAT THE LANDSCAPE ACTUALLY HAS, not what was attempted. Reported unconditionally so the
-		// answer is the same shape on every engine and a caller can just read it.
-		const TArray<FString> MadeEditLayers = EditLayerNames(Landscape);
-		{
-			TArray<TSharedPtr<FJsonValue>> ELJson;
-			for (const FString& N : MadeEditLayers) { ELJson.Add(MakeShared<FJsonValueString>(N)); }
-			Out->SetArrayField(TEXT("editLayers"), ELJson);
-			if (MadeEditLayers.Num() > 0)
-			{
-				Out->SetStringField(TEXT("editLayersNote"),
-					TEXT("this landscape HAS sculpt edit layers and they could NOT be turned off - "
-						 "UE 5.6 deprecated non-edit-layer landscapes and ToggleCanHaveLayersContent "
-						 "is an empty stub there, so there is no such landscape to create. Endpoints "
-						 "that write the MERGED heightmap directly (sculpt_landscape, "
-						 "import_landscape_heightmap) may have their writes discarded by the next "
-						 "edit-layer composite - they return editLayerWarning when that applies. "
-						 "apply_spline_to_landscape writes THROUGH a layer and is unaffected."));
-			}
-		}
-
 		const FString MaterialPath = JStrAny(In, { TEXT("material"), TEXT("landscapeMaterial") });
 		if (!MaterialPath.IsEmpty())
 		{
@@ -486,7 +466,11 @@ namespace MifBridge
 		// 5.3 has a default so eleven arguments compile; 5.7 has none and wants a TArrayView. No single
 		// spelling satisfies both, so this is one of the few places a real version guard is unavoidable.
 		//
-		// EMPTY is correct: edit layers are switched off immediately above, so there are none to pass.
+		// EMPTY is correct, but NOT for the reason this used to give ("edit layers are switched off
+		// immediately above"). On 5.6+ they cannot be switched off at all, and Import() is what
+		// CREATES the default edit layer - which is why the editLayers read now sits below this
+		// call rather than above it. Empty here means "import no PRE-EXISTING layers", which is
+		// right on every engine: this is a brand new landscape.
 #if MIF_ENGINE_5_7_PLUS
 		Landscape->Import(
 			Landscape->GetLandscapeGuid(),
@@ -523,6 +507,43 @@ namespace MifBridge
 		}
 		const FString Folder = JStr(In, TEXT("folder"));
 		if (!Folder.IsEmpty()) { Landscape->SetFolderPath(FName(*Folder)); }
+
+		// WHAT THE LANDSCAPE ACTUALLY HAS, not what was attempted, and READ AFTER THE IMPORT.
+		//
+		// THIS USED TO SIT ABOVE Import(), and on 5.7 it reported editLayers:[] for a landscape that
+		// had one. Measured 2026-09-05 on three readings of ONE actor in one session:
+		//
+		//   create_landscape                  "editLayers": []
+		//   sculpt_landscape                  "'MifProbeLS2' has sculpt edit layers (Layer)"
+		//   get_property{LandscapeEditLayers} NON-EMPTY
+		//
+		// Not a broken reader: EditLayerNames delegates to ReadEditLayers and HasEditLayers uses the
+		// same function, so there is one source of truth and it is right. The landscape simply has
+		// no edit layer at that point - Import() creates the default one on 5.6+, and everything
+		// below (CreateLandscapeInfo, RegisterAllComponents, PostEditChange) runs after it too.
+		//
+		// It mattered because this response is sold as authoritative and its own note then told the
+		// caller "no sculpt edit layers - apply_spline_to_landscape works without an editLayer
+		// here". On 5.7 that was false, apply_spline_to_landscape refuses, and sculpt_landscape
+		// warns that a merged-heightmap write into a layered landscape is discarded by the next
+		// composite - so a caller was told their sculpt had landed when it may not have.
+		const TArray<FString> MadeEditLayers = EditLayerNames(Landscape);
+		{
+			TArray<TSharedPtr<FJsonValue>> ELJson;
+			for (const FString& N : MadeEditLayers) { ELJson.Add(MakeShared<FJsonValueString>(N)); }
+			Out->SetArrayField(TEXT("editLayers"), ELJson);
+			if (MadeEditLayers.Num() > 0)
+			{
+				Out->SetStringField(TEXT("editLayersNote"),
+					TEXT("this landscape HAS sculpt edit layers and they could NOT be turned off - "
+						 "UE 5.6 deprecated non-edit-layer landscapes and ToggleCanHaveLayersContent "
+						 "is an empty stub there, so there is no such landscape to create. Endpoints "
+						 "that write the MERGED heightmap directly (sculpt_landscape, "
+						 "import_landscape_heightmap) may have their writes discarded by the next "
+						 "edit-layer composite - they return editLayerWarning when that applies. "
+						 "apply_spline_to_landscape writes THROUGH a layer and is unaffected."));
+			}
+		}
 
 		Out->SetStringField(TEXT("actorPath"), Landscape->GetPathName());
 		Out->SetStringField(TEXT("label"), Landscape->GetActorLabel());
