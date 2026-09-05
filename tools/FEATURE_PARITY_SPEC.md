@@ -14981,6 +14981,40 @@ out-of-process the way ops_gen already does with gen_status.
 
           python tools/check_vendored.py <project>/Plugins/MifBridge --check
 
+- [ ] **13 suites fail on uncooked 5.7 for reasons that are NOT the cooked guards**
+      THE FIRST UNCOOKED NUMBERS THIS PROJECT HAS EVER HAD, from the 2026-09-05 sweep against
+      Curfew - Andre's own game, stock UE 5.7, 35,725 assets. Until that day the harness could not
+      be pointed at anything but the cooked fork, so "does this work on 5.7" had only ever been
+      answered by a compiler.
+
+      21 suites failed. 8 are explained by the cooked-guard item above and will skip once their
+      cooked sections are guarded. These 13 are not:
+
+        test_blender_mesh              test_material_statistics    test_socket_authoring
+        test_crash_journal             test_pcg_authoring          test_sockets_ai
+        test_ik_authoring              test_ported_anim            test_spline_landscape
+        test_ik_goals_solvers          test_project_graph
+        test_landscape_layer_register  test_recipes
+
+      WHAT IS ESTABLISHED AND WHAT IS NOT, because the temptation is to call all thirteen 5.7
+      defects and that would be wrong. Established: they fail for reasons that are not cooked-asset
+      assertions. Not established: whether each is a 5.7 behaviour difference, a fixture this
+      project happens not to have, or a real defect that the cooked fork was masking. Two of them
+      already have other explanations - test_socket_authoring is the T3104 sweep-only failure the
+      fixture-adoption item has been tracking, and test_spline_landscape was one of its twelve
+      fixes.
+
+      THE TRIAGE IS NOW POSSIBLE AND WAS NOT BEFORE. MIF_BRIDGE_PORT and MIF_PROJECT_MARKER mean two
+      editors can be reached in one session, so the same suite can be run against 5.3 cooked and 5.7
+      uncooked and the results compared. Passes on 5.3 and fails on 5.7 is a finding; fails on both
+      is a fixture problem wearing an engine's clothes. That comparison has never been possible in
+      this repo.
+
+          MIF_BRIDGE_PORT=8801 MIF_PROJECT_MARKER=Curfew.uproject python tools/test_recipes.py
+
+      Do them one at a time and read the failure. A batch verdict on thirteen suites would be the
+      same mistake as the 23, 22 and 12 false findings this file already records.
+
 - [ ] **29 suites can only ever pass on a COOKED project, and most buyers are not on one**
       FOUND 2026-09-05, running the suites against Curfew - uncooked 5.7, 35,725 assets, a real
       game project - for the first time. Andre's prompt was "most of our testing im pretty sure has
