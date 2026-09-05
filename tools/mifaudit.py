@@ -202,6 +202,71 @@ def require_sdk_bridge(force=False):
     return True, "pid %d (%s)" % (pid, PROJECT_MARKER)
 
 
+_project_is_cooked = [None]
+
+
+def project_is_cooked(timeout=30):
+    """True / False / None, and None means the question could not be asked.
+
+    Cached: a project does not become cooked halfway through a run, and asking 29 suites' worth of
+    times would be 29 asset-registry queries for one unchanging fact.
+    """
+    if _project_is_cooked[0] is not None:
+        return _project_is_cooked[0]
+    # list_blueprints, NOT find_assets. The first version of this asked
+    # find_assets{cooked:true} and find_assets has no `cooked` parameter - it was guessed, the guard
+    # refused it by name, and the helper correctly answered None rather than "uncooked". That
+    # fail-safe is the only reason a wrong probe did not silently skip 29 suites on a cooked
+    # project.
+    #
+    # list_blueprints answers it directly and says so in its own help: every row carries
+    # cooked:true/false and cookedCount says how many. On Curfew it returns count 459,
+    # cookedCount 0 - 459 blueprints, none cooked - which is exactly the question.
+    #
+    # `origin` on find_assets rows is NOT the signal, and it looks like one: it reports loose
+    # vs container, and container assets turn up even in an uncooked project because engine and
+    # plugin content ships that way. 26 of a 400-row sample on Curfew were containers.
+    try:
+        r = raw_post("list_blueprints", {}, timeout=timeout)
+    except Exception:                                  # noqa: BLE001 - unreachable is not uncooked
+        return None
+    if not isinstance(r, dict) or r.get("ok") is False:
+        # A REFUSAL IS NOT AN ANSWER. Saying "uncooked" here would skip 29 suites on a project that
+        # might be cooked, which is a coverage hole dressed as a clean run. None means the caller
+        # carries on and each suite fails or passes on its own merits, as it did before this
+        # existed.
+        return None
+    n = r.get("cookedCount")
+    if not isinstance(n, int):
+        return None
+    _project_is_cooked[0] = n > 0
+    return _project_is_cooked[0]
+
+
+def require_cooked_project(name):
+    """None if this project has cooked assets; 2 if the caller should SKIP.
+
+    Mirrors blender_audit_common.require_headless on purpose - same question, other backend: is this
+    environment one where my assertions can mean anything, and if not, say so ONCE and stop rather
+    than failing an assertion at a time.
+
+    Returns 2 rather than 1 because run_all_suites already distinguishes them, and its comment says
+    why better than this one could: "62 passed, 1 skipped" is an honest sweep; "63 passed" and
+    "1 failed" are both lies in different directions.
+    """
+    cooked = project_is_cooked()
+    if cooked or cooked is None:
+        return None
+    print("")
+    print("SKIPPED - nothing was verified, and that is the honest answer rather than a red line.")
+    print("  %s asserts on COOKED assets, and this project has none. Its checks are about the" % name)
+    print("  cooked-asset guards - what duplicate_asset, set_struct_member and the rest refuse when")
+    print("  the editor data has been stripped - so an uncooked project cannot exercise them at all.")
+    print("  This is not a regression and not a gap in the plugin: it is a question that cannot be")
+    print("  asked here. Run it against a cooked project to get an answer.")
+    return 2
+
+
 def bridge_liveness(timeout=8):
     """('alive'|'busy'|'dead') - and the middle one is the whole point of this function.
 
