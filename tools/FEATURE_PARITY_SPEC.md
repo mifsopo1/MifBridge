@@ -12710,27 +12710,35 @@ out-of-process the way ops_gen already does with gen_status.
           the helper's own argument) was invisible to it. Each function is now judged on its own
           body.
 
-      AND ONE JUDGEMENT THAT IS NOT MECHANICAL, stated plainly because it is the tool's weak point.
-      An op that both consumes and creates a collection is a get-or-create, and set_light_linking's
-      is precisely the broken state this item describes - a caller could not make a collection
-      deliberately, name it, or learn it now existed. But create_collection ALSO checks before it
-      creates, to refuse a duplicate, and the two are structurally identical. The separator is the
-      op's published NAME (create_/add_/new_/make_, never a leading underscore). That is a naming
-      heuristic and it is not the one the reverted attempts died on: they guessed a PARAMETER's
-      type from its spelling, this reads an op's own API name, and it is only ever used to RESCUE a
-      creator - never to invent one.
+      AND ONE JUDGEMENT THAT IS NOT MECHANICAL, stated plainly because it is the tool's weak point
+      and because the first version of it was WRONG. An op that both consumes and creates a
+      collection is a get-or-create, and set_light_linking's is precisely the broken state this
+      item describes - a caller could not make a collection deliberately, name it, or learn it now
+      existed. But create_collection ALSO checks before it creates, to refuse a duplicate, and the
+      two are structurally identical.
 
-      THE TWO OPEN GAPS, ratcheted in audit_blender_consumer_no_creator_baseline.txt and accepted
-      as KNOWN rather than as correct:
+      The first separator tried was the op's published NAME. It called set_vertex_weights a gap,
+      and set_vertex_weights is the op that CLOSED this exact hole - its own docstring opens
+      "Create a vertex group and put weights in it - which nothing in this addon could do", it
+      takes `create` defaulting true, it reports `created`, and it reports the .001 suffix Blender
+      gives a duplicate name. Everything set_light_linking's helper could not do. Judging it by its
+      `set_` prefix called a deliberate design a defect, and it went into the baseline and into a
+      commit message before being caught by reading the source it was accusing.
 
-        scenes          render_animation takes a scene by name and nothing creates a scene.
-        vertex_groups   set_vertex_weights makes one as a side effect of writing weights, which is
-                        the same get-or-create shape set_light_linking was fixed for. There is no
-                        op whose purpose is creating a vertex group, and none that lists or deletes
-                        one either.
+      So the test is whether creation is a CALLER-CONTROLLED, REPORTED outcome: a `create`
+      parameter or a `created` field. That is this repo's own consequence-field convention, and it
+      is the actual difference between an op that creates on purpose and one that creates behind
+      the caller's back. The name test remains only as a second route in, for a create_* op that
+      reports nothing, and is never used to invent a creator - only to rescue one.
 
-      Both want a new addon op and a Blender run to verify, so they are left for that rather than
-      half-built here. A NEW entity type of this shape now fails the release gate.
+      THE ONE OPEN GAP, ratcheted in audit_blender_consumer_no_creator_baseline.txt and accepted as
+      KNOWN rather than as correct:
+
+        scenes          render_animation takes a scene BY NAME and nothing in the addon creates a
+                        scene. Wants a create_scene op and a Blender run to verify, so it is left
+                        for that rather than half-built here.
+
+      A NEW entity type of this shape now fails the release gate.
 
       WHAT IT STILL DOES NOT COVER, and the tool prints this itself rather than implying a clean
       bill: a collection WITH a creator can still be uncreatable for the case a consumer needs.

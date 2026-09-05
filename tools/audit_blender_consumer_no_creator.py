@@ -154,6 +154,7 @@ def scan(path):
             continue
         op = fn.name[3:] if fn.name.startswith("op_") else fn.name
         names, nodes = caller_derived(fn)
+        deliberate_creators(fn, op)
         # LOCAL ALIASES FOR A COLLECTION. `ebs = data.edit_bones` then `ebs.new(...)` is how both
         # bone creators are written, and without this the tool reported "bones can be named and
         # created by nobody" while create_armature and add_bones both make them. Same class of miss
@@ -221,6 +222,23 @@ def scan(path):
     return consumers, creators
 
 
+DELIBERATE = set()   # ops that expose creation as a caller-controlled, REPORTED outcome
+
+
+def deliberate_creators(fn, op):
+    """Does this op take a `create` parameter, or report a `created` field?
+
+    Both are read off the source: take(params, "create", ...) and a "created" key in a
+    dict the op builds. Either one means the caller asked for the creation and was told it
+    happened, which is the difference between a creator and a side effect.
+    """
+    for node in own_nodes(fn):
+        if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                and node.value in ("create", "created")):
+            DELIBERATE.add(op)
+            return
+
+
 def analyse():
     consumers, creators = {}, {}
     files = sorted(glob.glob(os.path.join(ADDON, "*.py")))
@@ -260,11 +278,26 @@ def analyse():
     # guessed a PARAMETER's type from its spelling, where this reads an op's own API name, and it
     # is applied only to rescue a creator - never to invent one. A private helper (leading
     # underscore) is never a creator on its own, which is what set_light_linking's _collection is.
+    #
+    # THE NAME IS THE WEAKER HALF OF THAT TEST, and on its own it got set_vertex_weights wrong.
+    # Its docstring opens "Create a vertex group and put weights in it - which nothing in this
+    # addon could do", it takes a `create` parameter defaulting true, it reports `created`, and it
+    # reports the .001 suffix Blender gives a duplicate name. A caller can make a vertex group
+    # deliberately, name it, and be told it happened - which is everything set_light_linking's
+    # nested helper could not do. Judging it by its `set_` prefix called a deliberate design a gap.
+    #
+    # So the real test is whether creation is a CALLER-CONTROLLED, REPORTED outcome: a `create`
+    # parameter, or a `created` field in the response. That is this repo's own consequence-field
+    # convention, and it is what distinguishes an op that creates on purpose from one that creates
+    # behind the caller's back. The name test stays as a second route in, for a create_* op that
+    # reports nothing.
     for coll, ops in list(creators.items()):
         real = set()
         for op in ops:
             if op in consumers.get(coll, set()):
-                if op.startswith("_") or not op.split("_")[0] in ("create", "add", "new", "make"):
+                named = not op.startswith("_") and op.split("_")[0] in ("create", "add", "new",
+                                                                       "make")
+                if not (named or op in DELIBERATE):
                     continue
             real.add(op)
         if real:
