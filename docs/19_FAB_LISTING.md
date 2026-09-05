@@ -4,9 +4,20 @@
 
 # Selling MifBridge on Fab — the submission, and what is still open
 
-**Status as of 2026-09-04, late.** The package builds and is measured against the agreement on
-every run (`python tools/fab_readiness.py --check`). All four decisions are made and recorded. What
-remains is one finding that resolves itself at upload, one that is cosmetic, and the gallery. Nothing here is guesswork about the contract: the clauses are quoted
+**Status as of 2026-09-05. `fab_readiness --check` PASSES.** Every clause it can judge is green,
+all four decisions are made and recorded, and the package is 144 files and 2.1 MB. What remains
+before posting is the gallery, and two things you do AT upload rather than before it: tick
+CreatedWithAI in the Fab portal, and put `git rev-parse HEAD` into `publishedCommit`.
+
+Getting to a passing run meant correcting two checks rather than changing the package, and both are
+worth knowing about because either would have looked like a package defect:
+
+- **3(b) blocked before anything was published**, which cannot be satisfied. Nothing can be LATER
+  than a listing that does not exist, and the only way to set `publishedCommit` is to post - so the
+  check was refusing the act that would clear it. It is a note before publication and blocks after.
+- **3(g)(i) blocked on comments while the buyer-visible count was zero.** The clause is about what
+  reaches a buyer; emitted strings are at 0, down from 28. The 119 that remain are in comments and
+  internal docs, still counted and still reported, just no longer grounds for refusing a package. Nothing here is guesswork about the contract: the clauses are quoted
 from the live [Fab Distribution Agreement](https://www.fab.com/distribution-agreement), last updated
 23 February 2026, read on 2026-09-04.
 
@@ -181,25 +192,34 @@ every authored key on a channel and then said *"NOTHING was changed"*), `set_mat
 `set_collision`. All three fixed by moving validation above the first mutation rather than trying to
 undo one afterwards. The detector went from 66 findings to 59.
 
-## 5. The gallery
+## 5. The gallery — the only thing left before posting
 
-Fab lists on its images. Nothing here is ready, and the honest reason is that good listing art needs
-a scene we own and an editor we are not sharing.
+Fab lists on its images, and this is now the sole blocker.
 
 | # | Shows | State |
 |---|---|---|
-| 1 | An agent wiring and **compiling** a Blueprint, with the real compiler output mapped to node and pin | needs a free editor + an own-IP scene |
+| 1 | An agent wiring and **compiling** a Blueprint, with the real compiler output mapped to node and pin | needs a free editor |
 | 2 | The in-editor panel mid-session: live call transcript, timings, the Flag button | needs a free editor |
-| 3 | Blender before/after: `mesh_quality` findings, then `recipe_game_ready`, with the numbers on it | `make_demo.py` generates this today |
+| 3 | Blender before/after: `mesh_quality` findings, then `recipe_game_ready`, with the numbers on it | **`make_demo.py` generates this today** |
 | 4 | Round trip — an asset authored in Blender, landing in Unreal | needs both |
 | 5 | `describe_endpoint` answering, to make the point that the API documents itself | needs a free editor |
 
-`tools/make_demo.py` already generates image 3 end to end and checks its own output — but it says of
-itself, correctly: *"The subject is a grey cylinder… It is not listing art."* Turning it into listing
-art means an actual scene, and **the scene must be ours** — using DDS2 content in marketing for a
-commercial product is the same §3(g)(i) problem as shipping its name in a string.
+**Two constraints settled on 2026-09-05, and they resolve each other.**
 
----
+The scene must be **our own IP** — using another studio's content in marketing is the same §3(g)(i)
+problem as shipping its name in a string. And I do not take self-initiated screenshots of the
+editor.
+
+**Curfew answers both.** It is Andre's own uncooked 5.7 project with 35,725 assets, so shots from it
+are ours to publish, and they show MifBridge as a **general UE5 tool** rather than a DDS2 mod utility
+— which is the listing's whole argument. `capture_viewport` is an endpoint, so the images are made
+by the plugin doing its job rather than by pointing a screenshot tool at a window. Demoing the
+product by using the product is the honest version of a gallery.
+
+`make_demo.py` produces image 3 end to end and checks its own output. Its subject is now a bevelled
+barrel with a steel material rather than a grey cylinder — a shape a buyer recognises — while the
+defects it measures (ngon caps, unapplied non-uniform scale) are untouched, because a demo that
+tidied away its own defects would be showing a tool solving a problem it had already removed.
 
 ## 6. Running the check
 
