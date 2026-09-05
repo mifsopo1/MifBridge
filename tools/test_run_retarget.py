@@ -147,39 +147,52 @@ def main():
               (dest.get("error") or "")[:220])
 
         # ------------------------------------------------------------------ T3202 the editor kill
-        print("\n=== T3202: the cooked check - the guard that stops an editor kill ===")
-        anims = [a["path"] for a in
-                 (M.call("find_assets", {"class": "AnimSequence", "limit": 5}).get("assets") or [])
-                 if not M.is_scratch_fixture(a)][:2]
-        check("T3202 (setup) the project has AnimSequences to point at", len(anims) > 0, len(anims))
-        if anims:
-            # NO confirm, deliberately. The cooked check runs BEFORE the confirm check, so this call
-            # has two independent barriers and does not depend on the guard it is testing.
-            cooked = M.raw_post("run_retarget", {"retargeter": RTG, "animations": anims})
-            check("T3202 cooked sources are refused", cooked.get("ok") is False,
-                  json.dumps(cooked)[:250])
-            skipped = cooked.get("skipped") or []
-            check("T3202 every cooked asset is named individually, not just counted",
-                  len(skipped) == len(anims)
-                  and all("COOKED" in (s.get("reason") or "") for s in skipped),
-                  json.dumps(skipped)[:300])
-            check("T3202 and the reason says what would have happened - the editor terminating",
-                  any("terminate the editor" in (s.get("reason") or "") for s in skipped),
-                  json.dumps(skipped[:1])[:250])
-            # A partial batch is the dangerous shape: 39 of 40 retargeted and reported as success.
-            check("T3202 the WHOLE batch is refused, never partially run",
-                  (cooked.get("createdCount") is None) and not cooked.get("created"),
-                  json.dumps(cooked)[:250])
+        # COOKED-ONLY, SKIPPED where nothing is cooked. On an uncooked project the guard
+        # this asserts never fires, so the assertion fails for the environment rather than
+        # for a defect - and where the call is a write, it lands. See FEATURE_PARITY_SPEC.
+        #
+        # `is not False`: project_is_cooked returns None when the question could not be
+        # asked, and an unanswerable question is not a No - None runs this exactly as before.
+        COOKED = M.project_is_cooked()
+        if COOKED is False:
+            print("")
+            print('=== T3202 SKIPPED - nothing in this project is cooked ===')
+            print('  It asserts run_retarget REFUSES cooked sources rather than killing the editor, and names')
+            print('  each cooked asset individually. With nothing cooked here there is no source to refuse.')
+        else:
+            print("\n=== T3202: the cooked check - the guard that stops an editor kill ===")
+            anims = [a["path"] for a in
+                     (M.call("find_assets", {"class": "AnimSequence", "limit": 5}).get("assets") or [])
+                     if not M.is_scratch_fixture(a)][:2]
+            check("T3202 (setup) the project has AnimSequences to point at", len(anims) > 0, len(anims))
+            if anims:
+                # NO confirm, deliberately. The cooked check runs BEFORE the confirm check, so this call
+                # has two independent barriers and does not depend on the guard it is testing.
+                cooked = M.raw_post("run_retarget", {"retargeter": RTG, "animations": anims})
+                check("T3202 cooked sources are refused", cooked.get("ok") is False,
+                      json.dumps(cooked)[:250])
+                skipped = cooked.get("skipped") or []
+                check("T3202 every cooked asset is named individually, not just counted",
+                      len(skipped) == len(anims)
+                      and all("COOKED" in (s.get("reason") or "") for s in skipped),
+                      json.dumps(skipped)[:300])
+                check("T3202 and the reason says what would have happened - the editor terminating",
+                      any("terminate the editor" in (s.get("reason") or "") for s in skipped),
+                      json.dumps(skipped[:1])[:250])
+                # A partial batch is the dangerous shape: 39 of 40 retargeted and reported as success.
+                check("T3202 the WHOLE batch is refused, never partially run",
+                      (cooked.get("createdCount") is None) and not cooked.get("created"),
+                      json.dumps(cooked)[:250])
 
-        alive = M.call("self_audit", {})
-        check("T3202 - the editor is still alive", alive.get("ok") is True,
-              "a failed cooked guard is a terminated editor, not an error response")
+            alive = M.call("self_audit", {})
+            check("T3202 - the editor is still alive", alive.get("ok") is True,
+                  "a failed cooked guard is a terminated editor, not an error response")
 
-        print("\n  NOT EXERCISED, on purpose: a SUCCESSFUL retarget. It writes new assets into the")
-        print("  TARGET MESH's package - real content on this project - and no test is worth that.")
-        print("  Every asset here is cooked anyway (514 AnimSequences, all from containers), so the")
-        print("  success path cannot be reached on DDS2 at all. Curfew (uncooked 5.7) is where it")
-        print("  would run for real.")
+            print("\n  NOT EXERCISED, on purpose: a SUCCESSFUL retarget. It writes new assets into the")
+            print("  TARGET MESH's package - real content on this project - and no test is worth that.")
+            print("  Every asset here is cooked anyway (514 AnimSequences, all from containers), so the")
+            print("  success path cannot be reached on DDS2 at all. Curfew (uncooked 5.7) is where it")
+            print("  would run for real.")
     finally:
         # Rigs before the retargeter that references them; delete_asset refuses the other order.
         for path in reversed(made):

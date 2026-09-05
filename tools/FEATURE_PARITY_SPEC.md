@@ -15849,7 +15849,26 @@ out-of-process the way ops_gen already does with gen_status.
       re-run against DDS2 - it needs the 5.3 editor, and the reasoning is why it is safe to land
       without it.
 
-      NINETEEN LEFT of the 22 with the write shape.
+      FOUR GUARDED. test_run_retarget's T3202 joined them - the cooked check is its last section and
+      separates cleanly. On the probe: T3202 skips, 11 pass / 1 fail, and the one failure is
+      T3203's cleanup, which is the transaction-buffer item and not this.
+
+      AND ONE WAS REVERTED, which is the more useful half. test_virtual_bone_authoring's T3300 looks
+      like a cooked section - its banner is "cooked skeletons are refused, and named" - and it is
+      NOT one. It also duplicates a skeleton into scratch and picks the bones B1/B2/B3 that every
+      later section uses, so guarding it made T3301 die on an UnboundLocalError. Reverted with
+      git checkout rather than patched around.
+
+      THE LESSON FOR THE REMAINING EIGHTEEN: a section banner naming "cooked" does not mean the
+      section is cooked-only. Some carry the SETUP the rest of the suite depends on, and the cooked
+      part is a few assertions inside it. Those need the assertions guarded individually, not the
+      section wrapped - which is a different and slower edit, and the reason this is worth doing by
+      hand rather than by a pattern that succeeded four times.
+
+      Caught by RUNNING each guarded suite on the probe. A suite that fails to import or dies on a
+      NameError still "compiles", and py_compile said all of them were fine.
+
+      EIGHTEEN LEFT of the 22 with the write shape.
 
       MEASURED 2026-09-05 BY READING, NOT RUNNING - tools/audit_cooked_suite_shape.py. It finds every
       check() line mentioning cooked, collects the endpoints called just above it, and classifies
