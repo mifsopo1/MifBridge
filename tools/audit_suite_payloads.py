@@ -305,7 +305,14 @@ def main():
         pass
     print("")
     print("REACH - what this audit can and cannot judge:")
-    print("  covered      the C++ endpoints under Source/MifBridge")
+    print("  covered      the C++ endpoints under Source/MifBridge, called through M.call,")
+    print("               M.raw_post, SC.confirm_call or post( - the UE-side call shapes")
+    print("  NOT covered  a call made through a LOCAL WRAPPER. make_demo.py wraps its calls in a")
+    print("               setup() helper and none of them are seen here, which is worth knowing")
+    print("               because that file SHIPS in the --fab package. The 2026-09-05 extension")
+    print("               to non-suite tools caught capture_camera{path} in make_ue_demo and did")
+    print("               NOT catch bevel_edges{width} in make_demo - one of the three parameter")
+    print("               mistakes that motivated it, not all three.")
     print("  NOT covered  %s Blender addon ops - this tool does not read tools/blender-addon at"
           % (_ops or "the"))
     print("               all, so the verdict above is about the UE half only.")
