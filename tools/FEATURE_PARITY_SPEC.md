@@ -14436,10 +14436,28 @@ out-of-process the way ops_gen already does with gen_status.
       indistinguishable from one that suppresses everything. 8/8.
 
 - [ ] **the 50 dirty-refusal sites in the C++ handlers**
-      Found by audit_mutate_then_deny_ue.py, NOT fixed: the editor holds UnrealEditor-MifBridge.dll,
-      so none of it can be compiled or tested in this session and an untested C++ edit is worth less
-      than a filed one. Run `python tools/audit_mutate_then_deny_ue.py --by-endpoint` for the list
-      with absolute file lines.
+      Found by audit_mutate_then_deny_ue.py, NOT fixed. Run
+      `python tools/audit_mutate_then_deny_ue.py --by-endpoint` for the list with absolute file
+      lines; it stands at 66 findings across 27 known mutating calls.
+
+      THE BLOCKER RECORDED HERE HAS CHANGED, 2026-09-04, and saying so matters because the old one
+      was the reason nobody started. It read "the editor holds UnrealEditor-MifBridge.dll, so none
+      of it can be compiled or tested in this session". Compiling is no longer the obstacle - the
+      editor was closed, three Source/ fixes were merged, 5.3 compiled and linked and the 5.7 probe
+      returned Result: Succeeded, twice. A build is available whenever the editor is.
+
+      WHAT IS ACTUALLY REQUIRED NOW is per-site judgement plus behavioural verification, and the
+      second is the hard half. The fix shape is not mechanical: the item's own next paragraph says
+      that where the ordering is load-bearing the transaction has to be cancelled or the refusal
+      reworded, and deciding which of those applies means reading each site. 66 of those decisions,
+      each landing on a WRITE path, is not work to do unverified at the end of a long stretch - the
+      failure mode is a refusal that now leaves the asset in a different wrong state.
+
+      A DISPOSABLE EDITOR EXISTS FOR THE VERIFYING, which was not obvious before. make_engine_probe
+      builds a real MifProbeEditor target with this plugin loaded, at a scratch path, and
+      MIF_BRIDGE_PORT separates its bridge from 8791 - so the refusals can be exercised without
+      opening anybody's project. That turns "needs the machine" into "needs a probe", which is a
+      much smaller ask.
 
       The shape of the fix is the same one the Blender side took: move every check that CAN refuse
       above the first Modify(). Where the ordering is load-bearing - a validation that needs the
