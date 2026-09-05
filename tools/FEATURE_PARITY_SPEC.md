@@ -11928,6 +11928,28 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       it with a live editor: save a clean asset to a read-only path through both endpoints and check
       is_package_dirty afterwards. Two calls, one minute, and it needs the machine.
 
+      ATTEMPTED 2026-09-05, AND IT IS NOT BLOCKED ON THE MACHINE. A disposable MifProbe editor was
+      built and launched on MIF_BRIDGE_PORT 8801 specifically so this could run without touching
+      anybody's project - the experiment needs a SAVED asset, and saving a scratch asset into
+      Curfew to answer a question is worse than the question.
+
+      IT IS BLOCKED ON A STANDING RULE. mifaudit's DENY set refuses save_package, save_blueprint,
+      save_level, save_all and the rest, and says why: "writes to disk - the standing rule for this
+      project is that audits save nothing". Every call came back {"ok": false, "error": "denied by
+      harness", "_denied": true}. The harness is working exactly as designed.
+
+      SO THE REMAINING ASK IS A DECISION, NOT A SESSION. The experiment needs ONE save of ONE scratch
+      Blueprint inside a throwaway project that make_engine_probe rebuilds from nothing, and the rule
+      that forbids it is deliberate and written down. Bypassing it with raw_post would work and is
+      exactly the shape this repo keeps deleting - a guard routed around by whoever found it
+      inconvenient. ANDRE'S CALL: allow the harness a save inside a probe project, or leave the
+      asymmetry recorded and unsettled.
+
+      Worth noting what it would cost either way: the asymmetry only bites on a FAILED save of a
+      previously CLEAN package, which needs a read-only file or source control to provoke. It has
+      never been observed in this project, and the recorded worry is that a failed write leaves the
+      editor showing unsaved changes for an asset nobody edited.
+
       SO THE ITEM IS DOWN TO ITS TWO ORIGINALS, both genuinely blocked: set_niagara_emitter ->
       set_property needs an UNCOOKED Niagara emitter with editor data (the probe is written -
       tools/probe_niagara_emitter_source.py - and needs a live editor), and
