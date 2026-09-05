@@ -53,7 +53,7 @@
     "when it is true - leaving it empty makes 3(b) report UNKNOWN rather than passing."
   ],
 
-  "licenceInPayload": null,
+  "licenceInPayload": "fab-eula-notice",
   "_licenceInPayload": [
     "WHAT IT IS: a decision about the LICENSE file that ships INSIDE the Fab zip. Two valid values:",
     "  \"fab-eula-notice\"  replace it with a short notice pointing at the Fab EULA (recommended)",

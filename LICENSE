@@ -1,37 +1,84 @@
-MIT License
+MifBridge — Proprietary Licence
 
-Copyright (c) 2026 Mifsopo ("Mif")
+Copyright (c) 2026 Mifsopo ("Mif"). All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This software is NOT open source and NOT redistributable. It is licensed, not
+sold, and only on the terms below.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+1. WHAT YOU MAY DO
 
----
+If you obtained MifBridge from an authorised channel — a purchase on Epic's Fab
+marketplace, or a written grant from the copyright holder — you may:
 
-NOTE ON DEPENDENCIES
+  a. install and use it, on any number of machines you control, to develop
+     projects, including commercial ones;
+  b. modify it for your own use;
+  c. ship the OUTPUT of your work with no obligation to us — assets, levels,
+     Blueprints, builds and games you make while using MifBridge are yours, and
+     nothing in this licence attaches to them.
 
-MifBridge is an editor-only Unreal Engine plugin. It links against Unreal
-Engine headers/modules at build time; the Unreal Engine itself is governed by
-the Epic Games Unreal Engine EULA, not this MIT license. This license covers
-only the MifBridge plugin source in this repository.
+Where you obtained MifBridge through Fab, the Fab End User Licence Agreement
+governs your rights and this file does not narrow them. See NOTICE.md.
+
+
+2. WHAT YOU MAY NOT DO
+
+  a. Redistribute it. You may not publish, share, resell, sublicense, host,
+     mirror, bundle, or otherwise make MifBridge — in source or compiled form,
+     modified or not — available to anyone else.
+  b. Include it in a product you distribute, other than as the compiled result
+     of your own project that does not expose MifBridge itself. MifBridge is an
+     editor-time tool; it is not intended to ship inside a game build.
+  c. Remove or alter this licence, the copyright notices, or NOTICE.md.
+  d. Use it to build a competing product for distribution.
+
+Rights not expressly granted here are reserved.
+
+
+3. EARLIER VERSIONS WERE MIT, AND THAT STANDS
+
+Versions of MifBridge published under the MIT licence remain MIT for everyone
+who received them. That grant is perpetual and irrevocable and this file does
+not, and cannot, withdraw it. This licence governs this version and later ones
+only.
+
+
+4. CONTRIBUTIONS
+
+Contributions submitted to this project are licensed to the copyright holder for
+use under these terms and any future terms the project adopts. Contributors keep
+the copyright in what they wrote and are credited in NOTICE.md.
+
+
+5. THIRD-PARTY COMPONENTS
+
+MifBridge contains material under other licences, set out in full in NOTICE.md.
+Those terms govern that material and are not superseded by this file. In
+particular, part of the Blender backend is adapted from blender-mcp under the MIT
+licence, whose copyright and permission notice are reproduced in NOTICE.md as
+that licence requires.
+
+MifBridge links Unreal Engine at build time. The engine is governed by Epic
+Games' Unreal Engine EULA, not by this licence, and no engine source is
+redistributed here.
 
 MifBridge does not include, link, or redistribute any GPL-licensed code. The
 `create_editable_child` endpoint calls an engine-side function
-(`CreateEditableBlueprintCopy`, declared in the Kismet module of a
-cooked-editor engine fork) and, at runtime only, cooperates with the separate
+(`CreateEditableBlueprintCopy`, declared in the Kismet module of a cooked-editor
+engine fork) and, at runtime only, cooperates with the separate
 MifKismetReconstructor plugin (GPL-3.0) through an engine-provided delegate.
-Those are distributed separately and are not part of this MIT work.
+Those are distributed separately and are not part of this work.
+
+
+6. NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+Questions, or to request a grant: https://github.com/mifsopo1/MifBridge

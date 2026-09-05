@@ -465,9 +465,17 @@ MifBridge lets a local process **modify your project**, so it is locked down to 
 
 ## 📄 License
 
-**MIT** — see [`LICENSE`](LICENSE). MifBridge is entirely original code and does
-not include or link any GPL-licensed source, so you're free to use, modify, and
-redistribute it under the permissive MIT terms.
+**Proprietary — not redistributable.** See [`LICENSE`](LICENSE). Buy it once and
+use it on any number of machines you control, for commercial work included; modify
+it for your own use; and everything you MAKE with it is yours, with nothing
+attaching to your assets, levels, Blueprints or builds. What you may not do is pass
+MifBridge itself on — publish, resell, mirror, bundle or sublicense it.
+
+**Versions published under MIT stay MIT** for everyone who received them. That
+grant is perpetual and cannot be withdrawn; the change applies going forward only.
+
+MifBridge is otherwise original code and does not include or link any GPL-licensed
+source.
 
 It does link Unreal Engine at build time (the engine is covered by Epic's Unreal
 Engine EULA, not this license), and its `create_editable_child` endpoint calls an
@@ -481,14 +489,15 @@ that plugin is distributed separately and is not part of this MIT work.
 The Blender backend's socket framing (4‑byte big‑endian length prefix + UTF‑8 JSON) and its
 main‑thread job‑marshalling pattern are **adapted from
 [blender-mcp](https://github.com/MCPBlender/blender-mcp)** by **Siddharth Ahuja**, MIT licensed,
-© 2025. MifBridge is MIT too, so the adaptation is clean; the credit stays in the addon source
-headers as well as here.
+© 2025. MIT permits use in a proprietary work on the condition that its notice travels along, so
+the full permission notice is reproduced in [`NOTICE.md`](NOTICE.md) and the credit stays in the
+addon source headers.
 
 Nothing else travels from that project — no telemetry, no secret store, no third‑party service
 integrations or API keys, and none of its terms documents.
 
-Full third-party notices, including the Unreal Engine EULA boundary and the GPL-3.0
-`MifKismetReconstructor` separation, are in [`NOTICE.md`](NOTICE.md).
+Full third-party notices — the blender-mcp MIT text in full, the Unreal Engine EULA
+boundary, and the GPL-3.0 `MifKismetReconstructor` separation — are in [`NOTICE.md`](NOTICE.md).
 
 ---
 

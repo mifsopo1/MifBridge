@@ -86,8 +86,24 @@ LICENSE_GRANT = re.compile(
     rb"Permission is hereby granted, free of charge"           # MIT / X11
     rb"|Redistribution and use in source and binary forms"     # BSD
     rb"|Licensed under the Apache License"
-    rb"|is licensed under the MIT [Ll]icen[cs]e"
-    rb"|THE SOFTWARE IS PROVIDED \"AS IS\"")
+    rb"|is licensed under the MIT [Ll]icen[cs]e")
+# NOT `THE SOFTWARE IS PROVIDED "AS IS"`. That was in this pattern until 2026-09-04 and it is a
+# WARRANTY DISCLAIMER, which every licence carries - MIT, BSD, Apache and a proprietary one alike.
+# It says nothing about redistribution rights, which is the only thing 3(f)(v) is about, and it made
+# the check flag the proprietary licence written to SATISFY 3(f)(v).
+
+
+def _unquoted(blob):
+    """The file with markdown blockquotes removed - quotation is not assertion.
+
+    A third-party notice reproduced under `> ` is an ATTRIBUTION, and for MIT material it is a
+    CONDITION of use: "The above copyright notice and this permission notice shall be included in
+    all copies". Flagging it would push someone toward deleting a notice they are obliged to carry,
+    trading a cosmetic finding for a real licence breach. What 3(f)(v) is about is a grant this
+    project makes over ITS OWN work, and that is never written as a quotation.
+    """
+    keep = [ln for ln in blob.split(b"\n") if not ln.lstrip().startswith(b">")]
+    return b"\n".join(keep)
 
 # 3(g)(i). Third-party game IP this plugin was developed against. Deliberately NOT a general
 # trademark scanner - it names the one body of third-party IP that is actually all over this repo,
@@ -181,7 +197,7 @@ def check_copyleft(names, members):
 
 
 def check_license_grant(names, members):
-    hits = sorted(n for n, b in members.items() if LICENSE_GRANT.search(b))
+    hits = sorted(n for n, b in members.items() if LICENSE_GRANT.search(_unquoted(b)))
     if not hits:
         return "OK", False, ["no licence grant is shipped inside the payload"]
     return "FINDING", True, (
@@ -349,6 +365,22 @@ def selftest():
     expect("grant/mit", check_license_grant(list(mit), mit)[0], "FINDING")
     prose = {"x/README.md": b"This plugin used to be MIT. It is not any more."}
     expect("grant/prose", check_license_grant(list(prose), prose)[0], "OK")
+
+    # THE TWO FALSE POSITIVES OF 2026-09-04, both on documents that made the package MORE
+    # compliant. A proprietary licence carries the same warranty disclaimer MIT does...
+    prop = {"x/LICENSE": b"Copyright (c) 2026. All rights reserved.\nThis software is NOT "
+                         b"redistributable.\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY"}
+    expect("grant/proprietary-disclaimer", check_license_grant(list(prop), prop)[0], "OK")
+    # ...and a third-party notice reproduced under `>` is a condition of use, not a grant we make.
+    notice = {"x/NOTICE.md": b"## blender-mcp - MIT\n\n> Copyright (c) 2025 Someone\n>\n"
+                             b"> Permission is hereby granted, free of charge, to any person\n"
+                             b"> obtaining a copy of this software\n"}
+    expect("grant/quoted-notice", check_license_grant(list(notice), notice)[0], "OK")
+    # But an UNQUOTED grant in the same file still fires - quotation is the distinction, not the
+    # filename, or anyone could hide a grant by calling the file NOTICE.md.
+    bare_notice = {"x/NOTICE.md": b"Permission is hereby granted, free of charge, to any person"}
+    expect("grant/unquoted-in-notice",
+           check_license_grant(list(bare_notice), bare_notice)[0], "FINDING")
 
     # THE EXTENSIONLESS BUG, PINNED. scan() decides what the checks above ever see, so a check
     # cannot catch this on its own - the file has to reach it. Asserted on the NAME, because that

@@ -11,7 +11,9 @@ segment. A length prefix has neither failure mode and handles multi-megabyte
 bodies without a special case.
 
 Adapted from blender-mcp (github.com/MCPBlender/blender-mcp),
-(c) 2025 Siddharth Ahuja, MIT licence. MifBridge is MIT too.
+(c) 2025 Siddharth Ahuja, MIT licence. MifBridge is proprietary as of 2026-09-04; MIT
+permits that, on the condition that the notice travels with the code - it is reproduced in
+full in NOTICE.md.
 
 This module deliberately imports NOTHING from bpy. It is safe to call from the
 socket thread, and only from there -- see server.py for the threading contract.
