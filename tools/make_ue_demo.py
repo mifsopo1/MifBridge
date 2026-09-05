@@ -154,12 +154,27 @@ def main():
 
     written, rejected = [], []
     for i, angle in enumerate(ANGLES, 1):
-        path = os.path.join(args.out, "ue-%02d.png" % i)
-        payload = dict(angle, path=path.replace("\\", "/"))
-        r = M.raw_post("capture_camera", payload, timeout=300)
+        want = os.path.join(args.out, "ue-%02d.png" % i).replace("\\", "/")
+        # `name`, NOT `path`. capture_camera's guard accepts x/y/z, location, rotation, lookAt,
+        # useViewportCamera, fov, width, height and name - and nothing else. The first version of
+        # this sent `path`, which capture_viewport takes as an alias and this endpoint does not;
+        # it would have been refused by name on the first real run. Read the source rather than
+        # assuming two endpoints in the same family share a spelling.
+        r = M.raw_post("capture_camera", dict(angle, name=want), timeout=300)
         if not isinstance(r, dict) or r.get("ok") is False:
             print("  shot %d REFUSED: %s" % (i, str(r.get("error") if isinstance(r, dict) else r)[:150]))
-            rejected.append((path, "refused"))
+            rejected.append((want, "refused"))
+            continue
+        # WHERE IT ACTUALLY LANDED, from the response, rather than where we asked. The endpoint
+        # returns `file`, and trusting the request over the reply is how a tool reports success
+        # about a file it never looked at.
+        path = r.get("file") or want
+        # AND THE ENDPOINT'S OWN VERDICT FIRST. It reports allBlack, so the plugin already answers
+        # the crudest form of this question; png_is_interesting below is the wider net that also
+        # catches a near-uniform frame - a camera inside geometry is not black, it is one colour.
+        if r.get("allBlack"):
+            print("  shot %d REJECTED  the endpoint reports allBlack" % i)
+            rejected.append((path, "endpoint reported allBlack"))
             continue
         good, detail = png_is_interesting(path)
         print("  shot %d %-9s %s" % (i, "kept" if good else "REJECTED", detail))
