@@ -15307,7 +15307,7 @@ out-of-process the way ops_gen already does with gen_status.
 
           python tools/check_vendored.py <project>/Plugins/MifBridge --check
 
-- [ ] **audit_suite_payloads cannot judge Blender op payloads, and one attempt made it worse**
+- [x] **audit_suite_payloads cannot judge Blender op payloads, and one attempt made it worse**
       THE GAP, measured 2026-09-05. The audit checks that every call passes only keys the endpoint
       accepts, and it holds the 427 UE accept-lists only. So bevel_edges{width} and
       create_material{assignTo} - two real mistakes made in make_demo that day - go straight through
@@ -15351,6 +15351,43 @@ out-of-process the way ops_gen already does with gen_status.
       call should have been SKIPPED by the no-guard rule, and it was judged anyway. Something
       supplied a set. Print `allowed` and `m.group(0)` together in the scan loop and it will be
       obvious in one run.
+
+      ================================================================================
+      DONE 2026-09-05. THE CAUSE WAS THE CALL SHAPE, AND THIS ITEM RULED IT OUT WRONGLY.
+      ================================================================================
+      Ran the prescribed diagnostic and it cleared create_camera immediately - allowed came back as
+      an 18-key set containing fStop, so that call site produces NO finding and never should have.
+      Scanning every addon suite with the merge reproduced 20 findings, not 64, and they had one
+      shape:
+
+        list_bones       passes 'path'     x8
+        create_material  passes 'path'     x7
+
+      THOSE ARE THE FOUR NAMES THAT EXIST ON BOTH BACKENDS. This item raised that hypothesis and
+      dismissed it - "Checked the obvious cause and it was not that: only FOUR names exist on both
+      backends ... and none of the flagged ops is in the UE table at all". The check asked whether
+      the FLAGGED OP was in the UE table. The right question was whether the CALLER was a UE caller:
+      `call\s*\(` also matches `M.call(`, because a word boundary sits between the dot and the
+      c. So every `M.call("list_bones", {"path": ...})` - a perfectly good UE call - was judged
+      against the ADDON's accept-list, which has no `path`.
+
+      THE FIX IS ONE CAPTURE GROUP. ADDON_CALL now captures the receiver; M. and SC. are UE and are
+      skipped, a bare call or B.call is the addon. Measured: 235 addon call sites judged, 1739 UE
+      calls skipped, ZERO findings on a clean tree.
+
+      MUTATION-TESTED RATHER THAN TRUSTED, with a temporary fixture that was deleted after the run.
+      All three cases in one file:
+        bevel_edges{width}   REPORTED   - the exact mistake make_demo made, which is why this
+                                          item exists
+        bevel_edges{offset}  silent     - the correct key
+        M.call list_bones{path}  silent - the both-backends collision that caused the 64
+
+      The remaining 64-vs-20 gap is the other half of the reverted patch: its bare-call regex was
+      written through a heredoc, whose escaping the item already called "the least-verified of the
+      three". Written through the editor this time, for the same reason.
+
+      REACH now says BLENDER OP payloads are covered and names what still is not: table-driven
+      payloads, and any call through a third wrapper shape.
 
 - [x] **set_keyframe and evaluate_at_frame resolve the same dataPath against different datablocks**
       FOUND 2026-09-05, one minute after the set_world finding and in the same investigation.

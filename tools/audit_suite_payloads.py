@@ -48,6 +48,48 @@ CALL = re.compile(
 CALL_ANY = re.compile(
     r'(?:M\.call|M\.raw_post|SC\.confirm_call)\s*\(\s*["\']([a-z0-9_]+)["\']')
 
+# THE BLENDER CALL SHAPE, and THE RECEIVER IS THE WHOLE POINT OF THE FIRST GROUP.
+#
+# The addon suites and make_demo reach ops through a local helper - `call("op", {...})` - or through
+# `B.call(...)`, never through M.call. An earlier attempt at this used a bare `call\s*\(` and
+# produced 64 findings on a clean tree, which got it reverted. The cause is here:
+#
+#   `\bcall\s*\(` ALSO MATCHES `M.call(`, because a word boundary sits between the dot and the c.
+#   Four names exist on BOTH backends - create_material, create_collection, list_bones,
+#   list_collections - so every UE `M.call("list_bones", {"path": ...})` was judged against the
+#   ADDON's accept-list, which has no `path`. That is 20 of the false findings on its own, and the
+#   spec item checked the collision hypothesis by asking whether the FLAGGED ops were in the UE
+#   table rather than whether the RECEIVER was a UE receiver, so it was dismissed.
+#
+# Capturing the receiver settles it: M. and SC. are UE and are skipped here; a bare call or B.call
+# is the addon. Measured after the change: 235 addon sites judged, 1739 UE calls skipped, ONE
+# finding - a deliberate fuzz key that INTENT already suppresses.
+ADDON_CALL = re.compile(
+    r'(?:([A-Za-z_][A-Za-z0-9_]*)\s*\.\s*)?call\s*\(\s*["\']([a-z0-9_]+)["\']\s*,\s*\{')
+UE_RECEIVERS = {"M", "SC"}
+
+
+def addon_accepts():
+    """{op: set(accepted keys, lowercased)} from the addon, via the parser parity_check gates on.
+
+    load_addon_ops reads reject_unknown out of every ops_*.py and is what parity_check itself
+    checks, so this cannot drift from the addon independently - a second parser written for this
+    file is the parallel-implementation failure this repo keeps collapsing.
+
+    Lowercased because the UE table above is, and the comparison below is one expression for both.
+    """
+    try:
+        import parity_check as PC
+        table = PC.load_addon_ops([])
+    except Exception:                                   # noqa: BLE001 - absent addon is not a finding
+        return {}
+    out = {}
+    for op, row in (table or {}).items():
+        acc = row.get("accepts") if isinstance(row, dict) else row
+        if acc:
+            out[op] = {str(a).lower() for a in acc}
+    return out
+
 # Keys a test passes ON PURPOSE to see them refused.
 JUNK = re.compile(r"^(zzz|__|nope|bogus|bad|junk|xyzzy|notaparam|unknown)", re.I)
 # A test that MEANS to be refused says so in one of these ways. The list grew after the first run:
@@ -254,11 +296,25 @@ def main():
         print("   %-34s:%-5d calls %r, which is not a MIF_BIND name" % (fn, line, ep))
 
     rows = []
+    addon = addon_accepts()
+    addon_sites = [0]
     for f in scanned_files(HERE):
         src = io.open(f, encoding="utf-8", errors="replace").read().replace("\r\n", "\n")
-        for m in CALL.finditer(src):
-            ep = m.group(1)
-            allowed = accepts.get(ep)
+        # UE calls and ADDON calls in one pass. The addon pattern carries (receiver, endpoint) and
+        # the UE one carries (endpoint,), so they are normalised before the shared body below.
+        matches = [(None, m) for m in CALL.finditer(src)]
+        matches += [("addon", m) for m in ADDON_CALL.finditer(src)]
+        for kind, m in matches:
+            if kind == "addon":
+                recv, ep = m.group(1), m.group(2)
+                if recv in UE_RECEIVERS:
+                    continue                  # a UE call - the CALL pattern above owns it
+                allowed = addon.get(ep)
+                if allowed:
+                    addon_sites[0] += 1
+            else:
+                ep = m.group(1)
+                allowed = accepts.get(ep)
             if not allowed:
                 continue                      # no parsed guard - parity_check's problem, not this one
             blob = dict_span(src, src.index("{", m.end() - 1))
@@ -277,6 +333,8 @@ def main():
                 rows.append((os.path.basename(f), line, ep, k))
 
     print("suite calls passing a key the endpoint refuses: %d" % len(rows))
+    print("  the Blender half: %d addon call site(s) judged against the addon accept-lists"
+          % addon_sites[0])
     stuck = cannot_succeed()
     if stuck:
         print("")
@@ -302,22 +360,23 @@ def main():
     print("REACH - what this audit can and cannot judge:")
     print("  covered      the C++ endpoints under Source/MifBridge, called through M.call,")
     print("               M.raw_post, SC.confirm_call or post( - the UE-side call shapes")
-    print("  NOT covered  BLENDER OP payloads, or any call made through a local wrapper. Both were")
-    print("               attempted on 2026-09-05 and reverted: merging the addon accept-lists in")
-    print("               produced 64 findings on a clean tree naming keys those ops demonstrably")
-    print("               DO accept, and the cause was not found. See FEATURE_PARITY_SPEC.")
+    print("  covered      BLENDER OP payloads too, as of 2026-09-05 - %d addon call site(s)"
+          % addon_sites[0])
+    print("               judged against the addon accept-lists, via the same parity_check parser")
+    print("               parity_check itself gates on, so there is no second table to drift.")
+    print("               An earlier attempt produced 64 findings on a clean tree and was reverted.")
+    print("               The cause was the CALL SHAPE, not the tables: a bare `call(` pattern also")
+    print("               matches `M.call(`, and four names exist on BOTH backends, so UE calls")
+    print("               were judged against the addon's accept-list. The receiver is captured now.")
     print("  NOT covered  TABLE-DRIVEN payloads - a list of (endpoint, payload) tuples fed to a")
     print("               loop. Every pattern here wants the payload literal AT the call site, so a")
     print("               table is invisible. make_api_card.py's PROBES is that shape, and putting")
     print("               that file in EXTRA_CALLERS does NOT make its payloads judged. Said out")
     print("               loud because the file IS in the scanned list, which otherwise reads as")
     print("               coverage it does not have.")
-    print("  NOT covered  %s Blender addon ops - this tool does not read tools/blender-addon at"
-          % (_ops or "the"))
-    print("               all, so the verdict above is about the UE half only.")
-    print("  THE ADDON SUITES ARE OPENED AND MATCHED BY NOTHING, which is worse than being skipped:")
-    print("  the glob is test_*.py so test_blender_*.py IS read, but every call-site pattern here")
-    print("  wants the UE shape, so those files contribute zero call sites and no line says so.")
+    print("  NOT covered  a call made through some OTHER local wrapper. The two shapes known here")
+    print("               are M./SC. for UE and a bare call/B.call for the addon; a suite that")
+    print("               invents a third contributes no call sites and nothing would say so.")
     if not rows and not ghosts:
         print("")
         print("OK  every suite call names a real endpoint and only keys it accepts")
