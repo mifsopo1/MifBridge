@@ -14981,6 +14981,39 @@ out-of-process the way ops_gen already does with gen_status.
 
           python tools/check_vendored.py <project>/Plugins/MifBridge --check
 
+- [ ] **audit_suite_payloads cannot judge Blender op payloads, and one attempt made it worse**
+      THE GAP, measured 2026-09-05. The audit checks that every call passes only keys the endpoint
+      accepts, and it holds the 427 UE accept-lists only. So bevel_edges{width} and
+      create_material{assignTo} - two real mistakes made in make_demo that day - go straight through
+      it, and the 14 test_blender_*.py suites are opened by the glob and matched by nothing.
+
+      Not theoretical: the runtime guard refused all three at a user's call, which is the guard
+      working, and this audit exists so that shape is caught statically first.
+
+      AN ATTEMPT WAS MADE AND REVERTED THE SAME HOUR, which is the useful half of this entry. It
+      merged parity_check.load_addon_ops - the same parser parity_check itself gates on, so no
+      second implementation - and added a bare `call("op", {` pattern for the addon call shape.
+      Result: 64 findings on a clean tree, naming keys the ops demonstrably DO accept:
+
+        test_blender_anim.py:72   create_camera  passes 'fStop'
+        test_blender_anim.py:72   create_camera  passes 'lookAt'
+
+      Both are in create_camera's accept list - printed straight from load_addon_ops, which returns
+      clipEnd, clipStart, dofDistance, fStop, fieldOfView, focalLength, focusObject, lens, location,
+      lookAt, makeActive, name, orthoScale, rotation. make_demo calls create_camera with lookAt and
+      it works. Checked the obvious cause and it was not that: only FOUR names exist on both
+      backends (create_collection, create_material, list_bones, list_collections), and none of the
+      flagged ops is in the UE table at all.
+
+      REVERTED RATHER THAN SHIPPED, because 64 findings nobody can explain is the exact shape this
+      file already records three times - detectors producing 23, 22 and 12 false findings in one
+      run - and a check people learn to scroll past stops guarding the half that worked.
+
+      WHOEVER PICKS THIS UP: the cause is somewhere between the key extractor and the lookup, not in
+      load_addon_ops, which was verified correct in isolation. Start by printing `allowed` for
+      create_camera inside the scan loop - the puzzle is that accepts.get returns None for it and it
+      was still judged, so something is supplying a set that should not be.
+
 - [ ] **13 suites fail on uncooked 5.7 for reasons that are NOT the cooked guards**
       THE FIRST UNCOOKED NUMBERS THIS PROJECT HAS EVER HAD, from the 2026-09-05 sweep against
       Curfew - Andre's own game, stock UE 5.7, 35,725 assets. Until that day the harness could not

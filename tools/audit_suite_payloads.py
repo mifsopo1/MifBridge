@@ -64,21 +64,16 @@ HARNESS = {"confirm", "save", "force", "overwrite", "replaceexisting", "discardu
 
 
 # WHAT GETS SCANNED. Suites plus the tools that CALL ENDPOINTS AND SHIP - which the test_*.py glob
-# missed, and it cost twice on 2026-09-05: make_demo sent bevel_edges{width} and
-# create_material{assignTo}, and make_ue_demo sent capture_camera{path}. All three were the same
-# mistake, generalising a spelling from a sibling endpoint, and all three are exactly what this
-# audit finds statically instead of at a user's call.
-#
-# make_demo in particular is one of the four tools kept in the --fab package because a buyer runs
-# it. A parameter error in a shipped demo generator fails in front of a customer; the same error in
-# a suite fails in front of us.
+# missed, and it cost on 2026-09-05: make_ue_demo sent capture_camera{path}, a key that endpoint does
+# not accept, and nothing static saw it.
 EXTRA_CALLERS = ("make_demo.py", "make_ue_demo.py", "verify_install.py", "scratch_confirm.py",
                  "bench_bridge_latency.py")
 
 
 def scanned_files(here):
     """Every file this audit reads, suites first. One list so the two scan loops cannot drift."""
-    files = sorted(glob.glob(os.path.join(here, "test_*.py")))
+    import glob as _glob
+    files = sorted(_glob.glob(os.path.join(here, "test_*.py")))
     files += [os.path.join(here, n) for n in EXTRA_CALLERS
               if os.path.isfile(os.path.join(here, n))]
     return files
@@ -307,12 +302,10 @@ def main():
     print("REACH - what this audit can and cannot judge:")
     print("  covered      the C++ endpoints under Source/MifBridge, called through M.call,")
     print("               M.raw_post, SC.confirm_call or post( - the UE-side call shapes")
-    print("  NOT covered  a call made through a LOCAL WRAPPER. make_demo.py wraps its calls in a")
-    print("               setup() helper and none of them are seen here, which is worth knowing")
-    print("               because that file SHIPS in the --fab package. The 2026-09-05 extension")
-    print("               to non-suite tools caught capture_camera{path} in make_ue_demo and did")
-    print("               NOT catch bevel_edges{width} in make_demo - one of the three parameter")
-    print("               mistakes that motivated it, not all three.")
+    print("  NOT covered  BLENDER OP payloads, or any call made through a local wrapper. Both were")
+    print("               attempted on 2026-09-05 and reverted: merging the addon accept-lists in")
+    print("               produced 64 findings on a clean tree naming keys those ops demonstrably")
+    print("               DO accept, and the cause was not found. See FEATURE_PARITY_SPEC.")
     print("  NOT covered  %s Blender addon ops - this tool does not read tools/blender-addon at"
           % (_ops or "the"))
     print("               all, so the verdict above is about the UE half only.")
