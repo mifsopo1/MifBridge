@@ -201,6 +201,9 @@ def op_create_collection(params):
         # BLENDER ADJUSTS A NAME SILENTLY. Anything looking this collection up by the string
         # it asked for needs to know it will not find it.
         "nameWasAdjusted": made_name != name,
+        # The canonical spelling, alongside - see the note in create_action. Same boolean, the name
+        # ten other ops use.
+        "nameWasSuffixed": made_name != name,
         "parent": parent.name if link else None,
         "inScene": in_scene,
         "objectCount": len(coll.objects),

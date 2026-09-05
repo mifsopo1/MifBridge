@@ -284,6 +284,10 @@ def op_create_material(params):
     out = _material_json(mat)
     out["created"] = created
     out["requestedName"] = name
+    # NO FLAG AT ALL until now - this op reported the name asked for and the name given and left the
+    # caller to compare two strings, which is the one thing a response field exists to save them.
+    # Nothing to be compatible with here, so it gets the canonical spelling directly.
+    out["nameWasSuffixed"] = mat.name != name
     if applied:
         out["resolvedInputs"] = applied
         out["applied"] = sorted(applied)

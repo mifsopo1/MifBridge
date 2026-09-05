@@ -1033,6 +1033,10 @@ def op_create_action(params):
         # Blender uniquifies silently, and a caller who then looks up the name they asked for finds
         # a DIFFERENT action - or none.
         "nameWasTaken": act.name != str(name),
+        # THE CANONICAL SPELLING, ALONGSIDE. Ten other ops call this nameWasSuffixed, and a caller
+        # testing that name silently missed this op. Both are emitted so nothing that reads the old
+        # one breaks; retiring it is a release-boundary decision, not a tidy-up.
+        "nameWasSuffixed": act.name != str(name),
         "assignedTo": obj.name if assigned else None,
         "assigned": assigned,
         "info": _action_row(act),

@@ -14773,6 +14773,26 @@ out-of-process the way ops_gen already does with gen_status.
 
       Worth doing soon rather than later - there are 12 sites now and the number only grows.
 
+      THE ADDITIVE HALF IS DONE, 2026-09-04, and the compatibility decision is untouched. All three
+      odd ops now emit the canonical nameWasSuffixed ALONGSIDE what they already emitted:
+      create_action keeps nameWasTaken, create_collection keeps nameWasAdjusted, and create_material
+      - which reported requestedName and NO flag, leaving the caller to compare two strings - gets
+      it outright. Nothing was removed, so no existing caller changes behaviour. Verified live
+      against a headless Blender 5.0: creating the same name twice flips nameWasSuffixed False to
+      True in all three, and create_material's second call materialises as MifDupMat.001.
+
+      RETIRING THE OLD NAMES IS STILL ANDRE'S, and so is one thing that was not obvious before.
+      Requiring the canonical spelling in audit_created_name_reported was TRIED and REVERTED as
+      vacuous: the gate accepts `requestedName` alone as a valid answer on a later branch, so
+      demanding the canonical flag on the first branch changes only which label an op is filed
+      under. Making it real means demoting "requestedName only" to a finding - which the audit's own
+      comment defends as a legitimate answer, "the caller has both strings and can compare them".
+
+      What is new is that the branch is now EMPTY. With create_material fixed, all 7 reporting ops
+      carry both requestedName and a flag, and nothing at all falls into "requestedName only". So
+      the decision costs zero findings today, where before it would have cost one. Still a
+      deliberate acceptance rule and still a decision rather than a tidy-up.
+
 - [x] **the check that stops the ninth create op repeating the retry-rename** DONE 2026-09-04
       tools/audit_created_name_reported.py, gated at zero. The eight ops above were fixed by hand;
       the addon had already chosen the answer four times and nothing verified the next op used it.
