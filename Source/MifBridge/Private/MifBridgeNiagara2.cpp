@@ -651,12 +651,31 @@ namespace MifBridge
 					 "the editor. The change is real and the system will recompile when the editor "
 					 "next needs it, or now with recompile:true."));
 		}
+		// MEASURED 2026-09-05, AND THE REASON THIS USED TO GIVE WAS WRONG. It told callers
+		// set_property "skips the RefreshFromExternalChanges and InvalidateCompileResults this call
+		// makes", leaving a stale compile result. It does not skip the invalidation. Driven against
+		// two FRESH systems so neither path could inherit the other's state:
+		//
+		//   system A, set_property only          compiledDataCurrent True -> FALSE
+		//   system B, set_niagara_emitter only   compiledDataCurrent True -> FALSE
+		//
+		// Both invalidate - PostEditChangeProperty on the system does it by itself - and
+		// set_property flips the flag in BOTH directions, each with applied:true, verified:true and
+		// list_niagara_emitters agreeing. So the sentence steered callers away from an endpoint
+		// that works, for a cause that measurement contradicts.
+		//
+		// WHAT IS STILL UNKNOWN is kept rather than quietly dropped: RefreshFromExternalChanges may
+		// do something beyond invalidation that nothing here exposes, so "the emitter stays dark"
+		// is unverified rather than disproved. The text now says which half is which.
 		Out->SetStringField(TEXT("whyNotSetProperty"),
-			TEXT("set_property on EmitterHandles[N].bIsEnabled flips the same bool, and it is enough "
-				 "to DISABLE an emitter - but not to enable one, because it skips the "
-				 "RefreshFromExternalChanges and InvalidateCompileResults this call makes. That "
-				 "leaves a stale compile result and an emitter that stays dark with a flag saying "
-				 "otherwise."));
+			TEXT("set_property on EmitterHandles[N].bIsEnabled flips the same bool, in both "
+				 "directions, and it invalidates the system's compiled data exactly as this call "
+				 "does - measured on two fresh systems, 2026-09-05. So the compile result is NOT "
+				 "the difference, and an earlier version of this note claiming otherwise was "
+				 "wrong. What this call does in addition is RefreshFromExternalChanges, whose "
+				 "effect beyond invalidation is NOT measured here - so if you enable an emitter "
+				 "through set_property and it stays dark, that is the untested path and this "
+				 "endpoint is the one to use."));
 		Out->SetStringField(TEXT("assetNote"),
 			TEXT("the system is dirty and NOTHING has been saved."));
 	}
