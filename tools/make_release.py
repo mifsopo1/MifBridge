@@ -607,6 +607,15 @@ def check_static_audits():
                        # test_socket_authoring passes 34/34 alone and 33/1 in one. The sweep that
                        # would catch it needs a live editor and half an hour; this needs neither.
                        ("audit_fixture_adoption.py", ["--check"]),
+                       # AND NO HANDLER DECLARING A MODE-ONLY PARAMETER IN SILENCE, gated at
+                       # zero the same day and for the same reason. Its spec item named the
+                       # shape itself - "exits 0 either way, not in the release gate, so
+                       # nobody looked" - and that was the third tool this week to which it
+                       # applied. It could not be gated when that was written: 23 rows, not
+                       # all defects. Every one has since been read and either fixed or
+                       # cleared with a // MODE-PARAMS-OK marker beside the handler, so it
+                       # reports zero and the strongest gate is available.
+                       ("audit_mode_params.py", ["--check"]),
                        # TWO SUITES THAT NEED NO EDITOR, joined 2026-09-03. Both were found by
                        # asking which suites have NO record in suite_results.json at all - five did,
                        # and these two turned out to be static, so they had never been run for no

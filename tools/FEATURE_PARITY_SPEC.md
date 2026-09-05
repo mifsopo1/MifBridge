@@ -11786,8 +11786,21 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       set_property needs an UNCOOKED Niagara emitter with editor data (the probe is written -
       tools/probe_niagara_emitter_source.py - and needs a live editor), and
       preview_composite_widget -> list_live_widgets needs a running PIE session.
-      FOUND 2026-09-03 by `audit_cross_endpoint_claims`, which is not in the release gate and exits
-      0 either way - so its reading list had never been read. 844 cross-endpoint claims sit in
+      FOUND 2026-09-03 by `audit_cross_endpoint_claims`, which was not in the release gate then and
+      exited 0 either way - so its reading list had never been read.
+
+      THAT SENTENCE IS NOW STALE and is left visible rather than quietly rewritten. --check is in
+      the gate tuple (make_release.py:506) and returns 1 on a finding new since the baseline, so
+      the reading list is read on every packaging run. Two things follow that this item should say:
+      the baseline is the thing to inspect when it goes red, and both entries in it today are C++
+      and both are excused as environment-blocked - which is precisely the two originals below.
+
+      AND THE GATED VERDICT WAS OVERCLAIMING until 2026-09-04. "OK 2 claim(s) no suite compares,
+      all recorded with a reason" reads as a statement about the product, and this tool reads only
+      the C++. The addon carried a cross-op claim that was flatly false and in neither the corpus
+      nor the baseline: set_vertex_weights told callers a zero-weight group "reads back identically
+      to a working one in list_vertex_groups", when list_vertex_groups counts only weights above
+      zero and returns 0/false against 8/true. Fixed, and the tool now prints its REACH. 844 cross-endpoint claims sit in
       handler text; 16 assert equivalence or completeness rather than navigation; 2 of those have no
       suite exercising both sides.
 

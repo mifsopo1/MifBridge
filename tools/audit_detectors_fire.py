@@ -1067,8 +1067,11 @@ PLANTS = {
     # anywhere" arm, which nothing had changed; branchOnly_zz proves the arm this tool is named for
     # - a parameter read ONLY inside a mode branch - which is the one the branch-depth rewrite of
     # that day actually touched. Both probes are still planted; only the assertion moved.
+    # gate FLIPPED TO TRUE 2026-09-04 with the addition of --check. It was False because the tool
+    # genuinely could not fail - every path returned 0 - so prove() had to fall back to "did the
+    # output name the marker". Now the EXIT CODE is the proof, and it is make_release's own path.
     "audit_mode_params.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_mode_param,
-                             "branchOnly_zz", False),
+                             "branchOnly_zz"),
     # NOT "RULE 4" - that string is in the rules footer this tool prints on every red run, and the
     # already-red guard correctly refused to call that proof. The marker has to be text only a
     # FINDING can produce.
@@ -1178,6 +1181,11 @@ ARGS = {"audit_vacuous_checks.py": ["--all"],
         # missing from make_release's gated tuple. Running the plant through --check is what
         # makes the gate's own path the one under test.
         "audit_fixture_adoption.py": ["--check"],
+        # AND THE THIRD ONE, 2026-09-04. Same story as the entry above: report-only, so
+        # the plant proved the tool NOTICES and nothing proved it OBJECTS - which is
+        # also why it sat ungated. Now gated at zero, so the plant takes the same path
+        # make_release does.
+        "audit_mode_params.py": ["--check"],
         "audit_created_name_reported.py": ["--check"],
         "audit_output_paths.py": ["--check"],
         "audit_unguarded_numbers.py": ["--check"],

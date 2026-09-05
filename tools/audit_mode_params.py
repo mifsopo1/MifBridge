@@ -442,6 +442,32 @@ def main():
     print("  The addon has the same shape - ops that branch on a mode string and declare parameters")
     print("  only one branch reads - and none of it is in the count above.")
     print("=" * 78)
+
+    # --check IS THE ONLY PATH THAT CAN FAIL, and until 2026-09-04 there wasn't one. This is the
+    # third report-only detector found ungated in the same week, and its spec item named the shape
+    # itself: "exits 0 either way, not in the release gate, so nobody looked."
+    #
+    # GATED AT ZERO, which was impossible when that was written. There were 23 rows then and not all
+    # of them were defects; every one has since been read and either fixed or cleared, so the tool
+    # reports "0 worth a look, 9 marked MODE-PARAMS-OK" and the strongest gate is available.
+    #
+    # No baseline file, for the same reason audit_fixture_adoption has none: the MODE-PARAMS-OK
+    # marker keeps each exception beside the handler it excuses, and a second invisible exception
+    # list next to a visible one would undo the point of the visible one.
+    if "--check" in sys.argv:
+        if rows:
+            print("")
+            print("BLOCKING: %d handler(s) branch on a mode parameter and declare parameters that"
+                  % len(rows))
+            print("only one branch reads, with nothing saying so. A caller sending one in the wrong")
+            print("mode is ignored in silence - the shape this plugin exists to refuse.")
+            print("")
+            print("Either refuse the parameter outside its mode, or say why it is fine with a")
+            print("// MODE-PARAMS-OK: <reason> marker beside the handler, where the next reader")
+            print("will find it.")
+            return 1
+        print("")
+        print("no handler declares a mode-only parameter without saying so - gated at zero")
     return 0
 
 
