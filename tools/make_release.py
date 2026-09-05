@@ -630,6 +630,27 @@ def check_static_audits():
                        # nothing. Static, needs no editor, runs in well under a second.
                        ("audit_guard_exit_paths.py", ["--check"]),
                        ("audit_guard_exit_paths.py", ["--selftest"]),
+                       # AND NO ENTITY A CALLER CAN NAME BUT NOT CREATE, on the BLENDER side,
+                       # RATCHETED at its two known gaps on 2026-09-05. This is the direction of
+                       # audit_family_asymmetry that could not be ported - consumers with no
+                       # creator - and it is the direction that actually paid: four defects in two
+                       # days, every one found by hand. Two earlier ports were reverted for keying
+                       # on PARAMETER NAMES (13 candidates, then 161, nearly all false); this one
+                       # reads the source instead, so a value used as a key into a bpy collection
+                       # is naming an entity and a float is not.
+                       #
+                       # SCORED AGAINST GROUND TRUTH, which is what the reverted attempts could not
+                       # offer: run at c867cb1^ - the commit before create_collection was written -
+                       # it reports `collections`, the exact defect it was built from, and rc=1.
+                       # On today's tree that gap is gone and it is rc=0. Getting there cost four
+                       # corrections the ground truth caught and no amount of reading would have:
+                       # str() coercions, local aliases, nested helper functions, and `data` being
+                       # excluded as a receiver name when in a Blender addon it IS the datablock.
+                       #
+                       # Ratcheted rather than gated at zero because the two open gaps each need a
+                       # new addon op plus a Blender run, and a gate nobody can turn green is one
+                       # people learn to skip.
+                       ("audit_blender_consumer_no_creator.py", ["--check"]),
                        # TWO SUITES THAT NEED NO EDITOR, joined 2026-09-03. Both were found by
                        # asking which suites have NO record in suite_results.json at all - five did,
                        # and these two turned out to be static, so they had never been run for no

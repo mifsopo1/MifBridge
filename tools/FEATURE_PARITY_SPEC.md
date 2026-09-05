@@ -12679,6 +12679,65 @@ out-of-process the way ops_gen already does with gen_status.
       So the item stays OPEN, but it is now open on a NAMED sub-problem with a measured reason
       rather than on "the tool is blind".
 
+      ================================================================================
+      2026-09-05: THE NAMED SUB-PROBLEM IS BUILT AND GATED. audit_blender_consumer_no_creator
+      ================================================================================
+      The signal this item asked for - "a parameter the op resolves through bpy.data.<collection>
+      is naming a datablock, and one it reads as a float is not" - works, and it is a source
+      analysis exactly as predicted. It reads the ops:
+
+        CONSUMER  a caller-supplied value used as the KEY of a bpy collection lookup
+        CREATOR   an op that ADDS to that same collection
+
+      161 candidates became 2, and both are real.
+
+      SCORED AGAINST GROUND TRUTH, which is the part the two reverted attempts could never offer.
+      Run at c867cb1^ - the commit before create_collection was written - it reports `collections`,
+      the exact defect this item was opened from, and exits 1. On today's tree that gap is gone and
+      it exits 0. A check nobody has seen fail is not a check.
+
+      IT TOOK FOUR CORRECTIONS TO GET THERE AND THE GROUND TRUTH CAUGHT EVERY ONE. Each was a
+      silent zero - the tool agreeing with itself while missing the case it was built from:
+
+        * `bpy.data.collections.get(str(name))` - the key is a Call, not a Name, so the consumer
+          was invisible. str()/int()/float()/.strip() are now traversed.
+        * `ebs = data.edit_bones` then `ebs.new(...)` - a local alias, so both bone creators were
+          invisible and `bones` was reported uncreatable while two ops make them.
+        * `data` was in the not-a-collection list as a response-dict name. In a Blender addon
+          `data` is obj.data, the datablock. That one exclusion caused the alias miss above.
+        * set_light_linking's get-or-create is a NESTED function, and ast.walk descends into it -
+          so the outer op was credited with the helper's .new() while the matching .get() (keyed on
+          the helper's own argument) was invisible to it. Each function is now judged on its own
+          body.
+
+      AND ONE JUDGEMENT THAT IS NOT MECHANICAL, stated plainly because it is the tool's weak point.
+      An op that both consumes and creates a collection is a get-or-create, and set_light_linking's
+      is precisely the broken state this item describes - a caller could not make a collection
+      deliberately, name it, or learn it now existed. But create_collection ALSO checks before it
+      creates, to refuse a duplicate, and the two are structurally identical. The separator is the
+      op's published NAME (create_/add_/new_/make_, never a leading underscore). That is a naming
+      heuristic and it is not the one the reverted attempts died on: they guessed a PARAMETER's
+      type from its spelling, this reads an op's own API name, and it is only ever used to RESCUE a
+      creator - never to invent one.
+
+      THE TWO OPEN GAPS, ratcheted in audit_blender_consumer_no_creator_baseline.txt and accepted
+      as KNOWN rather than as correct:
+
+        scenes          render_animation takes a scene by name and nothing creates a scene.
+        vertex_groups   set_vertex_weights makes one as a side effect of writing weights, which is
+                        the same get-or-create shape set_light_linking was fixed for. There is no
+                        op whose purpose is creating a vertex group, and none that lists or deletes
+                        one either.
+
+      Both want a new addon op and a Blender run to verify, so they are left for that rather than
+      half-built here. A NEW entity type of this shape now fails the release gate.
+
+      WHAT IT STILL DOES NOT COVER, and the tool prints this itself rather than implying a clean
+      bill: a collection WITH a creator can still be uncreatable for the case a consumer needs.
+      create_object makes an object; whether anything makes one of type CURVE is a question about
+      ARGUMENTS, not collections. Two of this item's four original defects were that shape. That is
+      the next sub-problem, and it is a different analysis.
+
 - [ ] **Tier 3 - motion worth rendering** (1 of 11 left)
       DONE 2026-09-03: evaluate_at_frame, edit_fcurve, add_fcurve_modifier, create_action /
       assign_action / list_actions, set_bone_pose, set_shape_key, bake_to_keyframes, markers with

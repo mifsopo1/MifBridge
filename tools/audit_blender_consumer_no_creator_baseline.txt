@@ -1,0 +1,8 @@
+# Entity types a caller can NAME but not CREATE. Regenerate deliberately:
+#   python tools/audit_blender_consumer_no_creator.py --update-baseline
+# ACCEPTED AS KNOWN, NOT AS CORRECT. Each needs an addon op whose purpose is
+# creating one; until then a caller can only get one as a side effect of an
+# op that means to do something else, which is the shape set_light_linking
+# was fixed for.
+scenes
+vertex_groups
