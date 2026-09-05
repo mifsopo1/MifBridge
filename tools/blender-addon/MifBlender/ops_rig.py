@@ -1621,13 +1621,22 @@ def op_set_vertex_weights(params):
         "mode": mode if not remove else "REMOVE",
         "verticesTouched": len(verts),
         # THE NUMBER THAT DECIDES WHETHER ANYTHING MOVES. A group full of zero weights is a group
-        # that exists and deforms nothing, and it reads back exactly like a working one.
+        # that exists and deforms nothing - and it is DETECTABLE, which this comment and the note
+        # below both used to deny. list_vertex_groups counts `if g.weight > 0.0`, so such a group
+        # comes back with weightedVertexCount 0 and influencesGeometry false while a working one
+        # comes back positive and true.
         "verticesWithNonZeroWeight": nonzero,
         "verticesInGroup": total_in_group,
         "weightRange": [min(values), max(values)] if values else None,
         "weightsBefore": weights_before if len(weights_before) <= 32 else None,
-        "note": ("every weight written is 0, so this group exists and deforms NOTHING - which reads "
-                 "back identically to a working one in list_vertex_groups.")
+        # SAY WHERE TO LOOK, not that looking is pointless. This note fires exactly when the
+        # caller's rig is broken, and the old wording - "reads back identically to a working one in
+        # list_vertex_groups" - was false about the one op that finds it, at the only moment
+        # somebody was going to check.
+        "note": ("every weight written is 0, so this group exists and deforms NOTHING. It is "
+                 "detectable: list_vertex_groups counts only weights above zero, so this group "
+                 "comes back with weightedVertexCount 0 and influencesGeometry false, where a "
+                 "working one comes back positive and true.")
         if (values and not nonzero and not remove) else
         (("the group name was taken, so Blender created '%s' instead of '%s' - the existing group "
           "was left alone. Anything looking this up by name needs the new one."
