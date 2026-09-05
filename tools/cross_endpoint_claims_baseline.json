@@ -1,10 +1,18 @@
 {
- "preview_composite_widget -> list_live_widgets": {
-  "quote": "path produces the same result. For that, drive PIE and use list_live_widgets/",
-  "why": "BLOCKED ON A RUNNING PIE SESSION. The claim is that driving PIE and calling list_live_widgets produces the same result, and no unattended suite can arrange a PIE session to compare against - test_pie_family needs --with-pie and an attended run. Recorded 2026-09-03."
+ "apply_graph_patch -> validate": {
+  "quote": "graphId, operations (alias: ops) - array of {op:connect_pins|disconnect_pin|set_pin_default, ...}, dryRun (default false; resolve and valida",
+  "why": "NOT A CLAIM - the word is the English verb, not the endpoint. The match is inside apply_graph_patch's PARAMETER HELP string: 'dryRun (default false; resolve and validate everything, mutate nothing)'. `validate` there describes what dryRun does to the patch, and the shape matched is 'everything' in 'validate everything'. The tool's IGNORE set already drops `batch` and `compile` for exactly this - a name that is also ordinary English - but `validate` cannot join them without losing the REAL compile -> validate claim, which T840b does compare. Read and excused 2026-09-05."
+ },
+ "apply_spline_to_landscape -> sculpt_landscape": {
+  "quote": "NOT ONE height sample changed, and this landscape has NO EDIT LAYERS - which is the case that could not be made to work at all when this end",
+  "why": "REAL, and blocked on a landscape. The note says 'sculpt_landscape moved 736 vertices through the same interface in the same session', offered as evidence that the zero-change measurement is sound rather than a broken harness. That is a checkable claim about another endpoint and no suite drives both. Comparing it needs an editor with a landscape that has NO edit layers, which is also the configuration create_landscape deliberately produces. Surfaced 2026-09-05, when the tool stopped judging truncated text."
+ },
+ "describe_physics_asset -> set_property": {
+  "quote": "this endpoint exists for the two things reflection cannot give you: disabledPairs (CollisionDisableTable has no UPROPERTY, so no get_propert",
+  "why": "REAL, and blocked on the machine. 'Everything else about a PhysicsAsset is an ordinary UPROPERTY - get_property {propertyPath:\"SkeletalBodySetups\"} returns the primitives in full, including their transforms and radii, and set_property tunes them.' A caller acting on that will reach for set_property for anything outside disabledPairs and the index numbering, so 'everything else' is the load-bearing word. The get_property half IS paired (test_physics_asset.py); the set_property half is not. Needs an editor with a real PhysicsAsset. Surfaced 2026-09-05, same cause."
  },
  "set_niagara_emitter -> set_property": {
   "quote": "set_property on EmitterHandles[N].bIsEnabled flips the same bool, and it is enough to DISABLE an emitter - but not to enable one, because it",
-  "why": "BLOCKED ON THE MACHINE, not on effort. Comparing the two needs an UNCOOKED UNiagaraEmitter with editor data: add_niagara_emitter requires a SOURCE emitter to copy and refuses one with no editor data, which is exactly what a cooked asset lacks, and duplicate_asset refuses a cooked Niagara asset as a crash guard. Creating the SYSTEM is fine (create_asset special-cases UNiagaraSystem). The probe is written - tools/probe_niagara_emitter_source.py - and needs a live editor to answer whether this project contains any emitter with editor data at all. Recorded 2026-09-03."
+  "why": "COMPARED 2026-09-05 - the first time - AND THE CLAIM'S STATED REASON IS CONTRADICTED. It tells callers set_property 'skips the RefreshFromExternalChanges and InvalidateCompileResults this call makes', leaving a stale compile result. Measured on two FRESH systems so neither path inherited the other's state: set_property alone takes compiledDataCurrent True -> FALSE, and set_niagara_emitter alone does exactly the same. Both invalidate, and set_property flips the flag in BOTH directions with applied/verified true and list_niagara_emitters agreeing. So the REASON is wrong. What is not disproved is the conclusion - RefreshFromExternalChanges may do something beyond invalidation that nothing here exposes - so 'the emitter stays dark' stands unmeasured. The defect is a user-facing steer away from an endpoint that works, for a reason that does not. Fixing the text is a Source edit and needs a build."
  }
 }

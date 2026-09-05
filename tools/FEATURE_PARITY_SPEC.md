@@ -11996,8 +11996,68 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       RefreshFromExternalChanges actually contributes, or - if nothing does - the whole steer should
       go, because a caller who follows it is avoiding an endpoint that works.
 
-      THE SECOND ORIGINAL IS STILL BLOCKED: preview_composite_widget -> list_live_widgets needs a
-      running PIE session.
+      THE SECOND ORIGINAL WAS NEVER A CLAIM. Read whole, preview_composite_widget's note says the
+      OPPOSITE of what it was recorded as claiming:
+
+        "it proves the recipe mechanism works, NOT that a machine's real FocusSetup/interaction
+         path produces the same result. For that, drive PIE and use list_live_widgets/
+         describe_live_widget instead."
+
+      That is a denial of equivalence followed by a navigation pointer - the same category the two
+      set_data_layer_visibility / set_physics_primitive_collision entries were removed for on
+      2026-09-03. It sat in the gate baseline for two days as "BLOCKED ON A RUNNING PIE SESSION"
+      and there was nothing to compare. No PIE session was ever needed.
+
+      THE CLASSIFIER COULD NOT SEE THE `NOT`, and three separate reasons stacked up. All three are
+      fixed and each was a silent hider of real claims, not just an inventor of false ones:
+
+        * IT READ ONE TEXT() MACRO AT A TIME. The note is five literals the compiler concatenates,
+          and the matched one begins mid-sentence: "path produces the same result." The `not` is in
+          the previous literal. Adjacent macros are now joined, which is what C++ does.
+        * IT JUDGED A TRUNCATED QUOTE. The row stored `body[:140]` and asserts_equivalence ran on
+          the stump, so a claim past character 140 was invisible - add_socket's "list_bones lists
+          them all" sits at 190 and had silently dropped off the reading list. The full body is
+          judged; only the printed line is cut.
+        * IT TOOK ONE CLAIM PER LITERAL. Harmless while a literal was one macro; once they are
+          joined, a literal names several endpoints and longest-first ordering let one stand in for
+          the rest. Every named endpoint now gets its own row.
+
+      AND TWO NEW RULES, both of which the old code needed and did not have: the negation is scoped
+      to the SENTENCE the shape appears in rather than a 28-character window - "not that a machine's
+      real FocusSetup/interaction path produces the same result" puts eight words between them - and
+      the named endpoint must appear in that same sentence, which drops group_actors' "every actor
+      must live in the SAME level" where the endpoint it names is two sentences away offering to fix
+      it. Direction is preserved: "returns the same set, not a subset" has its `not` AFTER the shape
+      and is still a claim.
+
+      THE READING LIST IS NOW 17 CLAIMS, 13 PAIRED, 4 NOT - and three of those four were never on it
+      before, having been hidden by the truncation. Every one is read and recorded with a reason:
+
+        apply_graph_patch -> validate            NOT A CLAIM. `validate` is the English verb inside
+                                                 a PARAMETER HELP string - "dryRun (default false;
+                                                 resolve and validate everything, mutate nothing)" -
+                                                 and the shape matched is "everything". It cannot
+                                                 join IGNORE beside `batch` and `compile` without
+                                                 losing the real compile -> validate claim that
+                                                 T840b does compare.
+        apply_spline_to_landscape                REAL. "sculpt_landscape moved 736 vertices through
+          -> sculpt_landscape                    the same interface in the same session", offered as
+                                                 evidence the zero-change measurement is sound
+                                                 rather than a broken harness. Needs an editor with
+                                                 a landscape that has NO edit layers.
+        describe_physics_asset -> set_property   REAL, and "everything else" is the load-bearing
+                                                 word: everything outside disabledPairs and the
+                                                 index numbering is claimed to be an ordinary
+                                                 UPROPERTY that get_property returns in full and
+                                                 set_property tunes. The get_property half IS paired
+                                                 (test_physics_asset.py); this half is not.
+        set_niagara_emitter -> set_property      COMPARED, and its stated reason is contradicted -
+                                                 see the section above. Fixing the text is a Source
+                                                 edit and needs a build.
+
+      SO THE ITEM'S TITLE IS WRONG IN BOTH DIRECTIONS and is left standing as a record of that: it
+      was never "two", one of the two was never a claim, and three more existed that nothing had
+      ever listed.
       FOUND 2026-09-03 by `audit_cross_endpoint_claims`, which was not in the release gate then and
       exited 0 either way - so its reading list had never been read.
 

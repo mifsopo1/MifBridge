@@ -55,19 +55,32 @@ DECL = re.compile(r"^\s*MIF_DECL\((\w+)\)", re.M)
 # Only string LITERALS, and only the ones a caller actually reads back: notes, warnings and the text
 # handed to Fail(). A name inside a comment is documentation for the next maintainer, not a promise
 # to a caller, and mixing the two is how audit_blocking spent a day red on prose.
-# ADJACENT LITERALS ARE THE HOUSE STYLE, and this pattern assumed ONE fragment until
-# 2026-08-31, when audit_detectors_fire caught this tool ASLEEP against a planted claim. The
-# plant was written the way the module actually writes refusals -
+# ADJACENT LITERALS ARE THE HOUSE STYLE, and this pattern has been too narrow TWICE, one level
+# apart. Both are recorded because the second was not caught by the fix for the first.
+#
+# 2026-08-31, ONE TEXT() WITH TWO FRAGMENTS. audit_detectors_fire caught this tool ASLEEP against a
+# planted claim written the way the module actually writes refusals -
 #
 #     TEXT("probeSameZz - list_blueprints returns the same set "
 #          "as this endpoint, so either will do. ")
 #
-# - and the old pattern needed the closing paren right after ONE closing quote, so a
-# two-fragment literal matched nothing at all and every multi-line claim in the module was
-# invisible. audit_editor_fatal_guards had this IDENTICAL bug, was fixed, and the fix never
-# reached here - its own header even records the lesson. The line below is copied from that
-# tool character-for-character so grepping one finds both.
-TEXT_LIT = re.compile(r'TEXT\(\s*((?:"(?:[^"\\]|\\.)*"\s*)+)\)')
+# - and the pattern needed the closing paren right after ONE closing quote, so a two-fragment
+# literal matched nothing at all and every multi-line claim in the module was invisible.
+# audit_editor_fatal_guards had this IDENTICAL bug, was fixed, and the fix never reached here.
+#
+# 2026-09-05, A RUN OF ADJACENT TEXT() MACROS IS ALSO ONE STRING - and reading them one at a time
+# invented a claim. preview_composite_widget's note is five TEXT() literals the compiler
+# concatenates:
+#
+#     TEXT("it proves the recipe mechanism works, not that a machine's real FocusSetup/interaction ")
+#     TEXT("path produces the same result. For that, drive PIE and use list_live_widgets/")
+#
+# Matched separately, the second one begins "path produces the same result" with no sign of the
+# `not` that reverses it, so a DENIAL of equivalence was reported as an equivalence claim - and sat
+# in the gate baseline for two days as "blocked, needs a PIE session" when there was nothing to
+# compare. Same failure the two set_data_layer_visibility / set_physics_primitive_collision entries
+# had, one level deeper: there the negation was on the same line, here it is in a different literal.
+TEXT_LIT = re.compile(r'(?:TEXT\(\s*(?:"(?:[^"\\]|\\.)*"\s*)+\)\s*)+')
 
 # The capture now holds every fragment WITH its quotes, so they are stripped and joined - the
 # same concatenation the C++ compiler performs.
@@ -107,16 +120,45 @@ CLAIM_SHAPES = [
 # The negation has to be IMMEDIATELY before the shape. "returns the same set, not a subset" is a
 # positive claim with a trailing denial and must stay; a window of a few words is what separates
 # them.
-NEGATED = re.compile(r'\b(?:not|never|isn\'t|aren\'t|rather than)\s+(?:\w+\s+){0,2}$')
+NEGATED = re.compile(r'\b(?:not|never|isn\'t|aren\'t|rather than)\b')
+# A sentence end, not any full stop: `EmitterHandles[N].bIsEnabled` must not split, or
+# set_niagara_emitter's real claim loses the words before "flips the same bool".
+SENTENCE_END = re.compile(r'[.;!?](?:\s|$)')
 
 
-def asserts_equivalence(text):
-    """True when the text claims two endpoints AGREE, rather than denying that they do."""
+def asserts_equivalence(text, other=None):
+    """True when the text claims two endpoints AGREE, rather than denying that they do.
+
+    THE OTHER ENDPOINT HAS TO BE IN THE SAME SENTENCE AS THE SHAPE. group_actors refuses with
+    "every actor must live in the SAME level. '%s' is in %s and '%s' is in %s. move_actors_to_level
+    can bring them together first." - "the same" is a requirement about ACTORS, and the endpoint it
+    names is two sentences away offering to fix it. That is navigation, and without this test it
+    read as group_actors claiming move_actors_to_level returns the same thing.
+
+    set_niagara_emitter's real claim passes the same test: "set_property on
+    EmitterHandles[N].bIsEnabled flips the same bool" names the endpoint and the shape in one
+    breath, which is what an equivalence claim looks like.
+
+    THE NEGATION IS SENTENCE-SCOPED, not a 28-character window. That window was set for
+    "is not the same as hidden", where the denial sits right against the shape, and it cannot see
+    "it proves the recipe mechanism works, NOT that a machine's real FocusSetup/interaction path
+    produces the same result" - sixty characters and eight words of subject between the two. So the
+    question is asked over the sentence the shape appears in.
+
+    The direction still matters and is preserved: "returns the same set, not a subset" is a positive
+    claim with a trailing denial, and its `not` comes AFTER the shape, so it is outside the span
+    this looks at and the claim stands.
+    """
     low = text.lower()
     for shape in CLAIM_SHAPES:
         at = low.find(shape)
         while at >= 0:
-            if not NEGATED.search(low[max(0, at - 28):at]):
+            starts = [m.end() for m in SENTENCE_END.finditer(low, 0, at)]
+            lo = starts[-1] if starts else 0
+            ends = [m.start() for m in SENTENCE_END.finditer(low, at)]
+            hi = ends[0] if ends else len(low)
+            sentence = low[lo:hi]
+            if not NEGATED.search(low[lo:at]) and (other is None or other.lower() in sentence):
                 return True
             at = low.find(shape, at + 1)
     return False
@@ -140,15 +182,25 @@ def claims(names):
                 continue
             speaker = fn[2:]
             for m in TEXT_LIT.finditer(raw, start, end):
-                body = "".join(FRAGMENT.findall(m.group(1)))
+                body = "".join(FRAGMENT.findall(m.group(0)))
                 for other in ordered:
                     if other == speaker:
                         continue
                     # Word-boundaried: `remove_pin` must not match inside `remove_pins_zz`.
                     if re.search(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % re.escape(other), body):
                         line = raw.count("\n", 0, m.start()) + 1
-                        rows.append((speaker, other, base, line, body.strip()[:140]))
-                        break                          # one claim per literal is enough to read
+                        # THE FULL BODY, truncated only where it is PRINTED. It used to be cut to 140
+                        # characters here, and asserts_equivalence then judged the stump:
+                        # add_socket's "list_bones lists them all" sits at character 190 of a
+                        # literal that now concatenates, so the claim was tested against text
+                        # that did not contain it and vanished from the reading list.
+                        rows.append((speaker, other, base, line, body.strip()))
+                        # EVERY endpoint named, not just the first. This used to `break` - "one
+                        # claim per literal is enough to read" - which was true while a literal was
+                        # one TEXT() macro. Now that adjacent macros are joined, a single literal
+                        # routinely names several endpoints, and the longest-first ordering meant
+                        # whichever name happened to be longest silently stood in for the rest.
+                        # add_socket's "list_bones lists them all" disappeared that way.
     return rows
 
 
@@ -190,7 +242,12 @@ def check_against_baseline(unpaired, write=False):
     """
     current = {}
     for speaker, other, base, line, quote in unpaired:
-        current["%s -> %s" % (speaker, other)] = {"quote": quote, "at": "%s:%d" % (base, line)}
+        # TRUNCATED TO MATCH WHAT THE BASELINE STORES. The quote is now carried at full length so
+        # asserts_equivalence judges the whole sentence, but the baseline file keeps the readable
+        # 140 characters - comparing one against the other reported "the wording changed" on every
+        # entry, every run, which is how a note nobody reads gets made.
+        current["%s -> %s" % (speaker, other)] = {"quote": quote[:140],
+                                                  "at": "%s:%d" % (base, line)}
 
     if write:
         with io.open(BASELINE, "w", encoding="utf-8", newline="") as fh:
@@ -265,7 +322,7 @@ def main():
     print("endpoints: %d   cross-endpoint claims in handler text: %d" % (len(names), len(rows)))
 
     if not args.navigation:
-        shaped = [r for r in rows if asserts_equivalence(r[4])]
+        shaped = [r for r in rows if asserts_equivalence(r[4], r[1])]
         print("of those, ones asserting EQUIVALENCE or COMPLETENESS: %d   (the rest are "
               "navigation - 'save_package to persist' promises nothing)" % len(shaped))
         rows = shaped
@@ -282,7 +339,7 @@ def main():
     print("")
     for speaker, other, base, line, quote in unpaired:
         print("  %s  says  %s" % (speaker, other))
-        print("      %s:%d  %s" % (base, line, quote))
+        print("      %s:%d  %s" % (base, line, quote[:140]))
     print("")
     print("A pair appearing in one suite proves only that both were CALLED there, never that the")
     print("claim was compared. This is a reading list - read the hits, do not count them.")
